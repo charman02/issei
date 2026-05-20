@@ -5,6 +5,8 @@ DATABASE_URL = "sqlite:///./recipes.db"
 
 engine = create_engine(
     DATABASE_URL,
+    # SQLite requires this to allow usage across threads in FastAPI's async
+    # context
     connect_args={"check_same_thread": False},
 )
 

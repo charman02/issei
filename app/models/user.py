@@ -12,6 +12,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(nullable=False)
+    # server_default lets the database generate the timestamp, more reliable
+    # than app-side defaults in distributed environments
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
