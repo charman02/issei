@@ -2,7 +2,7 @@ from app.database import Base
 
 from typing import Optional
 from sqlalchemy import ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 class Step(Base):
     __tablename__ = "steps"
@@ -12,3 +12,4 @@ class Step(Base):
     position: Mapped[int] = mapped_column()
     content: Mapped[str] = mapped_column(Text)
     section_header: Mapped[Optional[str]] = mapped_column(nullable=True)
+    recipe: Mapped["Recipe"] = relationship("Recipe", back_populates="steps")

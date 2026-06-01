@@ -2,7 +2,7 @@ from app.database import Base
 
 from typing import Optional
 from sqlalchemy import ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 class Ingredient(Base):
     __tablename__ = "ingredients"
@@ -17,3 +17,8 @@ class Ingredient(Base):
     quantity_type: Mapped[str] = mapped_column()
     notes: Mapped[Optional[str]] = mapped_column(nullable=True)
     position: Mapped[int] = mapped_column()
+    recipe: Mapped["Recipe"] = relationship("Recipe", back_populates="ingredients",
+        foreign_keys="[Ingredient.recipe_id]")
+    section: Mapped[Optional["IngredientSection"]] = relationship(
+        "IngredientSection", back_populates="ingredients"
+    )
