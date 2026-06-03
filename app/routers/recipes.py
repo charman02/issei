@@ -9,6 +9,7 @@ from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
 from app.schemas.recipe import RecipeCreate, RecipeResponse
+from app.services.scaling import scale_ingredient
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
