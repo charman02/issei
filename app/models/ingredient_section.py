@@ -1,7 +1,12 @@
 from app.database import Base
 
+from typing import TYPE_CHECKING
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from app.models.recipe import Recipe
+    from app.models.ingredient import Ingredient
 
 class IngredientSection(Base):
     __tablename__ = "ingredient_sections"
