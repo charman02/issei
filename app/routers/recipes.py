@@ -8,7 +8,7 @@ from app.models.recipe import Recipe
 from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
-from app.schemas.recipe import RecipeCreate, RecipeResponse
+from app.schemas.recipe import RecipeCreate, RecipeResponse, IngredientResponse, StepResponse
 from app.services.scaling import scale_ingredient
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -115,3 +115,70 @@ def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
+
+@router.get("/{recipe_id}/scale", response_model=RecipeResponse)
+def get_scaled_recipe(
+    recipe_id: int,
+    servings: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id,
+        Recipe.user_id == current_user.id,
+        Recipe.deleted_at == None
+    ).options(
+        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        selectinload(Recipe.ingredients),
+        selectinload(Recipe.steps)
+    ).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    if recipe.servings is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Recipe does not have servings set - cannot scale"
+        )
+    
+    multiplier = servings / recipe.servings
+
+    # scale ingredients within sections
+    scaled_sections = []
+    for section in recipe.ingredient_sections:
+        scaled_section_ings = [
+            IngredientResponse.model_validate(scale_ingredient(ing, multiplier))
+            for ing in section.ingredients
+        ]
+        scaled_sections.append({
+            "id": section.id,
+            "name": section.name,
+            "position": section.position,
+            "ingredients": scaled_section_ings
+        })
+
+    scaled_ingredients = [
+        IngredientResponse.model_validate(scale_ingredient(ing, multiplier))
+        for ing in recipe.ingredients
+    ]
+    
+    response_dict = {
+        "id": recipe.id,
+        "user_id": recipe.user_id,
+        "name": recipe.name,
+        "description": recipe.description,
+        "servings": servings,  # return TARGET servings, not original
+        "prep_time_minutes": recipe.prep_time_minutes,
+        "cuisine": recipe.cuisine,
+        "diet": recipe.diet,
+        "source": recipe.source,
+        "notes": recipe.notes,
+        "language": recipe.language,
+        "created_at": recipe.created_at,
+        "deleted_at": recipe.deleted_at,
+        "ingredient_sections": scaled_sections,
+        "ingredients": scaled_ingredients,
+        "steps": [StepResponse.model_validate(s) for s in recipe.steps]
+    }
+
+    return RecipeResponse.model_validate(response_dict)
