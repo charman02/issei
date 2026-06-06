@@ -8,7 +8,9 @@ from app.models.recipe import Recipe
 from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
-from app.schemas.recipe import RecipeCreate, RecipeResponse
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate
+
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -114,3 +116,50 @@ def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
+
+@router.patch("/{recipe_id}", response_model=RecipeResponse)
+def patch_recipe(
+    recipe_in: RecipeUpdate,
+    recipe_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id,
+        Recipe.user_id == current_user.id,
+        Recipe.deleted_at == None
+    ).options(
+        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        selectinload(Recipe.ingredients),
+        selectinload(Recipe.steps)
+    ).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    update_data = recipe_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(recipe, field, value)
+
+    db.add(recipe)
+    db.commit()
+    db.refresh(recipe)
+    return recipe
+
+@router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_recipe(
+    recipe_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id,
+        Recipe.user_id == current_user.id,
+        Recipe.deleted_at == None
+    ).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    recipe.deleted_at = datetime.now(timezone.utc)
+
+    db.add(recipe)
+    db.commit()

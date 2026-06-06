@@ -98,3 +98,15 @@ class RecipeResponse(BaseModel):
     steps: list[StepResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RecipeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    servings: Optional[int] = None
+    prep_time_minutes: Optional[int] = None
+    cuisine: Optional[str] = None
+    diet: Optional[str] = None
+    source: Optional[str] = None
+    notes: Optional[str] = None
+    language: Optional[str] = None
