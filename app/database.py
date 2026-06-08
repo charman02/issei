@@ -1,13 +1,13 @@
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = "sqlite:///./recipes.db"
+from app.config import settings
 
 engine = create_engine(
-    DATABASE_URL,
+    settings.database_url,
     # SQLite requires this to allow usage across threads in FastAPI's async
     # context
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {}
 )
 
 @event.listens_for(engine, "connect")

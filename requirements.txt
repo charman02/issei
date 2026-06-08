@@ -6,6 +6,7 @@ bcrypt==5.0.0
 certifi==2026.5.20
 cffi==2.0.0
 click==8.4.0
+colorama==0.4.6
 cryptography==48.0.0
 dnspython==2.8.0
 ecdsa==0.19.2
@@ -14,6 +15,7 @@ fastapi==0.136.1
 fastapi-cli==0.0.24
 fastapi-cloud-cli==0.17.1
 fastar==0.11.0
+greenlet==3.5.1
 h11==0.16.0
 httpcore==1.0.9
 httptools==0.7.1
@@ -53,6 +55,5 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.7.0
 uvicorn==0.47.0
-uvloop==0.22.1 ; sys_platform != "win32"
 watchfiles==1.2.0
 websockets==16.0
