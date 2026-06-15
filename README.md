@@ -48,8 +48,8 @@ A REST API for preserving and sharing family recipes, built for the Asian immigr
 ## Setup Instructions
 1. **Clone the repo:**
 ```
-git clone https://github.com/charman02/family-recipe-library.git
-cd family-recipe-library
+git clone https://github.com/charman02/issei.git
+cd issei
 ```
 2. **Create and activate venv (Mac/Linux):**
 ```
@@ -79,7 +79,7 @@ http://localhost:8000/docs
 ```
 
 ## Future Roadmap
-See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, a web frontend, iOS mobile app, translation support, and voice input for recipe capture.
+See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, a web frontend, iOS mobile app, translation support, and photo/video support.
 
 ## Live Demo
 API: https://family-recipe-library.onrender.com/docs
