@@ -1,6 +1,6 @@
 # Future Roadmap
 
-This document outlines planned features and improvements for Issei. THe current v1 is a backend API with core recipe management, scaling, and shopping list features. The roadmap below represents the natural evolution toward a full product.
+This document outlines planned features and improvements for Issei. The current v1 is a backend API with core recipe management, scaling, and shopping list features. The roadmap below represents the natural evolution toward a full product.
 
 ---
 
@@ -42,54 +42,47 @@ This document outlines planned features and improvements for Issei. THe current 
 
 ## Translation
 
-**What this adds:**
+**Current state:** Recipes have a `language` field (defaults to "en") but no translation functionality exists. A recipe is stored and displayed in whatever language it was entered.
 
-**Why it matters:**
+**What this adds:** Automatic translation of recipes into the reader's preferred language, building on the existing `language` field. A recipe entered by a Japanese-speaking parent could be read in English by their kids, or vice versa.
 
-**Implementation notes:**
+**Why it matters:** This app is built for Asian immigrant families, where it's common for the cooking generation and the reading generation to be most comfortable in different languages. A parent might write a recipe in Japanese; their kids might only read English fluently. Translation also matters practically — when someone is shopping for ingredients, they need the ingredient names in a language they can search for or recognize at the store.
 
----
-
-## Voice Input
-
-**What this adds:**
-
-**Why it matters:**
-
-**Implementation notes:**
-
----
-
-## Recipe Versioning
-
-**What this adds:**
-
-**Why it matters:**
-
-**Implementation notes:**
+**Implementation notes:** Likely uses a translation API (e.g., DeepL or Google Translate) triggered on read, with caching to avoid re-translating the same recipe repeatedly. The existing `language` field on recipes already tracks the source language, which is the foundation this feature builds on.
 
 ---
 
 ## Photo/Video Support
 
-**What this adds:**
+**Current state:** Recipes are text-only — no image or video fields exist on any model.
 
-**Why it matters:**
+**What this adds:** Support for photos and videos attached to a recipe at multiple levels: a photo of the finished dish, photos, or short videos for individual steps (especially useful for techniques that are hard to describe in words), and a community gallery where people who cooked the recipe can share their own results.
 
-**Implementation notes:**
+**Why it matters:** Some cooking techniques are much easier to show than describe — how to fold a dumpling, what "until the onions are translucent" actually looks like, the right consistency for a sauce. Photos of the final dish also help confirm "did I make this right?" A gallery of other people's attempts adds a community dimension that text alone can't.
+
+**Implementation notes:** Would require file storage (e.g., S3 or Cloudinary) and new media tables linked to recipes, steps, and a new "gallery post" entity. Video would need size/length limits and probably compression on upload.
 
 ---
 
 ## Ingredient Canonicalization
 
-**What this adds:**
+**Current state:** Shopping list consolidation matches ingredients by normalized name (lowercase, stripped whitespace) only. "Garlic cloves" and "minced garlic" are treated as two different ingredients and never consolidated, even though they're the same shopping list item.
 
-**Why it matters:**
+**What this adds:** A canonicalization layer that recognizes when different ingredient names refer to the same underlying grocery item, so the shopping list can consolidate them correctly. If one recipe calls for "3 garlic cloves" and another calls for "1 tbsp minced garlic," the shopping list should tell you how much garlic to actually buy, not list them as two separate items.
 
-**Implementation notes:**
+**Why it matters:** This is the most common real-world failure case of the current shopping list feature. Recipes from different sources (or even the same person on different days) describe the same ingredient differently, and the whole point of a shopping list is to tell you what to buy — not to require you to mentally merge entries yourself.
+
+**Implementation notes:** Could start with a manual mapping table (canonical name → list of known aliases) for common ingredients, similar in spirit to the density table already used for unit conversion. A more advanced version could use fuzzy string matching or an LLM-based normalization step, but a simple alias table would cover most real cases for v1.
 
 ---
 
 ## What I'd Build First
 
+In order of priority:
 
+1. **Web frontend** — the highest priority. The backend is fully functional but unusable by anyone except me through `/docs`. A web frontend makes the app something I can actually hand to my mom and have her use, which is the entire point of the project.
+2. **Multi-user family sharing** — without this, the product can't fulfill its actual purpose. A recipe my mom adds should be visible to me and my siblings without needing separate accounts and manual copying. This is closer to a missing core feature than an enhancement, so it ranks above the more exploratory additions below.
+3. **iOS mobile app** — once the web frontend is live and validated, a native mobile experience makes sense given that the real use case (checking a recipe while cooking, contributing a recipe from a phone) is fundamentally mobile-first.
+4. **Translation** — highest priority among the "deeper feature" additions, since it directly addresses the core audience: families where the cooking generation and the reading generation may not share a primary language.
+5. **Photo/video support** — meaningfully improves usability for techniques that are hard to describe in text, and adds a community dimension via the gallery concept.
+6. **Ingredient canonicalization** — the most clearly-scoped technical improvement, but lower priority than the others since the shopping list already works correctly for the common case (exact or near-exact name matches); this fixes an edge case rather than unlocking new usage.
