@@ -306,7 +306,7 @@
         }
 
         // 5. login then submit
-        fetch("http://localhost:8000/auth/login", {
+        fetch("https://family-recipe-library.onrender.com/auth/login", {
             method: "POST",
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded"
@@ -318,7 +318,7 @@
         })
         .then(function(data) {
             const token = data.access_token
-            fetch("http://localhost:8000/recipes", {
+            fetch("https://family-recipe-library.onrender.com/recipes", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
