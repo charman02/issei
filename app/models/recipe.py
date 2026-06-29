@@ -10,14 +10,16 @@ if TYPE_CHECKING:
     from app.models.ingredient_section import IngredientSection
     from app.models.ingredient import Ingredient
     from app.models.step import Step
+    from app.models.user import User
 
 
 class Recipe(Base):
     __tablename__ = "recipes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column()
+    cover_photo_url: Mapped[Optional[str]] = mapped_column(nullable=True)
     description: Mapped[Optional[str]] = mapped_column(nullable=True)
     servings: Mapped[Optional[int]] = mapped_column(nullable=True)
     prep_time_minutes: Mapped[Optional[int]] = mapped_column(nullable=True)
@@ -44,3 +46,8 @@ class Recipe(Base):
     steps: Mapped[list["Step"]] = relationship(
         "Step", back_populates="recipe", cascade="all, delete-orphan"
     )
+    user: Mapped["User"] = relationship("User")
+
+    @property
+    def author_full_name(self) -> str:
+        return f"{self.user.first_name} {self.user.last_name}"

@@ -19,7 +19,12 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
     hashed = hash_password(user_in.password)
-    new_user = User(email=user_in.email, hashed_password=hashed)
+    new_user = User(
+        email=user_in.email,
+        hashed_password=hashed,
+        first_name=user_in.first_name,
+        last_name=user_in.last_name
+    )
     db.add(new_user)
     db.commit()
     # re-read from db to populate server-generated fields (id, created_at)
@@ -36,7 +41,16 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = create_access_token({"sub": str(user.id)})
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name
+        }
+    }
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):

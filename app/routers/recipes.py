@@ -25,6 +25,7 @@ def create_recipe(
     new_recipe = Recipe(
         user_id=current_user.id,
         name=recipe_in.name,
+        cover_photo_url=recipe_in.cover_photo_url,
         description=recipe_in.description,
         servings=recipe_in.servings,
         prep_time_minutes=recipe_in.prep_time_minutes,
@@ -96,7 +97,8 @@ def list_recipes(
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
         selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps)
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
     ).all()
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
@@ -112,7 +114,8 @@ def get_recipe(
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
         selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps)
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -132,7 +135,8 @@ def get_scaled_recipe(
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
         selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps)
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
@@ -168,6 +172,8 @@ def get_scaled_recipe(
         "id": recipe.id,
         "user_id": recipe.user_id,
         "name": recipe.name,
+        "author_full_name": recipe.author_full_name,
+        "cover_photo_url": recipe.cover_photo_url,
         "description": recipe.description,
         "servings": servings,  # return TARGET servings, not original
         "prep_time_minutes": recipe.prep_time_minutes,
@@ -199,7 +205,8 @@ def patch_recipe(
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
         selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps)
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")

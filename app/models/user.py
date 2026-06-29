@@ -10,6 +10,8 @@ class User(Base):
     __tablename__ = "users"
     
     id: Mapped[int] = mapped_column(primary_key=True)
+    first_name: Mapped[str] = mapped_column(nullable=False)
+    last_name: Mapped[str] = mapped_column(nullable=False)
     email: Mapped[str] = mapped_column(unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(nullable=False)
     # server_default lets the database generate the timestamp, more reliable

@@ -3,6 +3,8 @@ from datetime import datetime
 
 class UserBase(BaseModel):
     email: EmailStr
+    first_name: str
+    last_name: str
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=72)

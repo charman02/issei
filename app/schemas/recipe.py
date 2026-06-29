@@ -66,6 +66,7 @@ class IngredientSectionResponse(BaseModel):
 
 class RecipeCreate(BaseModel):
     name: str
+    cover_photo_url: Optional[str] = None
     description: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
@@ -83,6 +84,8 @@ class RecipeResponse(BaseModel):
     id: int
     user_id: int
     name: str
+    author_full_name: Optional[str] = None
+    cover_photo_url: Optional[str] = None
     description: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
@@ -102,6 +105,7 @@ class RecipeResponse(BaseModel):
 
 class RecipeUpdate(BaseModel):
     name: Optional[str] = None
+    cover_photo_url: Optional[str] = None
     description: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
