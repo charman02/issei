@@ -1,0 +1,66 @@
+import { Routes, Route } from 'react-router-dom'
+import ProtectedRoute from './components/ProtectedRoute'
+import BottomNav from './components/BottomNav'
+import Login from './pages/Login'
+import Home from './pages/Home'
+import RecipeList from './pages/RecipeList'
+import RecipeDetail from './pages/RecipeDetail'
+import AddRecipe from './pages/AddRecipe'
+import Profile from './pages/Profile'
+
+function Layout({ children }) {
+  return (
+    <div className="max-w-app mx-auto min-h-screen pb-20">
+      {children}
+      <BottomNav />
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout><Home /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/recipes"
+        element={
+          <ProtectedRoute>
+            <Layout><RecipeList /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/recipes/:id"
+        element={
+          <ProtectedRoute>
+            <Layout><RecipeDetail /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/add"
+        element={
+          <ProtectedRoute>
+            <Layout><AddRecipe /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <Layout><Profile /></Layout>
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
+  )
+}
