@@ -68,6 +68,7 @@ class RecipeCreate(BaseModel):
     name: str
     cover_photo_url: Optional[str] = None
     description: Optional[str] = None
+    story: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
     cuisine: Optional[str] = None
@@ -87,6 +88,7 @@ class RecipeResponse(BaseModel):
     author_full_name: Optional[str] = None
     cover_photo_url: Optional[str] = None
     description: Optional[str] = None
+    story: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
     cuisine: Optional[str] = None
@@ -107,6 +109,7 @@ class RecipeUpdate(BaseModel):
     name: Optional[str] = None
     cover_photo_url: Optional[str] = None
     description: Optional[str] = None
+    story: Optional[str] = None
     servings: Optional[int] = None
     prep_time_minutes: Optional[int] = None
     cuisine: Optional[str] = None

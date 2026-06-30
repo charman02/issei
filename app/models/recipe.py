@@ -21,6 +21,7 @@ class Recipe(Base):
     name: Mapped[str] = mapped_column()
     cover_photo_url: Mapped[Optional[str]] = mapped_column(nullable=True)
     description: Mapped[Optional[str]] = mapped_column(nullable=True)
+    story: Mapped[Optional[str]] = mapped_column(nullable=True)
     servings: Mapped[Optional[int]] = mapped_column(nullable=True)
     prep_time_minutes: Mapped[Optional[int]] = mapped_column(nullable=True)
     cuisine: Mapped[Optional[str]] = mapped_column(nullable=True)

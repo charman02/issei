@@ -27,6 +27,7 @@ def create_recipe(
         name=recipe_in.name,
         cover_photo_url=recipe_in.cover_photo_url,
         description=recipe_in.description,
+        story=recipe_in.story,
         servings=recipe_in.servings,
         prep_time_minutes=recipe_in.prep_time_minutes,
         cuisine=recipe_in.cuisine,
@@ -100,6 +101,18 @@ def list_recipes(
         selectinload(Recipe.steps),
         selectinload(Recipe.user)
     ).all()
+
+@router.get("/browse", response_model=list[RecipeResponse])
+def browse_recipes(db: Session = Depends(get_db)):
+    recipes = db.query(Recipe).filter(
+        Recipe.deleted_at == None
+    ).options(
+        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        selectinload(Recipe.ingredients),
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
+    ).order_by(Recipe.created_at.desc()).all()
+    return recipes
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(
@@ -175,6 +188,7 @@ def get_scaled_recipe(
         "author_full_name": recipe.author_full_name,
         "cover_photo_url": recipe.cover_photo_url,
         "description": recipe.description,
+        "story": recipe.story,
         "servings": servings,  # return TARGET servings, not original
         "prep_time_minutes": recipe.prep_time_minutes,
         "cuisine": recipe.cuisine,
