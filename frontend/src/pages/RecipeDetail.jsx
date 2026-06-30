@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import client from '../api/client'
+import CoverImage from '../components/CoverImage'
 
 export default function RecipeDetail() {
   const { id } = useParams()
@@ -19,7 +20,7 @@ export default function RecipeDetail() {
     return (
       <div className="p-6 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <button onClick={() => navigate('/recipes')} className="text-accent text-sm">
+        <button onClick={() => navigate('/my-recipes')} className="text-accent text-sm">
           Back to recipes
         </button>
       </div>
@@ -41,10 +42,14 @@ export default function RecipeDetail() {
 
   return (
     <div>
-      <div className="w-full h-48 bg-secondary/30" />
+      <CoverImage url={recipe.cover_photo_url} size="lg" className="w-full h-48" />
 
       <div className="px-4 pt-5 pb-6">
         <h1 className="font-serif text-2xl font-bold text-primary mb-2">{recipe.name}</h1>
+
+        {recipe.author_full_name && (
+          <p className="text-sm text-gray-400 mb-2">By {recipe.author_full_name}</p>
+        )}
 
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
           {recipe.servings && <span>Serves {recipe.servings}</span>}
@@ -54,6 +59,15 @@ export default function RecipeDetail() {
 
         {recipe.description && (
           <p className="text-sm text-gray-600 mb-6">{recipe.description}</p>
+        )}
+
+        {recipe.story && (
+          <div className="bg-cream rounded-xl p-4 mb-6">
+            <h2 className="font-serif text-base font-semibold text-accent mb-2">The Story</h2>
+            <p className="font-serif text-sm text-primary/80 italic whitespace-pre-line leading-relaxed">
+              {recipe.story}
+            </p>
+          </div>
         )}
 
         <h2 className="font-serif text-lg font-semibold text-primary mb-3">Ingredients</h2>

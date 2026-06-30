@@ -12,20 +12,30 @@ const navItems = [
     ),
   },
   {
-    label: 'Recipes',
-    path: '/recipes',
+    label: 'Browse',
+    path: '/browse',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
+        <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm4.28 5.47a.75.75 0 01.176.79l-1.875 5a.75.75 0 01-.44.44l-5 1.875a.75.75 0 01-.965-.965l1.875-5a.75.75 0 01.44-.44l5-1.875a.75.75 0 01.614.176zM12 13.125a1.125 1.125 0 100-2.25 1.125 1.125 0 000 2.25z" clipRule="evenodd" />
       </svg>
     ),
   },
   {
     label: 'Add',
     path: '/add',
+    center: true,
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+        <path fillRule="evenodd" d="M12 3.75a.75.75 0 01.75.75v6.75h6.75a.75.75 0 010 1.5h-6.75v6.75a.75.75 0 01-1.5 0v-6.75H4.5a.75.75 0 010-1.5h6.75V4.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
+    label: 'My Recipes',
+    path: '/my-recipes',
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path fillRule="evenodd" d="M12 3.75a.75.75 0 01.75.75v6.75h6.75a.75.75 0 010 1.5h-6.75v6.75a.75.75 0 01-1.5 0v-6.75H4.5a.75.75 0 010-1.5h6.75V4.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+        <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
       </svg>
     ),
   },
@@ -46,9 +56,21 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-secondary/40">
-      <div className="max-w-app mx-auto flex justify-around py-2">
+      <div className="max-w-app mx-auto flex justify-around items-center py-2">
         {navItems.map((item) => {
           const active = location.pathname === item.path
+          if (item.center) {
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                aria-label={item.label}
+                className="flex items-center justify-center w-12 h-12 -mt-4 rounded-full bg-accent text-white shadow-md"
+              >
+                {item.icon}
+              </button>
+            )
+          }
           return (
             <button
               key={item.path}

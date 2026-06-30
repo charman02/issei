@@ -5,6 +5,8 @@ import client from '../api/client'
 export default function Login() {
   const [tab, setTab] = useState('login')
   const [email, setEmail] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,8 +25,7 @@ export default function Login() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
       localStorage.setItem('issei_token', data.access_token)
-      const { data: user } = await client.get('/auth/me')
-      localStorage.setItem('issei_user', JSON.stringify(user))
+      localStorage.setItem('issei_user', JSON.stringify(data.user))
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed')
@@ -42,7 +43,12 @@ export default function Login() {
     }
     setLoading(true)
     try {
-      await client.post('/auth/signup', { email, password })
+      await client.post('/auth/signup', {
+        email,
+        password,
+        first_name: firstName,
+        last_name: lastName,
+      })
       const params = new URLSearchParams()
       params.append('username', email)
       params.append('password', password)
@@ -50,8 +56,7 @@ export default function Login() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
       localStorage.setItem('issei_token', data.access_token)
-      const { data: user } = await client.get('/auth/me')
-      localStorage.setItem('issei_user', JSON.stringify(user))
+      localStorage.setItem('issei_user', JSON.stringify(data.user))
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.detail || 'Signup failed')
@@ -117,6 +122,22 @@ export default function Login() {
           </form>
         ) : (
           <form onSubmit={handleSignup} className="space-y-4">
+            <input
+              type="text"
+              placeholder="First name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              required
+              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+            />
+            <input
+              type="text"
+              placeholder="Last name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
+              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+            />
             <input
               type="email"
               placeholder="Email"

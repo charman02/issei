@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
+import CoverImage from '../components/CoverImage'
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -24,19 +25,24 @@ export default function Home() {
 
   if (recipes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-        <h1 className="font-serif text-6xl font-bold text-primary mb-4">一世</h1>
-        <p className="font-serif text-xl text-primary mb-2">Preserve your family's recipes.</p>
-        <p className="text-sm text-gray-500 mb-8 max-w-xs">
-          Keep cultural cooking traditions alive across generations — with room for imprecise
-          measurements and the way recipes are actually passed down.
-        </p>
-        <button
-          onClick={() => navigate('/add')}
-          className="px-6 py-3 rounded-lg bg-accent text-white font-medium text-sm"
-        >
-          Add your first recipe
-        </button>
+      <div className="min-h-screen px-6">
+        <h2 className="font-serif text-xl text-primary pt-8 mb-2">
+          {getGreeting()}, {user.first_name || 'chef'}.
+        </h2>
+        <div className="flex flex-col items-center justify-center text-center pt-16">
+          <h1 className="font-serif text-6xl font-bold text-primary mb-4">一世</h1>
+          <p className="font-serif text-xl text-primary mb-2">Preserve your family's recipes.</p>
+          <p className="text-sm text-gray-500 mb-8 max-w-xs">
+            Keep cultural cooking traditions alive across generations — with room for imprecise
+            measurements and the way recipes are actually passed down.
+          </p>
+          <button
+            onClick={() => navigate('/add')}
+            className="px-6 py-3 rounded-lg bg-accent text-white font-medium text-sm"
+          >
+            Add your first recipe
+          </button>
+        </div>
       </div>
     )
   }
@@ -45,7 +51,7 @@ export default function Home() {
     <div className="px-4 pt-8">
       <p className="font-serif text-2xl text-primary mb-1">一世</p>
       <h2 className="font-serif text-xl text-primary mb-6">
-        {getGreeting()}, {user.email?.split('@')[0] || 'chef'}.
+        {getGreeting()}, {user.first_name || 'chef'}.
       </h2>
 
       <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
@@ -56,17 +62,24 @@ export default function Home() {
           <button
             key={recipe.id}
             onClick={() => navigate(`/recipes/${recipe.id}`)}
-            className="flex-shrink-0 w-44 bg-surface rounded-xl p-4 shadow-sm text-left"
+            className="flex-shrink-0 w-44 bg-surface rounded-xl overflow-hidden shadow-sm text-left"
           >
-            <div className="w-full h-24 bg-secondary/30 rounded-lg mb-3" />
-            <p className="font-serif font-semibold text-sm text-primary truncate">
-              {recipe.name}
-            </p>
-            {recipe.cuisine && (
-              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-secondary/40 text-gray-600 rounded-full">
-                {recipe.cuisine}
-              </span>
-            )}
+            <CoverImage url={recipe.cover_photo_url} size="sm" className="w-full h-24" />
+            <div className="p-4">
+              <p className="font-serif font-semibold text-sm text-primary truncate">
+                {recipe.name}
+              </p>
+              {recipe.author_full_name && (
+                <p className="text-xs text-gray-400 truncate mt-0.5">
+                  {recipe.author_full_name}
+                </p>
+              )}
+              {recipe.cuisine && (
+                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-secondary/40 text-gray-600 rounded-full">
+                  {recipe.cuisine}
+                </span>
+              )}
+            </div>
           </button>
         ))}
       </div>
