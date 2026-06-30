@@ -120,15 +120,15 @@ export default function Browse() {
         />
       </div>
 
-      {/* Diet filter chips */}
-      <div className="flex gap-2 overflow-x-auto px-4 pb-4 scrollbar-hide">
+      {/* Diet filter chips — wrap so all options stay visible on mobile */}
+      <div className="flex flex-wrap gap-2 px-4 pb-4">
         {DIET_FILTERS.map((diet) => {
           const active = activeDiets.includes(diet)
           return (
             <button
               key={diet}
               onClick={() => toggleDiet(diet)}
-              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm border ${
+              className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
                 active
                   ? 'bg-accent text-white border-accent'
                   : 'bg-surface text-gray-600 border-secondary'

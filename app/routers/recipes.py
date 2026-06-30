@@ -120,9 +120,10 @@ def get_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Any logged-in user can view any recipe (Browse is a shared feed).
+    # Editing/deleting remains owner-only — see patch_recipe.
     recipe = db.query(Recipe).filter(
         Recipe.id == recipe_id,
-        Recipe.user_id == current_user.id,
         Recipe.deleted_at == None
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
@@ -141,9 +142,9 @@ def get_scaled_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Viewable by any logged-in user, like get_recipe.
     recipe = db.query(Recipe).filter(
         Recipe.id == recipe_id,
-        Recipe.user_id == current_user.id,
         Recipe.deleted_at == None
     ).options(
         selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
@@ -153,7 +154,7 @@ def get_scaled_recipe(
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
+
     if recipe.servings is None:
         raise HTTPException(
             status_code=400,
