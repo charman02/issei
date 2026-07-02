@@ -14,11 +14,11 @@ export default function CoverImage({ url, size = 'md', className = '' }) {
   const s = sizes[size] || sizes.md
   return (
     <div
-      className={`bg-cream flex flex-col items-center justify-center text-center px-3 ${className}`}
+      className={`bg-paper flex flex-col items-center justify-center text-center px-3 ${className}`}
     >
-      <span className={`font-serif text-accent/70 leading-none ${s.mark}`}>一世</span>
-      <span className={`text-accent/60 mt-1.5 leading-tight ${s.text}`}>
-        Add a photo to bring this recipe to life
+      <span className={`font-serif text-terra/70 leading-none ${s.mark}`}>一世</span>
+      <span className={`text-ink-soft/80 mt-1.5 leading-tight ${s.text}`}>
+        A photo brings this dish to life
       </span>
     </div>
   )
