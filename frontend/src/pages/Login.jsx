@@ -131,7 +131,7 @@ export default function Login() {
               disabled={loading}
               className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
             >
-              {loading ? 'Logging in...' : 'Log In'}
+              {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
         ) : (
@@ -181,7 +181,7 @@ export default function Login() {
               disabled={loading}
               className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
             >
-              {loading ? 'Creating account...' : 'Join the table'}
+              {loading ? 'Setting your table…' : 'Join the table'}
             </button>
           </form>
         )}
