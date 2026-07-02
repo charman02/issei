@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
+import Wordmark from '../components/Wordmark'
 
 export default function Login() {
   const [tab, setTab] = useState('login')
@@ -66,30 +67,43 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6">
-      <h1 className="font-serif text-5xl font-bold text-ink mb-2">一世</h1>
-      <p className="text-sm text-ink-soft">Issei</p>
-      <p className="text-sm text-ink-soft italic mb-8 mt-1 text-center max-w-xs">
+    <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6 py-12">
+      <div className="text-center mb-2">
+        <Wordmark className="text-[56px]" as="h1" />
+      </div>
+      <p className="font-serif italic text-base text-ink-soft mb-6 text-center max-w-xs">
         Recipes that live in memory, not cookbooks.
       </p>
+
+      {/* The meaning of the name — every newcomer meets it before signing up. */}
+      <div className="relative w-full max-w-sm bg-card border border-line rounded-xl px-4 py-4 mb-8">
+        <span className="absolute -top-2.5 left-4 bg-paper px-1.5 font-serif text-[13px] text-terra tracking-[0.1em]">
+          一世
+        </span>
+        <p className="text-[12.5px] leading-relaxed text-ink-soft">
+          <span className="font-serif italic text-[13.5px] text-ink">Issei</span> — the first
+          of a family to arrive somewhere new. They carry the recipes no one wrote down. This
+          is where those recipes stay alive, passed from one generation to the next.
+        </p>
+      </div>
 
       <div className="w-full max-w-sm">
         <div className="flex border-b border-line mb-6">
           <button
             onClick={() => { setTab('login'); setError('') }}
-            className={`flex-1 pb-2 text-sm font-medium ${
+            className={`flex-1 pb-2 text-sm font-medium tracking-[0.02em] ${
               tab === 'login' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
             }`}
           >
-            Login
+            Sign In
           </button>
           <button
             onClick={() => { setTab('signup'); setError('') }}
-            className={`flex-1 pb-2 text-sm font-medium ${
+            className={`flex-1 pb-2 text-sm font-medium tracking-[0.02em] ${
               tab === 'signup' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
             }`}
           >
-            Sign Up
+            Join the table
           </button>
         </div>
 
@@ -118,7 +132,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-terra text-white font-medium text-sm disabled:opacity-50"
+              className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
             >
               {loading ? 'Logging in...' : 'Log In'}
             </button>
@@ -168,7 +182,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-terra text-white font-medium text-sm disabled:opacity-50"
+              className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
             >
               {loading ? 'Creating account...' : 'Join the table'}
             </button>
