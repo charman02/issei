@@ -76,31 +76,28 @@ export default function Login() {
       </p>
 
       {/* The meaning of the name — every newcomer meets it before signing up. */}
-      <div className="relative w-full max-w-sm bg-card border border-line rounded-xl px-4 py-4 mb-8">
-        <span className="absolute -top-2.5 left-4 bg-paper px-1.5 font-serif text-[13px] text-terra tracking-[0.1em]">
-          一世
-        </span>
-        <p className="text-[12.5px] leading-relaxed text-ink-soft">
-          <span className="font-serif italic text-[13.5px] text-ink">Issei</span> — the first
-          of a family to arrive somewhere new. They carry the recipes no one wrote down. This
-          is where those recipes stay alive, passed from one generation to the next.
+      <div className="w-full max-w-sm mb-8 pl-4 border-l-2 border-terra">
+        <p className="font-serif text-xs text-terra tracking-[0.2em] mb-1.5">一世 · issei</p>
+        <p className="font-serif italic text-sm leading-relaxed text-ink-soft">
+          The first of a family to arrive somewhere new — the ones who carry the recipes no one
+          wrote down. This is where they stay alive, passed from one generation to the next.
         </p>
       </div>
 
       <div className="w-full max-w-sm">
-        <div className="flex border-b border-line mb-6">
+        <div className="flex bg-[#E6D7BD] rounded-full p-1 mb-6">
           <button
             onClick={() => { setTab('login'); setError('') }}
-            className={`flex-1 pb-2 text-sm font-medium tracking-[0.02em] ${
-              tab === 'login' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
+            className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
+              tab === 'login' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
             }`}
           >
             Sign In
           </button>
           <button
             onClick={() => { setTab('signup'); setError('') }}
-            className={`flex-1 pb-2 text-sm font-medium tracking-[0.02em] ${
-              tab === 'signup' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
+            className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
+              tab === 'signup' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
             }`}
           >
             Join the table
