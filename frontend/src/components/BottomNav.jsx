@@ -1,13 +1,14 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 
+// Consistent line-icon set (stroke 1.6, 24-grid) so the nav reads as one family.
 const navItems = [
   {
     label: 'Home',
     path: '/',
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path d="M11.47 3.841a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.061l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.689z" />
-        <path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15.75a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.432z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+        <path d="M4 11.5 12 4l8 7.5" />
+        <path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" />
       </svg>
     ),
   },
@@ -15,8 +16,9 @@ const navItems = [
     label: 'Browse',
     path: '/browse',
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm4.28 5.47a.75.75 0 01.176.79l-1.875 5a.75.75 0 01-.44.44l-5 1.875a.75.75 0 01-.965-.965l1.875-5a.75.75 0 01.44-.44l5-1.875a.75.75 0 01.614.176zM12 13.125a1.125 1.125 0 100-2.25 1.125 1.125 0 000 2.25z" clipRule="evenodd" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none" />
       </svg>
     ),
   },
@@ -25,8 +27,8 @@ const navItems = [
     path: '/add',
     center: true,
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
-        <path fillRule="evenodd" d="M12 3.75a.75.75 0 01.75.75v6.75h6.75a.75.75 0 010 1.5h-6.75v6.75a.75.75 0 01-1.5 0v-6.75H4.5a.75.75 0 010-1.5h6.75V4.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-6 h-6">
+        <path d="M12 5v14M5 12h14" />
       </svg>
     ),
   },
@@ -34,8 +36,9 @@ const navItems = [
     label: 'Kitchen',
     path: '/my-recipes',
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+        <path d="M6 4h9a2 2 0 0 1 2 2v14l-3.5-2L10 20V6a2 2 0 0 0-2-2H6z" />
+        <path d="M6 4v14" />
       </svg>
     ),
   },
@@ -43,8 +46,9 @@ const navItems = [
     label: 'You',
     path: '/profile',
     icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-        <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-[22px] h-[22px]">
+        <circle cx="12" cy="8" r="3.4" />
+        <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
       </svg>
     ),
   },
@@ -55,32 +59,42 @@ export default function BottomNav() {
   const navigate = useNavigate()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-line">
-      <div className="max-w-app mx-auto flex justify-around items-center py-2">
+    <nav className="fixed bottom-0 left-0 right-0 bg-[#F6EDDD] border-t border-line">
+      <div className="max-w-app mx-auto flex justify-around items-center h-[68px] px-1.5">
         {navItems.map((item) => {
           const active = location.pathname === item.path
+
           if (item.center) {
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 aria-label={item.label}
-                className="flex items-center justify-center w-12 h-12 -mt-4 rounded-full bg-terra text-white shadow-warm-lg"
+                className="flex flex-col items-center -mt-6"
               >
-                {item.icon}
+                <span className="flex items-center justify-center w-[52px] h-[52px] rounded-full bg-terra text-white border-[3px] border-paper shadow-[0_8px_18px_rgba(189,90,44,0.4)]">
+                  {item.icon}
+                </span>
+                <span className="text-[9.5px] font-sans font-semibold tracking-[0.04em] text-terra mt-1">
+                  {item.label}
+                </span>
               </button>
             )
           }
+
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 ${
-                active ? 'text-terra' : 'text-ink-soft/60'
-              }`}
+              className={`flex flex-col items-center gap-0.5 ${active ? 'text-terra' : 'text-ink-soft/60'}`}
             >
-              {item.icon}
-              <span className="text-xs">{item.label}</span>
+              {/* active tab gets a soft terra seal disc behind the icon */}
+              <span className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${active ? 'bg-terra/[0.14]' : ''}`}>
+                {item.icon}
+              </span>
+              <span className="text-[9.5px] font-sans font-medium tracking-[0.04em]">
+                {item.label}
+              </span>
             </button>
           )
         })}
