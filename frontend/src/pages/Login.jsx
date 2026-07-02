@@ -170,7 +170,7 @@ export default function Login() {
             />
             <input
               type="password"
-              placeholder="Confirm Password"
+              placeholder="Confirm password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
