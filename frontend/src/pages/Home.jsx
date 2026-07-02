@@ -20,27 +20,26 @@ export default function Home() {
   }, [])
 
   if (recipes === null) {
-    return <div className="p-6 text-center text-gray-400">Loading...</div>
+    return <div className="p-6 text-center text-ink-soft">Loading...</div>
   }
 
   if (recipes.length === 0) {
     return (
       <div className="min-h-screen px-6">
-        <h2 className="font-serif text-xl text-primary pt-8 mb-2">
-          {getGreeting()}, {user.first_name || 'chef'}.
-        </h2>
+        <p className="text-terra text-xs font-sans uppercase tracking-[0.18em] pt-8">
+          {getGreeting()}, {user.first_name || 'friend'}
+        </p>
         <div className="flex flex-col items-center justify-center text-center pt-16">
-          <h1 className="font-serif text-6xl font-bold text-primary mb-4">一世</h1>
-          <p className="font-serif text-xl text-primary mb-2">Preserve your family's recipes.</p>
-          <p className="text-sm text-gray-500 mb-8 max-w-xs">
-            Keep cultural cooking traditions alive across generations — with room for imprecise
-            measurements and the way recipes are actually passed down.
+          <h1 className="font-serif text-6xl font-bold text-ink mb-4">一世</h1>
+          <p className="font-serif text-xl text-ink mb-2">Every family has a dish that means home.</p>
+          <p className="text-sm text-ink-soft mb-8 max-w-xs">
+            Start with the one you'd miss most — the taste you'd want to keep forever.
           </p>
           <button
             onClick={() => navigate('/add')}
-            className="px-6 py-3 rounded-lg bg-accent text-white font-medium text-sm"
+            className="px-6 py-3 rounded-lg bg-terra text-white font-medium text-sm"
           >
-            Add your first recipe
+            Keep your first recipe
           </button>
         </div>
       </div>
@@ -49,33 +48,34 @@ export default function Home() {
 
   return (
     <div className="px-4 pt-8">
-      <p className="font-serif text-2xl text-primary mb-1">一世</p>
-      <h2 className="font-serif text-xl text-primary mb-6">
-        {getGreeting()}, {user.first_name || 'chef'}.
-      </h2>
+      <p className="text-terra text-xs font-sans uppercase tracking-[0.18em] mb-1">
+        {getGreeting()}, {user.first_name || 'friend'}
+      </p>
+      <h2 className="font-serif text-2xl text-ink">What's cooking tonight?</h2>
+      <p className="text-sm text-ink-soft italic mb-6">
+        Recipes that live in memory, not cookbooks.
+      </p>
 
-      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-        Recent Recipes
-      </h3>
+      <h3 className="section-label mb-3">From your kitchen</h3>
       <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 scrollbar-hide">
         {recipes.slice(0, 10).map((recipe) => (
           <button
             key={recipe.id}
             onClick={() => navigate(`/recipes/${recipe.id}`)}
-            className="flex-shrink-0 w-44 bg-surface rounded-xl overflow-hidden shadow-sm text-left"
+            className="flex-shrink-0 w-44 bg-card rounded-xl overflow-hidden shadow-sm text-left"
           >
             <CoverImage url={recipe.cover_photo_url} size="sm" className="w-full h-24" />
             <div className="p-4">
-              <p className="font-serif font-semibold text-sm text-primary truncate">
+              <p className="font-serif font-semibold text-sm text-ink truncate">
                 {recipe.name}
               </p>
               {recipe.author_full_name && (
-                <p className="text-xs text-gray-400 truncate mt-0.5">
+                <p className="text-xs text-ink-soft truncate mt-0.5">
                   {recipe.author_full_name}
                 </p>
               )}
               {recipe.cuisine && (
-                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-secondary/40 text-gray-600 rounded-full">
+                <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-line/50 text-ink-soft rounded-full">
                   {recipe.cuisine}
                 </span>
               )}
