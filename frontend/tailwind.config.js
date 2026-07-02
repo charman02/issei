@@ -22,7 +22,7 @@ export default {
         surface: '#FFFFFF',
       },
       fontFamily: {
-        serif: ['Playfair Display', 'serif'],
+        serif: ['Fraunces', 'Playfair Display', 'serif'],
         sans: ['Inter', 'sans-serif'],
       },
       boxShadow: {
