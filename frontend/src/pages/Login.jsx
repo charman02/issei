@@ -66,16 +66,19 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col items-center justify-center px-6">
-      <h1 className="font-serif text-5xl font-bold text-primary mb-2">一世</h1>
-      <p className="text-sm text-gray-500 mb-8">Issei</p>
+    <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6">
+      <h1 className="font-serif text-5xl font-bold text-ink mb-2">一世</h1>
+      <p className="text-sm text-ink-soft">Issei</p>
+      <p className="text-sm text-ink-soft italic mb-8 mt-1 text-center max-w-xs">
+        Recipes that live in memory, not cookbooks.
+      </p>
 
       <div className="w-full max-w-sm">
-        <div className="flex border-b border-secondary mb-6">
+        <div className="flex border-b border-line mb-6">
           <button
             onClick={() => { setTab('login'); setError('') }}
             className={`flex-1 pb-2 text-sm font-medium ${
-              tab === 'login' ? 'border-b-2 border-accent text-accent' : 'text-gray-400'
+              tab === 'login' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
             }`}
           >
             Login
@@ -83,7 +86,7 @@ export default function Login() {
           <button
             onClick={() => { setTab('signup'); setError('') }}
             className={`flex-1 pb-2 text-sm font-medium ${
-              tab === 'signup' ? 'border-b-2 border-accent text-accent' : 'text-gray-400'
+              tab === 'signup' ? 'border-b-2 border-terra text-terra' : 'text-ink-soft'
             }`}
           >
             Sign Up
@@ -102,7 +105,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <input
               type="password"
@@ -110,12 +113,12 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-accent text-white font-medium text-sm disabled:opacity-50"
+              className="w-full py-3 rounded-lg bg-terra text-white font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Logging in...' : 'Log In'}
             </button>
@@ -128,7 +131,7 @@ export default function Login() {
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <input
               type="text"
@@ -136,7 +139,7 @@ export default function Login() {
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <input
               type="email"
@@ -144,7 +147,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <input
               type="password"
@@ -152,7 +155,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <input
               type="password"
@@ -160,14 +163,14 @@ export default function Login() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-secondary bg-surface text-sm focus:outline-none focus:border-accent"
+              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
             />
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-accent text-white font-medium text-sm disabled:opacity-50"
+              className="w-full py-3 rounded-lg bg-terra text-white font-medium text-sm disabled:opacity-50"
             >
-              {loading ? 'Creating account...' : 'Sign Up'}
+              {loading ? 'Creating account...' : 'Join the table'}
             </button>
           </form>
         )}
