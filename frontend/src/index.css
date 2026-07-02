@@ -11,3 +11,19 @@
     display: none;
   }
 }
+
+@layer components {
+  .section-label {
+    @apply text-[11px] font-sans font-medium uppercase tracking-[0.16em] text-ink-soft;
+  }
+  .chip {
+    @apply inline-block px-4 py-1.5 rounded-full text-sm font-sans border border-line bg-card text-ink-soft transition-colors;
+  }
+  .chip--active { @apply bg-terra text-white border-terra; }
+  .chip--herb { @apply bg-herb text-white border-herb; }
+  .chip--saffron { @apply bg-saffron text-[#4a3210] border-saffron; }
+  .chip--plum { @apply bg-plum text-white border-plum; }
+  .story-callout {
+    @apply bg-[#F3E7D0] border-l-[3px] border-terra rounded-r-xl p-4;
+  }
+}
