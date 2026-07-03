@@ -225,14 +225,101 @@ def patch_recipe(
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
-    update_data = recipe_in.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
+
+    # Which child collections did the client actually send? Use the dumped
+    # set to detect presence, but read the values off the Pydantic model so
+    # they stay as typed objects (IngredientCreate/StepCreate), not dicts.
+    sent_fields = recipe_in.model_dump(exclude_unset=True)
+    sections_sent = "ingredient_sections" in sent_fields
+    ingredients_sent = "ingredients" in sent_fields
+    steps_sent = "steps" in sent_fields
+
+    new_sections = recipe_in.ingredient_sections if sections_sent else None
+    new_ingredients = recipe_in.ingredients if ingredients_sent else None
+    new_steps = recipe_in.steps if steps_sent else None
+
+    # Apply scalar fields only (skip the child collections handled below).
+    scalar_fields = {
+        k: v for k, v in sent_fields.items()
+        if k not in ("ingredient_sections", "ingredients", "steps")
+    }
+    for field, value in scalar_fields.items():
         setattr(recipe, field, value)
 
-    db.add(recipe)
+    # Replace children only when the client provided that collection. We bulk-
+    # delete existing rows by recipe_id (synchronize_session=False bypasses ORM
+    # instance tracking, avoiding stale-instance conflicts with the delete-orphan
+    # cascade) and re-insert fresh. IDs aren't referenced externally, so
+    # reassigning them is harmless. A fresh re-query happens after commit.
+    recipe_id_val = recipe.id
+
+    if sections_sent or ingredients_sent:
+        db.query(Ingredient).filter(
+            Ingredient.recipe_id == recipe_id_val
+        ).delete(synchronize_session=False)
+        db.query(IngredientSection).filter(
+            IngredientSection.recipe_id == recipe_id_val
+        ).delete(synchronize_session=False)
+        db.flush()
+
+        for section_in in (new_sections or []):
+            new_section = IngredientSection(
+                recipe_id=recipe_id_val,
+                name=section_in.name,
+                position=section_in.position,
+            )
+            db.add(new_section)
+            db.flush()
+            for ing_in in section_in.ingredients:
+                db.add(Ingredient(
+                    recipe_id=recipe_id_val,
+                    section_id=new_section.id,
+                    name=ing_in.name,
+                    quantity_text=ing_in.quantity_text,
+                    quantity_value=ing_in.quantity_value,
+                    unit=ing_in.unit,
+                    quantity_type=ing_in.quantity_type,
+                    notes=ing_in.notes,
+                    position=ing_in.position,
+                ))
+
+        for ing_in in (new_ingredients or []):
+            db.add(Ingredient(
+                recipe_id=recipe_id_val,
+                section_id=None,
+                name=ing_in.name,
+                quantity_text=ing_in.quantity_text,
+                quantity_value=ing_in.quantity_value,
+                unit=ing_in.unit,
+                quantity_type=ing_in.quantity_type,
+                notes=ing_in.notes,
+                position=ing_in.position,
+            ))
+
+    if steps_sent:
+        db.query(Step).filter(
+            Step.recipe_id == recipe_id_val
+        ).delete(synchronize_session=False)
+        db.flush()
+        for step_in in new_steps:
+            db.add(Step(
+                recipe_id=recipe_id_val,
+                position=step_in.position,
+                content=step_in.content,
+                section_header=step_in.section_header,
+            ))
+
     db.commit()
-    db.refresh(recipe)
+
+    # Re-fetch a clean instance with children eagerly loaded (don't refresh the
+    # working instance, whose relationship collections may hold deleted rows).
+    db.expire_all()
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id_val).options(
+        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        selectinload(Recipe.ingredients),
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user)
+    ).first()
     return recipe
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
