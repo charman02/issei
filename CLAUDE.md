@@ -82,5 +82,6 @@ Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + A
 - Components in `src/components/`, pages in `src/pages/`
 - Hooks only, no class components
 - No UI libraries (no shadcn, no MUI) — custom Tailwind only
+- Don't git commit without my approval
 
 **MVP screens:** Login/Signup, Home (empty + populated states), Recipe List, Recipe Detail, Add Recipe
