@@ -3,13 +3,13 @@ import CoverImage from './CoverImage'
 // The signature repeated unit: a recipe as a designed "card in a recipe box."
 // - squared corners (heirloom, not app-rounded)
 // - layered paper edge: hairline border + stacked warm shadow
-// - cuisine as a stamped tag ON the photo, not a gray pill
+// - cuisine as a cream stamped tag ON the photo, not a gray pill
 // - Fraunces name, italic terra "kept by" byline
 //
 // variant: "row" (fixed-width, for horizontal scroll rows) | "grid" (fills its
 // grid cell). onClick navigates to the recipe.
 export default function RecipeCard({ recipe, onClick, variant = 'row' }) {
-  const widthClass = variant === 'row' ? 'w-44 flex-none' : 'w-full'
+  const widthClass = variant === 'row' ? 'w-[168px] flex-none' : 'w-full'
 
   return (
     <button
@@ -20,20 +20,20 @@ export default function RecipeCard({ recipe, onClick, variant = 'row' }) {
         <CoverImage
           url={recipe.cover_photo_url}
           size="sm"
-          className={`w-full ${variant === 'row' ? 'h-28' : 'h-32'}`}
+          className="w-full h-[104px]"
         />
         {recipe.cuisine && (
-          <span className="absolute top-2 left-2 text-[9.5px] font-sans font-semibold uppercase tracking-[0.14em] text-white px-2 py-[3px] rounded-[2px] border border-white/70 bg-[rgba(74,48,22,0.42)] backdrop-blur-[2px]">
+          <span className="absolute top-[7px] left-[7px] text-[9px] font-sans font-semibold uppercase tracking-[0.12em] text-[#5C3A1E] bg-[rgba(247,238,221,0.94)] px-[7px] py-[3px] rounded-[2px]">
             {recipe.cuisine}
           </span>
         )}
       </div>
-      <div className="px-3 pt-2.5 pb-3">
-        <p className="font-serif font-bold text-[15px] leading-tight text-ink truncate">
+      <div className="px-[11px] pt-[9px] pb-[11px]">
+        <p className="font-serif font-bold text-[15px] leading-[1.15] text-ink">
           {recipe.name}
         </p>
         {recipe.author_full_name && (
-          <p className="font-serif italic text-xs text-terra mt-1 truncate">
+          <p className="font-serif italic text-[11.5px] text-terra mt-[3px]">
             kept by {recipe.author_full_name}
           </p>
         )}

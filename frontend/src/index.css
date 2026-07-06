@@ -16,8 +16,23 @@
   .section-label {
     @apply text-[11px] font-sans font-medium uppercase tracking-[0.16em] text-ink-soft;
   }
+  /* Field treatment C (locked): cream card fill, soft warm border, terra focus
+     ring + border. Inter body. Used by Login, Add/Edit forms, and search. */
+  .field {
+    @apply w-full font-sans text-[13.5px] text-ink bg-card border border-line rounded-[10px] px-3.5 py-3
+      placeholder:text-ink-soft/70 focus:outline-none focus:border-terra
+      focus:ring-2 focus:ring-terra/[0.12] transition-colors;
+  }
+  .field--icon { @apply pl-10; }
+  /* Login uses treatment C's warmer border (#ddcba8); search + Add/Edit keep --line. */
+  .field--login { @apply border-[#ddcba8]; }
+  /* Primary CTA: orange Fraunces button with warm terra shadow. */
+  .btn-primary {
+    @apply w-full py-3 rounded-[10px] bg-terra text-white font-serif font-semibold text-sm
+      shadow-[0_8px_16px_rgba(189,90,44,0.3)] transition-opacity disabled:opacity-50;
+  }
   .chip {
-    @apply inline-block px-4 py-1.5 rounded-full text-sm font-sans border border-line bg-card text-ink-soft transition-colors;
+    @apply inline-block px-[13px] py-[5px] rounded-full text-[12px] font-sans border border-line bg-card text-ink-soft transition-colors;
   }
   .chip--active { @apply bg-terra text-white border-terra; }
   .chip--herb { @apply bg-herb text-white border-herb; }

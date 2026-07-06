@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
-import CoverImage from '../components/CoverImage'
+import RecipeCard from '../components/RecipeCard'
+import SectionHeader from '../components/SectionHeader'
+import IconField from '../components/IconField'
 
 const DIET_FILTERS = [
   'Vegetarian',
@@ -42,27 +44,6 @@ function buildSections(recipes) {
   })
 
   return sections
-}
-
-function RecipeCard({ recipe, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex-shrink-0 w-40 bg-card rounded-xl overflow-hidden shadow-warm text-left"
-    >
-      <CoverImage url={recipe.cover_photo_url} size="sm" className="w-full h-24" />
-      <div className="p-3">
-        <p className="font-serif font-semibold text-sm text-ink truncate">
-          {recipe.name}
-        </p>
-        {recipe.author_full_name && (
-          <p className="text-xs text-ink-soft truncate mt-0.5">
-            kept by {recipe.author_full_name}
-          </p>
-        )}
-      </div>
-    </button>
-  )
 }
 
 export default function Browse() {
@@ -112,22 +93,24 @@ export default function Browse() {
   return (
     <div className="pt-6">
       <div className="px-4">
-        <h1 className="font-serif text-2xl font-bold text-ink">Browse</h1>
-        <p className="text-sm text-ink-soft italic mb-4">
+        <h1 className="font-serif font-black text-[28px] text-ink">Browse</h1>
+        <p className="font-serif italic text-sm text-ink-soft mt-0.5">
           Wander through everyone's kitchens.
         </p>
 
-        <input
+        <IconField
+          icon="search"
+          iconClassName="text-ink-soft"
           type="text"
-          placeholder="Search recipes..."
+          placeholder="Search recipes"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-4 py-2.5 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra mb-4"
+          wrapperClassName="mt-3.5"
         />
       </div>
 
       {/* Diet filter chips — wrap so all options stay visible on mobile */}
-      <div className="flex flex-wrap gap-2 px-4 pb-4">
+      <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1">
         {DIET_FILTERS.map((diet) => (
           <button
             key={diet}
@@ -145,13 +128,13 @@ export default function Browse() {
           No recipes found.
         </p>
       ) : (
-        <div className="space-y-6">
+        <div>
           {sections.map((section) => (
             <section key={section.title}>
-              <h2 className="font-serif text-lg font-semibold text-ink mb-3 px-4">
-                {section.title}
-              </h2>
-              <div className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
+              <div className="px-4">
+                <SectionHeader seal={false} className="mt-5">{section.title}</SectionHeader>
+              </div>
+              <div className="flex gap-3.5 overflow-x-auto px-4 pb-1 scrollbar-hide">
                 {section.recipes.map((recipe) => (
                   <RecipeCard
                     key={`${section.title}-${recipe.id}`}

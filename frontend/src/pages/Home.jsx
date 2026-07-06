@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
 import RecipeCard from '../components/RecipeCard'
+import SectionHeader from '../components/SectionHeader'
 import Wordmark from '../components/Wordmark'
 
 function getGreeting() {
@@ -11,27 +12,19 @@ function getGreeting() {
   return 'Good evening'
 }
 
-// Section header: spaced label + hairline rule + a small terra seal at the end.
-function SectionHeader({ children }) {
-  return (
-    <div className="flex items-center gap-2.5 mb-3">
-      <span className="section-label whitespace-nowrap">{children}</span>
-      <span className="h-px flex-1 bg-line" />
-      <span className="font-serif text-xs text-terra/60">issei.</span>
-    </div>
-  )
-}
-
 export default function Home() {
-  const [recipes, setRecipes] = useState(null)
+  // mine = recipes the user has kept; community = everyone's feed (newest first)
+  const [mine, setMine] = useState(null)
+  const [community, setCommunity] = useState([])
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('issei_user') || '{}')
 
   useEffect(() => {
-    client.get('/recipes').then((res) => setRecipes(res.data)).catch(() => setRecipes([]))
+    client.get('/recipes').then((res) => setMine(res.data)).catch(() => setMine([]))
+    client.get('/recipes/browse').then((res) => setCommunity(res.data)).catch(() => setCommunity([]))
   }, [])
 
-  if (recipes === null) {
+  if (mine === null) {
     return <div className="p-6 text-center text-ink-soft">Loading…</div>
   }
 
@@ -41,7 +34,8 @@ export default function Home() {
     </p>
   )
 
-  if (recipes.length === 0) {
+  // First-run: nothing kept yet. Warm hero + CTA (bottom nav still offers Add).
+  if (mine.length === 0) {
     return (
       <div className="min-h-screen px-6">
         <div className="pt-8">{greeting}</div>
@@ -53,10 +47,7 @@ export default function Home() {
           <p className="text-sm text-ink-soft mb-8 max-w-xs leading-relaxed">
             Start with the one you'd miss most — the taste you'd want to keep forever.
           </p>
-          <button
-            onClick={() => navigate('/add')}
-            className="px-6 py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)]"
-          >
+          <button onClick={() => navigate('/add')} className="btn-primary !w-auto px-6">
             Keep your first recipe
           </button>
         </div>
@@ -64,19 +55,39 @@ export default function Home() {
     )
   }
 
-  return (
-    <div className="px-4 pt-8">
-      {greeting}
-      <h1 className="font-serif font-black text-[32px] leading-[1.02] tracking-[-0.01em] text-ink mt-2">
-        What's cooking tonight?
-      </h1>
-      <p className="font-serif italic text-[15px] text-ink-soft mt-2 mb-7">
-        Recipes that live in memory, not cookbooks.
-      </p>
+  // "Passed down lately" = the community feed, excluding the user's own recipes.
+  const passedDown = community.filter((r) => r.user_id !== user.id).slice(0, 12)
 
-      <SectionHeader>From your kitchen</SectionHeader>
-      <div className="flex gap-3.5 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
-        {recipes.slice(0, 12).map((recipe) => (
+  return (
+    <div className="pt-8">
+      <div className="px-4">
+        {greeting}
+        <h1 className="font-serif font-black text-[32px] leading-[1.02] tracking-[-0.01em] text-ink mt-1.5">
+          What's cooking tonight?
+        </h1>
+        <p className="font-serif italic text-[14.5px] text-ink-soft mt-1.5">
+          Recipes that live in memory, not cookbooks.
+        </p>
+      </div>
+
+      {passedDown.length > 0 && (
+        <>
+          <div className="px-4"><SectionHeader className="mt-5">Passed down lately</SectionHeader></div>
+          <div className="flex gap-3.5 overflow-x-auto pb-1 px-4 scrollbar-hide">
+            {passedDown.map((recipe) => (
+              <RecipeCard
+                key={recipe.id}
+                recipe={recipe}
+                onClick={() => navigate(`/recipes/${recipe.id}`)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="px-4"><SectionHeader className="mt-5">From your kitchen</SectionHeader></div>
+      <div className="flex gap-3.5 overflow-x-auto pb-1 px-4 scrollbar-hide">
+        {mine.slice(0, 12).map((recipe) => (
           <RecipeCard
             key={recipe.id}
             recipe={recipe}

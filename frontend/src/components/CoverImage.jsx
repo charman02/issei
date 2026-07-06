@@ -1,9 +1,11 @@
 // Renders a recipe cover photo, or a warm cream placeholder with the 一世 mark
-// and a prompt when no photo is set. Sizing of the mark/text scales with `size`.
+// when no photo is set. The prompt text shows at md/lg (form dropzone, detail
+// hero) but is suppressed at sm — small cards read cleaner with just the mark,
+// matching the mockup's Kitchen grid placeholder.
 const sizes = {
-  sm: { mark: 'text-2xl', text: 'text-[10px]' },
-  md: { mark: 'text-4xl', text: 'text-xs' },
-  lg: { mark: 'text-6xl', text: 'text-sm' },
+  sm: { mark: 'text-2xl', text: 'text-[10px]', prompt: false },
+  md: { mark: 'text-4xl', text: 'text-xs', prompt: true },
+  lg: { mark: 'text-6xl', text: 'text-sm', prompt: true },
 }
 
 export default function CoverImage({ url, size = 'md', className = '' }) {
@@ -16,10 +18,12 @@ export default function CoverImage({ url, size = 'md', className = '' }) {
     <div
       className={`bg-paper flex flex-col items-center justify-center text-center px-3 ${className}`}
     >
-      <span className={`font-serif text-terra/70 leading-none ${s.mark}`}>一世</span>
-      <span className={`text-ink-soft/80 mt-1.5 leading-tight ${s.text}`}>
-        A photo brings this dish to life
-      </span>
+      <span className={`font-serif text-terra/60 leading-none ${s.mark}`}>一世</span>
+      {s.prompt && (
+        <span className={`text-ink-soft/80 mt-1.5 leading-tight ${s.text}`}>
+          A photo brings this dish to life
+        </span>
+      )}
     </div>
   )
 }

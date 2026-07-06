@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
 import Wordmark from '../components/Wordmark'
+import IconField from '../components/IconField'
 
 export default function Login() {
   const [tab, setTab] = useState('login')
@@ -109,40 +110,38 @@ export default function Login() {
         )}
 
         {tab === 'login' ? (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
+          <form onSubmit={handleLogin} className="space-y-3">
+            <IconField
+              icon="mail"
               type="email"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field--login"
             />
-            <input
+            <IconField
+              icon="lock"
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field--login"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className="btn-primary !mt-4">
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleSignup} className="space-y-4">
+          <form onSubmit={handleSignup} className="space-y-3">
             <input
               type="text"
               placeholder="First name"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field field--login"
             />
             <input
               type="text"
@@ -150,37 +149,36 @@ export default function Login() {
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field field--login"
             />
-            <input
+            <IconField
+              icon="mail"
               type="email"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field--login"
             />
-            <input
+            <IconField
+              icon="lock"
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field--login"
             />
-            <input
+            <IconField
+              icon="lock"
               type="password"
               placeholder="Confirm password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              className="w-full px-4 py-3 rounded-lg border border-line bg-card text-sm focus:outline-none focus:border-terra"
+              className="field--login"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-lg bg-terra text-white font-serif font-semibold text-sm shadow-[0_8px_18px_rgba(189,90,44,0.3)] disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className="btn-primary !mt-4">
               {loading ? 'Setting your table…' : 'Join the table'}
             </button>
           </form>

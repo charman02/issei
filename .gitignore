@@ -6,6 +6,7 @@ __pycache__/
 *.db
 ".vscode/" 
 frontend/node_modules/
+frontend/dist/
 
 # Brainstorming visual companion
 .superpowers/

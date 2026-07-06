@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // New heirloom palette
+        // Heirloom palette
         paper: '#EFE4D2',
         card: '#FBF6EC',
         ink: '#3A2A1C',
@@ -14,15 +14,9 @@ export default {
         saffron: '#D99A2B',
         herb: '#6F8A4D',
         plum: '#8A3D5A',
-        // Legacy tokens — retained until Task 12 migration completes
-        cream: '#F7F2EA',
-        primary: '#1A1A1A',
-        accent: '#8B5E3C',
-        secondary: '#D4C5B0',
-        surface: '#FFFFFF',
       },
       fontFamily: {
-        serif: ['Fraunces', 'Playfair Display', 'serif'],
+        serif: ['Fraunces', 'serif'],
         sans: ['Inter', 'sans-serif'],
       },
       boxShadow: {
