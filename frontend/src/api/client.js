@@ -1,7 +1,9 @@
 import axios from 'axios'
 
 const client = axios.create({
-  baseURL: 'http://localhost:8000',
+  // Defaults to the local dev backend; override with VITE_API_URL (e.g. to point
+  // at a throwaway demo backend) without editing this file.
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
 })
 
 client.interceptors.request.use((config) => {

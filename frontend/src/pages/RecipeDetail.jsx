@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import client from '../api/client'
 import Icon from '../components/Icon'
+import Wordmark from '../components/Wordmark'
 
 // Section header used inside the recipe body: Fraunces 700 bold label with a
 // trailing hairline rule. (Distinct from the uppercase-Inter SectionHeader used
@@ -76,7 +77,7 @@ export default function RecipeDetail() {
           <img src={recipe.cover_photo_url} alt="" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-paper flex items-center justify-center">
-            <span className="font-serif text-terra/50 text-6xl leading-none">一世</span>
+            <Wordmark muted className="text-6xl" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-[rgba(58,42,28,0.22)] to-transparent to-[26%]" />
@@ -102,8 +103,9 @@ export default function RecipeDetail() {
               {monogram}
             </span>
             <span className="font-serif italic text-[13.5px] text-ink-soft">
-              kept by{' '}
-              <span className="not-italic font-semibold text-terra">{recipe.author_full_name}</span>
+              kept by
+              {/* small gap so the italic "y" overhang doesn't collide with the upright name */}
+              <span className="not-italic font-semibold text-terra ml-1">{recipe.author_full_name}</span>
             </span>
           </div>
         )}
