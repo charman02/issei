@@ -239,8 +239,9 @@ def get_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Any logged-in user can view any recipe (Browse is a shared feed).
-    # Editing/deleting remains owner-only — see patch_recipe.
+    # Viewable by the owner, or by anyone if the recipe's effective visibility
+    # (its root's visibility) is public; otherwise 404. Editing/deleting remains
+    # owner-only — see patch_recipe.
     recipe = db.query(Recipe).filter(
         Recipe.id == recipe_id,
         Recipe.deleted_at == None
@@ -266,6 +267,8 @@ def get_lineage(
         Recipe.id == recipe_id, Recipe.deleted_at == None
     ).options(selectinload(Recipe.user)).first()
     if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.user_id != current_user.id and effective_visibility(recipe, db) != "public":
         raise HTTPException(status_code=404, detail="Recipe not found")
     return build_lineage_view(recipe, db)
 

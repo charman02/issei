@@ -67,18 +67,6 @@ def _node_summary(recipe, db):
     }
 
 
-def _root_of(recipe, db):
-    from app.models.recipe import Recipe
-    seen, current = set(), recipe
-    while current.parent_recipe_id is not None and current.id not in seen:
-        seen.add(current.id)
-        parent = db.query(Recipe).filter(Recipe.id == current.parent_recipe_id).first()
-        if parent is None:
-            break
-        current = parent
-    return current
-
-
 def _subtree_ids(root, db):
     from app.models.recipe import Recipe
     ids, frontier = [], [root.id]

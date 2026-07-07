@@ -1,4 +1,7 @@
-def test_plant_recipe_with_origin_creates_ghost(client, make_user):
+from app.models.ghost_ancestor import GhostAncestor
+
+
+def test_plant_recipe_with_origin_creates_ghost(client, make_user, db_session):
     _, headers = make_user()
     payload = {
         "name": "Grandma's Congee",
@@ -14,6 +17,7 @@ def test_plant_recipe_with_origin_creates_ghost(client, make_user):
     assert body["lineage_relation"] == "root"
     assert body["visibility"] == "private"
     assert "Nonna Lucia" in body["origin_attribution"]
+    assert db_session.query(GhostAncestor).filter_by(recipe_id=body["id"]).count() == 1
 
 
 def _make_root(client, headers):
@@ -110,3 +114,39 @@ def test_browse_only_shows_public(client, make_user):
     _make_root(client, owner)  # private by default
     # /browse is unauthenticated (browse_recipes takes no current_user) — call it plainly.
     assert client.get("/recipes/browse").json() == []
+
+
+def test_lineage_hidden_from_non_owner(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)   # private by default
+    _, other = make_user()
+    assert client.get(f"/recipes/{root['id']}/lineage", headers=other).status_code == 404
+    assert client.get(f"/recipes/{root['id']}/lineage", headers=owner).status_code == 200
+
+
+def test_remix_missing_parent_404(client, make_user):
+    _, headers = make_user()
+    r = client.post("/recipes/999999/remix",
+                    json={"ingredients": [], "steps": []}, headers=headers)
+    assert r.status_code == 404
+
+
+def test_remix_child_persists_ingredients(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+    remix = client.post(f"/recipes/{root['id']}/remix",
+        json={"ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
+              "quantity_type": "precise", "position": 1}],
+              "steps": [{"content": "Brown the meat", "position": 1}]},
+        headers=owner).json()
+    got = client.get(f"/recipes/{remix['id']}", headers=owner).json()
+    assert any(i["name"] == "lard" for i in got["ingredients"])
+
+
+def test_handoff_non_owner_404(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+    _, other = make_user()
+    r = client.post(f"/recipes/{root['id']}/handoff",
+                    json={"to_email": "x@example.com"}, headers=other)
+    assert r.status_code == 404
