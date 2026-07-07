@@ -9,7 +9,8 @@ from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn
+from app.models.cook_event import CookEvent
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn
 from app.services.scaling import scale_ingredient
 from app.services.lineage import diff_recipes
 
@@ -154,6 +155,28 @@ def remix_recipe(
     db.commit()
     db.refresh(child)
     return child
+
+@router.post("/{recipe_id}/cook")
+def cook_recipe(
+    recipe_id: int,
+    cook_in: CookIn | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id, Recipe.deleted_at == None
+    ).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    db.add(CookEvent(
+        recipe_id=recipe_id, user_id=current_user.id,
+        photo_url=(cook_in.photo_url if cook_in else None),
+        note=(cook_in.note if cook_in else None),
+    ))
+    db.commit()
+    count = db.query(CookEvent).filter(CookEvent.recipe_id == recipe_id).count()
+    return {"cook_count": count}
 
 @router.get("", response_model=list[RecipeResponse])
 def list_recipes(

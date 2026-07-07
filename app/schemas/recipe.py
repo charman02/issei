@@ -96,6 +96,11 @@ class RemixIn(BaseModel):
     prompt_answer: Optional[str] = None
 
 
+class CookIn(BaseModel):
+    photo_url: Optional[str] = None
+    note: Optional[str] = None
+
+
 class RecipeResponse(BaseModel):
     id: int
     user_id: int

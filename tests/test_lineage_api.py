@@ -44,3 +44,21 @@ def test_remix_creates_child_with_diff_prompt(client, make_user):
     assert body["lineage_relation"] == "remixed"
     assert body["prompt_answer"] == "Mom always used lard"
     assert body["prompt_key"] == "ingredient_swap"
+
+
+def test_cook_increments_count_no_node(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+
+    r1 = client.post(f"/recipes/{root['id']}/cook", json={}, headers=owner)
+    assert r1.status_code == 200
+    assert r1.json()["cook_count"] == 1
+
+    _, cook2 = make_user()
+    r2 = client.post(f"/recipes/{root['id']}/cook",
+                     json={"note": "yum"}, headers=cook2)
+    assert r2.json()["cook_count"] == 2
+
+    # No new recipe nodes were created by cooking.
+    mine = client.get("/recipes", headers=cook2).json()
+    assert mine == []
