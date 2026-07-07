@@ -171,3 +171,26 @@ class RecipeUpdate(BaseModel):
     ingredient_sections: Optional[list[IngredientSectionCreate]] = None
     ingredients: Optional[list[IngredientCreate]] = None
     steps: Optional[list[StepCreate]] = None
+
+
+# Lineage view schemas
+
+class NodeSummary(BaseModel):
+    id: int
+    name: str
+    author_full_name: Optional[str] = None
+    lineage_relation: str
+    origin_attribution: Optional[str] = None
+    cook_count: int
+
+
+class LineageCounts(BaseModel):
+    cooks: int
+    versions: int
+
+
+class LineageView(BaseModel):
+    focus: NodeSummary
+    spine: list[NodeSummary]
+    children: list[NodeSummary]
+    counts: LineageCounts

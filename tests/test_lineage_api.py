@@ -80,3 +80,18 @@ def test_handoff_requires_a_recipient(client, make_user):
     root = _make_root(client, owner)
     r = client.post(f"/recipes/{root['id']}/handoff", json={"note": "x"}, headers=owner)
     assert r.status_code == 422
+
+
+def test_lineage_endpoint_returns_spine(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+    remix = client.post(f"/recipes/{root['id']}/remix",
+                        json={"ingredients": [{"name": "lard", "quantity_text": "1 tbsp",
+                              "quantity_type": "precise", "position": 1}],
+                              "steps": [{"content": "Brown the meat", "position": 1}]},
+                        headers=owner).json()
+    r = client.get(f"/recipes/{remix['id']}/lineage", headers=owner)
+    assert r.status_code == 200
+    view = r.json()
+    assert [n["id"] for n in view["spine"]] == [root["id"], remix["id"]]
+    assert view["counts"]["versions"] == 2

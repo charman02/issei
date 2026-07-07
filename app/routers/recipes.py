@@ -11,9 +11,9 @@ from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
 from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
 from app.services.scaling import scale_ingredient
-from app.services.lineage import diff_recipes
+from app.services.lineage import diff_recipes, build_lineage_view
 
 from datetime import datetime, timezone
 
@@ -252,7 +252,20 @@ def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
-    
+
+@router.get("/{recipe_id}/lineage", response_model=LineageView)
+def get_lineage(
+    recipe_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id, Recipe.deleted_at == None
+    ).options(selectinload(Recipe.user)).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return build_lineage_view(recipe, db)
+
 @router.get("/{recipe_id}/scale", response_model=RecipeResponse)
 def get_scaled_recipe(
     recipe_id: int,
