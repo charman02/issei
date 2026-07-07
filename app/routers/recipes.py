@@ -9,8 +9,9 @@ from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn
 from app.services.scaling import scale_ingredient
+from app.services.lineage import diff_recipes
 
 from datetime import datetime, timezone
 
@@ -97,6 +98,62 @@ def create_recipe(
     db.commit()
     db.refresh(new_recipe)
     return new_recipe
+
+@router.post("/{recipe_id}/remix", response_model=RecipeResponse,
+             status_code=status.HTTP_201_CREATED)
+def remix_recipe(
+    recipe_id: int,
+    remix_in: RemixIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    parent = db.query(Recipe).filter(
+        Recipe.id == recipe_id, Recipe.deleted_at == None
+    ).options(
+        selectinload(Recipe.ingredients), selectinload(Recipe.steps)
+    ).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    # Only a change branches; describe it to pre-fill the prompt.
+    diff = diff_recipes(parent.ingredients, parent.steps,
+                        remix_in.ingredients, remix_in.steps)
+
+    child = Recipe(
+        user_id=current_user.id,
+        name=parent.name,
+        cover_photo_url=parent.cover_photo_url,
+        description=parent.description,
+        servings=parent.servings,
+        prep_time_minutes=parent.prep_time_minutes,
+        cuisine=parent.cuisine,
+        diet=parent.diet,
+        language=parent.language,
+        parent_recipe_id=parent.id,
+        lineage_relation="remixed",
+        prompt_key=diff["prompt_key"],
+        prompt_answer=remix_in.prompt_answer,
+    )
+    db.add(child)
+    db.flush()
+
+    for ing_in in remix_in.ingredients:
+        db.add(Ingredient(
+            recipe_id=child.id, section_id=None,
+            name=ing_in.name, quantity_text=ing_in.quantity_text,
+            quantity_value=ing_in.quantity_value, unit=ing_in.unit,
+            quantity_type=ing_in.quantity_type, notes=ing_in.notes,
+            position=ing_in.position,
+        ))
+    for step_in in remix_in.steps:
+        db.add(Step(
+            recipe_id=child.id, position=step_in.position,
+            content=step_in.content, section_header=step_in.section_header,
+        ))
+
+    db.commit()
+    db.refresh(child)
+    return child
 
 @router.get("", response_model=list[RecipeResponse])
 def list_recipes(

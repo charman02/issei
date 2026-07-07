@@ -90,6 +90,12 @@ class RecipeCreate(BaseModel):
     origin: Optional[OriginIn] = None
 
 
+class RemixIn(BaseModel):
+    ingredients: list[IngredientCreate] = []
+    steps: list[StepCreate] = []
+    prompt_answer: Optional[str] = None
+
+
 class RecipeResponse(BaseModel):
     id: int
     user_id: int
@@ -109,6 +115,8 @@ class RecipeResponse(BaseModel):
     lineage_relation: str = "root"
     visibility: str = "private"
     origin_attribution: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_answer: Optional[str] = None
     created_at: datetime
     deleted_at: Optional[datetime] = None
     ingredient_sections: list[IngredientSectionResponse] = []

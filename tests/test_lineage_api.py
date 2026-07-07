@@ -14,3 +14,33 @@ def test_plant_recipe_with_origin_creates_ghost(client, make_user):
     assert body["lineage_relation"] == "root"
     assert body["visibility"] == "private"
     assert "Nonna Lucia" in body["origin_attribution"]
+
+
+def _make_root(client, headers):
+    payload = {
+        "name": "Adobo",
+        "ingredients": [{"name": "butter", "quantity_text": "2 tbsp",
+                         "quantity_type": "precise", "position": 1}],
+        "steps": [{"content": "Brown the meat", "position": 1}],
+    }
+    return client.post("/recipes", json=payload, headers=headers).json()
+
+
+def test_remix_creates_child_with_diff_prompt(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+
+    _, remixer = make_user()
+    remix_payload = {
+        "ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
+                         "quantity_type": "precise", "position": 1}],
+        "steps": [{"content": "Brown the meat", "position": 1}],
+        "prompt_answer": "Mom always used lard",
+    }
+    r = client.post(f"/recipes/{root['id']}/remix", json=remix_payload, headers=remixer)
+    assert r.status_code == 201
+    body = r.json()
+    assert body["parent_recipe_id"] == root["id"]
+    assert body["lineage_relation"] == "remixed"
+    assert body["prompt_answer"] == "Mom always used lard"
+    assert body["prompt_key"] == "ingredient_swap"
