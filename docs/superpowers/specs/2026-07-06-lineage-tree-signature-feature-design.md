@@ -97,6 +97,19 @@ in three words** rather than composing from a blank field. Divergence is the
 story; only divergence grows the tree; cooking-faithfully stays a count. This is
 what keeps the tree legible and the core act near-effortless.
 
+**What a remix child inherits from its parent (decided 2026-07-07):**
+- **`source`** — *carried forward.* Provenance should never vanish silently.
+- **`story`** — *not carried.* The remixer writes their own memory via the guided
+  prompt (`prompt_answer`); inheriting the parent's story would put words in their
+  mouth.
+- **`notes`** — *pre-filled from the parent but editable during the remix,* so the
+  cook starts from the parent's practical notes and adjusts rather than retyping.
+- Plus the usual recipe scalars (name, cuisine, servings, etc.) as a starting point.
+
+*(The built MVP's remix handler currently copies 8 scalars and drops
+`story`/`source`/`notes`; aligning it to this rule — carry `source`, pre-fill
+editable `notes`, skip `story` — is a tracked follow-up.)*
+
 ### 2.5 The Handoff (the social growth act — optional, never a gate)
 The primary *share* action is **"hand this recipe to someone"** — a named person,
 in-app or via invite link — with a one-line note. When they cook or remix it,
@@ -135,19 +148,67 @@ build, and the answer is not simply "collapse siblings."
 
 ## 4. Social & privacy model
 
+The guiding principle: **respect the user's privacy preferences to the degree
+they're comfortable with, and only ask a real question when something is actually
+at stake.** We separate three distinct levers people conflate — *reach* (who can
+see it), *attribution* (is my name on it), and *existence* (does it stay in the
+app) — and give each its own control so no single action is overloaded.
+
+### 4.1 Reach (visibility)
 - **Default: private-to-lineage.** A new recipe and its ghost ancestors are
   visible only to people explicitly invited into that tree.
 - **Opening to public is a deliberate, one-way act** with clear explanation.
 - **The root author's privacy choice binds all descendants.** A Keeper cannot
   re-share more openly than the origin allowed. This protects sacred family
   recipes as an inviolable rule, not a setting people can accidentally trip.
-- **Attribution is permanent and prominent.** Every node shows its provenance
-  chain (`kept from Ana · adapted from Kenji · taught by Nonna Lucia`); the
-  original planter / ghost ancestor is never severed.
+
+### 4.2 Attribution (anonymity)
+- **Anonymity is a simple per-recipe toggle** — "Add anonymously" at creation,
+  and flippable later in edit-recipe. Plus an **account-wide default** so a
+  privacy-minded user sets it once. Rationale: *we would much rather a user add a
+  recipe anonymously than not add it at all.*
+- An anonymous node keeps its place, content, and cook count, but its author is
+  shown as **"anonymous"** in the provenance chain instead of a name.
+- **Attribution is otherwise permanent and prominent.** Every node shows its
+  provenance chain (`kept from Ana · adapted from anonymous · taught by Nonna
+  Lucia`); the original planter / ghost ancestor position is never severed.
 - **Ghost ancestors name real people (living or deceased).** Handled with
   reverence: private by default, editable only by their creator, framed as a
   memorial/tribute, with an opt-out/removal path. (Policy detail to finalize in
   the backend sub-project — flagged as a trust landmine, §8.)
+
+### 4.3 Existence (deletion) — and why a node with descendants is never orphaned
+Once a recipe has descendants it is **load-bearing for other people's trees**, so
+"delete" behaves differently by situation. **A user's own recipe (their content)
+is always theirs to remove; what they cannot do is amputate the branch others
+built on top of it.**
+
+- **Delete a leaf** (no descendants): fully removed. Simple, no prompt.
+- **Delete a node others have remixed:** it disappears from the owner's app
+  entirely (their intent), and in the shared tree its position becomes a
+  **de-identified, content-stripped tombstone** — the same primitive as a ghost
+  ancestor, but mid-tree ("a recipe once lived here"). Name **and** personal
+  content (story/notes/ingredients/steps) are stripped; only the structural
+  anchor + descendant links remain, so every downstream remix stays intact and
+  fully owned by its author. This is **not** the same as anonymize (which keeps
+  the recipe readable) — delete means the content goes.
+- **The only prompt that ever appears** is when descendants exist:
+  *"N people have built on this — [Delete & leave a placeholder] · [Just make it
+  anonymous instead] · [Cancel]."* A leaf delete shows no such prompt (the
+  "make anonymous instead" nudge appears **only when it matters**).
+- **Account deletion** (no feature exists yet — spec-only): one screen, safe
+  default = *anonymize my recipes and keep their trees alive*; alternative =
+  *remove everything that won't break others' trees* (leaves deleted, nodes with
+  descendants tombstoned). Never a per-recipe questionnaire.
+
+**Design consequence — the orphan/leak hole is designed out.** Because a node with
+descendants is *never hard-deleted* (it tombstones in place, retaining its row
+and its parent link), a descendant's `parent_recipe_id` can never be nulled out
+from under it. The root-binds-visibility walk therefore never mis-resolves an
+orphaned child as public. See §6 for the schema treatment and §8 for the risk
+this closes. Deliberately **not** built: per-audience visibility choices at
+deletion ("show to viewers but not remixers", etc.) — reach is already governed
+by §4.1, and that granularity is burden without benefit (YAGNI).
 
 ---
 
@@ -180,8 +241,27 @@ soft-delete. The lineage feature is a **genuinely small delta**:
   root nodes, e.g. "From my Halmoni · Busan · 1960s").
 - `visibility` — enum: `private | public`, default `private`. On non-root nodes
   this is **derived/clamped** by the root's setting (root binds descendants).
+- `is_anonymous` — bool, default `false` (§4.2). When true, the node's author is
+  rendered as "anonymous" in provenance chains; content/counts unaffected.
+- `is_tombstone` — bool, default `false` (§4.3). When true, the node is a
+  de-identified, content-stripped placeholder retained only to anchor descendant
+  links after a delete; the tree view renders it as "a recipe once lived here".
 - structured prompt capture: `prompt_key` + `prompt_answer` (extends the existing
   `story` field rather than replacing it).
+
+**Deletion behavior (§4.3), enforced in the delete handler — not the schema:**
+- Deleting a **leaf** (no rows reference it as `parent_recipe_id`) → normal
+  soft-delete (existing `deleted_at`), fully removed from the owner's views.
+- Deleting a **node with descendants** → set `is_tombstone = true`, null out the
+  author association + strip content fields (name/story/notes/ingredients/steps),
+  but **keep the row and its `parent_recipe_id`** so descendants stay linked. The
+  node is excluded from the owner's kitchen but remains as a tombstone in the tree.
+- **Never hard-delete a recipe that has descendants.** This — plus keeping the
+  self-FK non-orphaning — is what closes the visibility-leak risk (§8). The
+  `parent_recipe_id` self-FK should therefore be `ondelete=RESTRICT`/`NO ACTION`
+  (or enforced app-side) rather than `SET NULL`, since a node with children is
+  never hard-deleted. (Note: the built MVP currently ships `SET NULL`; migrating
+  it to non-orphaning is tracked as a follow-up — see §8 / TECHDEBT.)
 
 **`ghost_ancestors` table (or a lightweight node variant):** a named non-user
 origin — `name`, optional `place`, `year`, `memory`, owned/editable by its creator,
@@ -225,7 +305,16 @@ profile; light gamification / unlocks; expanded guided-prompt library.
    open problem.**
 2. **Privacy of sacred recipes** — an accidental public toggle or a stranger
    branching a sacred dish is an irreversible betrayal. Mitigated by
-   private-by-default + root-binds-descendants + deliberate one-way opening.
+   private-by-default + root-binds-descendants + deliberate one-way opening +
+   per-recipe anonymity (§4.2) + non-orphaning deletion (§4.3).
+   **Known open item (from the backend final review):** the built MVP's
+   self-parent FK uses `ondelete=SET NULL`, so *if* a parent were ever
+   hard-deleted (only possible via a not-yet-built account-deletion), a private
+   root's descendant could be orphaned and mis-resolve as public. The §4.3
+   tombstone model (never hard-delete a node with descendants) closes this; until
+   the deletion flow + FK change land, it is unreachable in the current app (no
+   hard-delete path, remix children default private, no public-toggle endpoint) —
+   tracked as TECHDEBT, resolve alongside the account-deletion feature.
 3. **Ghost-ancestor consent** — naming real people without consent is an emotional
    (and possibly legal) landmine. Needs reverent framing, opt-out, memorialization
    tone — finalized before the backend ships.
