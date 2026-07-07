@@ -29,6 +29,17 @@ class Recipe(Base):
     source: Mapped[Optional[str]] = mapped_column(nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(nullable=True)
     language: Mapped[str] = mapped_column(server_default="en")
+    # --- Lineage (see 2026-07-06 signature-feature spec) ---
+    parent_recipe_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # "root" | "kept" | "remixed" — app-validated string (portable across SQLite/Postgres)
+    lineage_relation: Mapped[str] = mapped_column(server_default="root")
+    origin_attribution: Mapped[Optional[str]] = mapped_column(nullable=True)
+    # "private" | "public" — effective visibility is the ROOT's (see services/lineage.py)
+    visibility: Mapped[str] = mapped_column(server_default="private")
+    prompt_key: Mapped[Optional[str]] = mapped_column(nullable=True)
+    prompt_answer: Mapped[Optional[str]] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
@@ -48,6 +59,13 @@ class Recipe(Base):
         "Step", back_populates="recipe", cascade="all, delete-orphan"
     )
     user: Mapped["User"] = relationship("User")
+    parent: Mapped[Optional["Recipe"]] = relationship(
+        "Recipe", remote_side="Recipe.id", back_populates="children"
+    )
+    children: Mapped[list["Recipe"]] = relationship(
+        "Recipe", back_populates="parent",
+        primaryjoin="Recipe.id==Recipe.parent_recipe_id",
+    )
 
     @property
     def author_full_name(self) -> str:
