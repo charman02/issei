@@ -95,3 +95,18 @@ def test_lineage_endpoint_returns_spine(client, make_user):
     view = r.json()
     assert [n["id"] for n in view["spine"]] == [root["id"], remix["id"]]
     assert view["counts"]["versions"] == 2
+
+
+def test_private_recipe_hidden_from_non_owner(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)  # private by default
+    _, other = make_user()
+    assert client.get(f"/recipes/{root['id']}", headers=other).status_code == 404
+    assert client.get(f"/recipes/{root['id']}", headers=owner).status_code == 200
+
+
+def test_browse_only_shows_public(client, make_user):
+    _, owner = make_user()
+    _make_root(client, owner)  # private by default
+    # /browse is unauthenticated (browse_recipes takes no current_user) — call it plainly.
+    assert client.get("/recipes/browse").json() == []

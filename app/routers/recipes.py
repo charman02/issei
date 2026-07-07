@@ -13,7 +13,7 @@ from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
 from app.services.scaling import scale_ingredient
-from app.services.lineage import diff_recipes, build_lineage_view
+from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility
 
 from datetime import datetime, timezone
 
@@ -230,6 +230,7 @@ def browse_recipes(db: Session = Depends(get_db)):
         selectinload(Recipe.steps),
         selectinload(Recipe.user)
     ).order_by(Recipe.created_at.desc()).all()
+    recipes = [r for r in recipes if effective_visibility(r, db) == "public"]
     return recipes
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
@@ -250,6 +251,8 @@ def get_recipe(
         selectinload(Recipe.user)
     ).first()
     if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.user_id != current_user.id and effective_visibility(recipe, db) != "public":
         raise HTTPException(status_code=404, detail="Recipe not found")
     return recipe
 
