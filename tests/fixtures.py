@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from app.database import Base, get_db
@@ -12,9 +13,13 @@ from app.models.user import User
 @pytest.fixture
 def db_session():
     # In-memory SQLite, shared across the connection for the test's lifetime.
+    # StaticPool keeps a single underlying connection so the schema is visible
+    # from any thread — the TestClient runs endpoints on a worker thread, and
+    # the default in-memory pool would hand it a fresh, empty database.
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
 
     @event.listens_for(engine, "connect")

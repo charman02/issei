@@ -8,6 +8,7 @@ from app.models.recipe import Recipe
 from app.models.ingredient_section import IngredientSection
 from app.models.ingredient import Ingredient
 from app.models.step import Step
+from app.models.ghost_ancestor import GhostAncestor
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse
 from app.services.scaling import scale_ingredient
 
@@ -39,6 +40,16 @@ def create_recipe(
     db.add(new_recipe)
     # flush to get new_recipe.id before committing
     db.flush()
+
+    # Plant the origin: a ghost ancestor makes recipe #1 a two-generation lineage.
+    if recipe_in.origin is not None:
+        o = recipe_in.origin
+        db.add(GhostAncestor(
+            recipe_id=new_recipe.id,
+            name=o.name, place=o.place, year=o.year, memory=o.memory,
+        ))
+        parts = [o.name] + [p for p in (o.place, o.year) if p]
+        new_recipe.origin_attribution = " · ".join(parts)
 
     for section_in in recipe_in.ingredient_sections:
         new_section = IngredientSection(

@@ -2,6 +2,14 @@ from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
+
+class OriginIn(BaseModel):
+    name: str
+    place: Optional[str] = None
+    year: Optional[str] = None
+    memory: Optional[str] = None
+
+
 # Step schemas
 
 class StepCreate(BaseModel):
@@ -79,6 +87,7 @@ class RecipeCreate(BaseModel):
     ingredient_sections: list[IngredientSectionCreate] = []
     ingredients: list[IngredientCreate] = []
     steps: list[StepCreate] = []
+    origin: Optional[OriginIn] = None
 
 
 class RecipeResponse(BaseModel):
@@ -96,6 +105,10 @@ class RecipeResponse(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
     language: str
+    parent_recipe_id: Optional[int] = None
+    lineage_relation: str = "root"
+    visibility: str = "private"
+    origin_attribution: Optional[str] = None
     created_at: datetime
     deleted_at: Optional[datetime] = None
     ingredient_sections: list[IngredientSectionResponse] = []
