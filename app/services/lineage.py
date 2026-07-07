@@ -36,3 +36,19 @@ def diff_recipes(parent_ingredients, parent_steps, child_ingredients, child_step
         return {"changed": True, "summary": "changed the method", "prompt_key": "step_change"}
 
     return {"changed": False, "summary": "", "prompt_key": "general_change"}
+
+
+def effective_visibility(recipe, db):
+    """A recipe's visibility is its ROOT's visibility — the root author binds all
+    descendants (a keeper cannot out-share past the origin). Walks parents to root."""
+    from app.models.recipe import Recipe
+
+    seen = set()
+    current = recipe
+    while current.parent_recipe_id is not None and current.id not in seen:
+        seen.add(current.id)
+        parent = db.query(Recipe).filter(Recipe.id == current.parent_recipe_id).first()
+        if parent is None:
+            break
+        current = parent
+    return current.visibility
