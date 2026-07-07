@@ -62,3 +62,21 @@ def test_cook_increments_count_no_node(client, make_user):
     # No new recipe nodes were created by cooking.
     mine = client.get("/recipes", headers=cook2).json()
     assert mine == []
+
+
+def test_handoff_creates_pending(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+    r = client.post(f"/recipes/{root['id']}/handoff",
+                    json={"to_email": "mom@example.com", "note": "your adobo"},
+                    headers=owner)
+    assert r.status_code == 201
+    body = r.json()
+    assert body["state"] == "pending"
+    assert body["to_email"] == "mom@example.com"
+
+def test_handoff_requires_a_recipient(client, make_user):
+    _, owner = make_user()
+    root = _make_root(client, owner)
+    r = client.post(f"/recipes/{root['id']}/handoff", json={"note": "x"}, headers=owner)
+    assert r.status_code == 422

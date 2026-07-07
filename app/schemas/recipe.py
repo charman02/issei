@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class OriginIn(BaseModel):
@@ -127,6 +127,29 @@ class RecipeResponse(BaseModel):
     ingredient_sections: list[IngredientSectionResponse] = []
     ingredients: list[IngredientResponse] = []
     steps: list[StepResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HandoffIn(BaseModel):
+    to_email: Optional[str] = None
+    to_user_id: Optional[int] = None
+    note: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _require_recipient(self):
+        if not self.to_email and not self.to_user_id:
+            raise ValueError("Provide to_email or to_user_id")
+        return self
+
+
+class HandoffResponse(BaseModel):
+    id: int
+    recipe_id: int
+    state: str
+    to_email: Optional[str] = None
+    to_user_id: Optional[int] = None
+    note: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

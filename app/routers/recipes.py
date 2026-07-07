@@ -10,7 +10,8 @@ from app.models.ingredient import Ingredient
 from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
 from app.models.cook_event import CookEvent
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn
+from app.models.handoff import Handoff
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse
 from app.services.scaling import scale_ingredient
 from app.services.lineage import diff_recipes
 
@@ -155,6 +156,32 @@ def remix_recipe(
     db.commit()
     db.refresh(child)
     return child
+
+@router.post("/{recipe_id}/handoff", response_model=HandoffResponse,
+             status_code=status.HTTP_201_CREATED)
+def handoff_recipe(
+    recipe_id: int,
+    handoff_in: HandoffIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    recipe = db.query(Recipe).filter(
+        Recipe.id == recipe_id,
+        Recipe.user_id == current_user.id,
+        Recipe.deleted_at == None,
+    ).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    handoff = Handoff(
+        recipe_id=recipe_id, from_user_id=current_user.id,
+        to_user_id=handoff_in.to_user_id, to_email=handoff_in.to_email,
+        state="pending", note=handoff_in.note,
+    )
+    db.add(handoff)
+    db.commit()
+    db.refresh(handoff)
+    return handoff
 
 @router.post("/{recipe_id}/cook")
 def cook_recipe(
