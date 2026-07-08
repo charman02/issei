@@ -89,3 +89,28 @@ def test_handoff_idempotent_per_grantee(client, make_user, db_session):
     client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
     client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
     assert db_session.query(Handoff).filter_by(recipe_id=root["id"], to_user_id=grantee.id).count() == 1
+
+
+def test_grantee_can_view_shared_root_and_descendant(client, make_user):
+    owner, oheaders = make_user()
+    grantee, gheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
+    child = client.post(f"/recipes/{root['id']}/remix",
+                        json={"ingredients": [{"name": "x", "quantity_text": "1",
+                              "quantity_type": "precise", "position": 1}], "steps": []},
+                        headers=oheaders).json()
+    # before sharing: grantee 404 on both
+    assert client.get(f"/recipes/{root['id']}", headers=gheaders).status_code == 404
+    # share the root with the grantee
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
+    # now grantee sees the root AND the descendant (root-binds)
+    assert client.get(f"/recipes/{root['id']}", headers=gheaders).status_code == 200
+    assert client.get(f"/recipes/{child['id']}", headers=gheaders).status_code == 200
+    assert client.get(f"/recipes/{root['id']}/lineage", headers=gheaders).status_code == 200
+
+
+def test_non_grantee_still_404(client, make_user):
+    owner, oheaders = make_user()
+    stranger, sheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    assert client.get(f"/recipes/{root['id']}", headers=sheaders).status_code == 404

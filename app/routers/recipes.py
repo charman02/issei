@@ -13,7 +13,7 @@ from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
 from app.services.scaling import scale_ingredient
-from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of
+from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of, can_view
 
 from datetime import datetime, timezone
 
@@ -295,9 +295,9 @@ def get_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Viewable by the owner, or by anyone if the recipe's effective visibility
-    # (its root's visibility) is public; otherwise 404. Editing/deleting remains
-    # owner-only — see patch_recipe.
+    # Viewable by the owner, by anyone if the recipe's effective visibility
+    # (its root's visibility) is public, or by an accepted grantee on the root;
+    # otherwise 404. Editing/deleting remains owner-only — see patch_recipe.
     recipe = db.query(Recipe).filter(
         Recipe.id == recipe_id,
         Recipe.deleted_at == None
@@ -309,7 +309,7 @@ def get_recipe(
     ).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    if recipe.user_id != current_user.id and effective_visibility(recipe, db) != "public":
+    if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
     _attach_growth_fields(recipe, db)
     return recipe
@@ -325,7 +325,7 @@ def get_lineage(
     ).options(selectinload(Recipe.user)).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    if recipe.user_id != current_user.id and effective_visibility(recipe, db) != "public":
+    if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
     return build_lineage_view(recipe, db)
 
