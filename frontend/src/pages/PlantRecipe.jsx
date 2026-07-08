@@ -19,10 +19,13 @@ export default function PlantRecipe() {
   async function handleFormSubmit(formPayload) {
     const payload = { ...formPayload }
     if (originMode === 'ancestor') {
+      // The doorway memory belongs to the ANCESTOR (origin.memory), which is
+      // distinct from the dish's own story — leave payload.story from the form.
       payload.origin = buildOriginPayload(origin)
-    } else {
-      payload.story = selfMemory.trim() || formPayload.story || null
     }
+    // On the 'mine' path the doorway memory seeds the form's Story field via
+    // initialValues below, so formPayload.story is already authoritative — no
+    // override here (that would silently discard edits made in the form).
     const { data } = await plantRecipe(payload)
     setPlanted(data)
     setStep('planted')
@@ -73,7 +76,11 @@ export default function PlantRecipe() {
   }
 
   if (step === 'form') {
-    return <RecipeForm mode="add" onSubmit={handleFormSubmit} />
+    // Mine path: pre-fill the Story field with the doorway memory so there's
+    // ONE story input. Ancestor path: no seed — the doorway memory is the
+    // ancestor's (captured in origin.memory), not the dish's story.
+    const initialValues = originMode === 'mine' ? { story: selfMemory } : {}
+    return <RecipeForm mode="add" initialValues={initialValues} onSubmit={handleFormSubmit} />
   }
 
   if (step === 'planted') {
@@ -89,7 +96,9 @@ export default function PlantRecipe() {
     )
   }
 
-  // step === 'handoff'
+  // step === 'handoff' — only reachable after a successful plant, but guard
+  // `planted` defensively to match the optional-chaining used in the planted beat.
+  if (!planted) return null
   return (
     <HandoffInvite
       recipeId={planted.id}
