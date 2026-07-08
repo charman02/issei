@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { handoffRecipe } from '../api/lineage'
 
 // "Who else should have this seed?" — the growth-engine invite (spec §3.1/§3.4).
-export default function HandoffInvite({ recipeId, onSent, onSkip }) {
+export default function HandoffInvite({ recipeId, recipeVisibility = 'private', onSent, onSkip }) {
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
@@ -25,7 +25,9 @@ export default function HandoffInvite({ recipeId, onSent, onSkip }) {
         Who else should<br />have this seed?
       </h1>
       <p className="font-serif italic text-[14px] text-ink-soft mt-2 mb-5">
-        Hand it to someone who'll grow it — they can add the part you always forget.
+        {recipeVisibility === 'public'
+          ? 'Let them know about this — it’s already public.'
+          : 'They’ll be able to see, cook, and remix this.'}
       </p>
       <input
         type="email" placeholder="Their email" value={email}

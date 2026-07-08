@@ -24,4 +24,12 @@ describe('HandoffInvite', () => {
     await userEvent.click(screen.getByRole('button', { name: /skip/i }))
     expect(onSkip).toHaveBeenCalled()
   })
+  it('shows access-granting copy for a private recipe', () => {
+    render(<HandoffInvite recipeId={1} recipeVisibility="private" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.getByText(/see, cook, and remix/i)).toBeInTheDocument()
+  })
+  it('shows nudge copy for a public recipe', () => {
+    render(<HandoffInvite recipeId={1} recipeVisibility="public" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.getByText(/let them know|already public/i)).toBeInTheDocument()
+  })
 })

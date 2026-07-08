@@ -6,3 +6,4 @@ export const cookRecipe = (id, body = {}) => client.post(`/recipes/${id}/cook`, 
 export const handoffRecipe = (id, body) => client.post(`/recipes/${id}/handoff`, body)
 export const getLineage = (id) => client.get(`/recipes/${id}/lineage`)
 export const setVisibility = (id, visibility) => client.patch(`/recipes/${id}`, { visibility })
+export const getSharedWithMe = () => client.get('/recipes/shared')
