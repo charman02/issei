@@ -6,7 +6,7 @@ import Home from './pages/Home'
 import Browse from './pages/Browse'
 import MyRecipes from './pages/MyRecipes'
 import RecipeDetail from './pages/RecipeDetail'
-import AddRecipe from './pages/AddRecipe'
+import PlantRecipe from './pages/PlantRecipe'
 import EditRecipe from './pages/EditRecipe'
 import RemixRecipe from './pages/RemixRecipe'
 import Profile from './pages/Profile'
@@ -76,7 +76,7 @@ export default function App() {
         path="/add"
         element={
           <ProtectedRoute>
-            <Layout><AddRecipe /></Layout>
+            <Layout><PlantRecipe /></Layout>
           </ProtectedRoute>
         }
       />
