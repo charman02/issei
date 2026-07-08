@@ -5,6 +5,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 vi.mock('../api/client', () => ({ default: { get: vi.fn(() => Promise.resolve({ data: {
   id: 1, name: 'Adobo', user_id: 7, author_full_name: 'Yoko M.',
+  visibility: 'private', parent_recipe_id: null,
   ingredients: [], ingredient_sections: [], steps: [], cook_count: 3, child_count: 0,
 } })) } }))
 vi.mock('../api/lineage', () => ({ cookRecipe: vi.fn(() => Promise.resolve({ data: { cook_count: 4 } })) }))
@@ -29,5 +30,13 @@ describe('RecipeDetail cook action', () => {
     await userEvent.click(btn)
     expect(cookRecipe).toHaveBeenCalledWith('1', {})
     expect(await screen.findByText(/4 times/i)).toBeInTheDocument()
+  })
+})
+
+describe('RecipeDetail visibility control', () => {
+  it('shows the visibility control to the owner', async () => {
+    renderDetail()
+    // The owner sees the status pill (🔒 Private) rendered by VisibilityControl.
+    expect(await screen.findByText(/^🔒 Private$/i)).toBeInTheDocument()
   })
 })

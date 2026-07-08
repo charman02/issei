@@ -6,6 +6,7 @@ import Wordmark from '../components/Wordmark'
 import { cookRecipe } from '../api/lineage'
 import GrowthMark from '../components/GrowthMark'
 import HandoffInvite from '../components/HandoffInvite'
+import VisibilityControl from '../components/VisibilityControl'
 import { stateForRecipe, bloomForRecipe } from '../lib/growthState'
 
 // Section header used inside the recipe body: Fraunces 700 bold label with a
@@ -127,6 +128,15 @@ export default function RecipeDetail() {
               {/* small gap so the italic "y" overhang doesn't collide with the upright name */}
               <span className="not-italic font-semibold text-terra ml-1">{recipe.author_full_name}</span>
             </span>
+          </div>
+        )}
+
+        {isOwner && (
+          <div className="mt-2">
+            <VisibilityControl
+              recipe={recipe}
+              onChange={(v) => setRecipe({ ...recipe, visibility: v })}
+            />
           </div>
         )}
 
