@@ -55,3 +55,33 @@ def test_patch_bad_visibility_rejected(client, make_user):
     root = client.post("/recipes", json=_payload(), headers=headers).json()
     r = client.patch(f"/recipes/{root['id']}", json={"visibility": "everyone"}, headers=headers)
     assert r.status_code == 422
+
+
+def test_public_root_visible_to_non_owner_and_in_browse(client, make_user, db_session):
+    _, owner = make_user()
+    root = client.post("/recipes", json=_payload(visibility="public"), headers=owner).json()
+    _, other = make_user()
+    # non-owner can view a public recipe
+    assert client.get(f"/recipes/{root['id']}", headers=other).status_code == 200
+    # appears in the (unauthenticated) browse feed
+    assert any(r["id"] == root["id"] for r in client.get("/recipes/browse").json())
+
+
+def test_private_root_hidden_from_non_owner_and_browse(client, make_user):
+    _, owner = make_user()
+    root = client.post("/recipes", json=_payload(), headers=owner).json()  # private
+    _, other = make_user()
+    assert client.get(f"/recipes/{root['id']}", headers=other).status_code == 404
+    assert all(r["id"] != root["id"] for r in client.get("/recipes/browse").json())
+
+
+def test_branch_of_private_root_stays_hidden(client, make_user):
+    _, owner = make_user()
+    root = client.post("/recipes", json=_payload(), headers=owner).json()  # private
+    child = client.post(f"/recipes/{root['id']}/remix",
+                        json={"ingredients": [{"name": "x", "quantity_text": "1",
+                              "quantity_type": "precise", "position": 1}], "steps": []},
+                        headers=owner).json()
+    _, other = make_user()
+    # child inherits private root → not publicly visible even though child row default is private
+    assert client.get(f"/recipes/{child['id']}", headers=other).status_code == 404
