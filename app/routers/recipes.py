@@ -289,6 +289,57 @@ def browse_recipes(db: Session = Depends(get_db)):
         r.last_cooked_at = None
     return recipes
 
+@router.get("/shared", response_model=list[RecipeResponse])
+def shared_with_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Declared BEFORE get_recipe so the literal "/shared" path is matched first;
+    # otherwise GET /recipes/{recipe_id} would capture recipe_id="shared".
+    root_ids = [
+        h.recipe_id for h in db.query(Handoff).filter(
+            Handoff.to_user_id == current_user.id, Handoff.state == "accepted"
+        ).all()
+    ]
+    if not root_ids:
+        return []
+    recipes = db.query(Recipe).filter(
+        Recipe.id.in_(root_ids),
+        Recipe.user_id != current_user.id,
+        Recipe.deleted_at == None,
+    ).options(
+        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        selectinload(Recipe.ingredients),
+        selectinload(Recipe.steps),
+        selectinload(Recipe.user),
+    ).all()
+    for r in recipes:
+        _attach_growth_fields(r, db)
+    return recipes
+
+
+@router.post("/handoffs/{handoff_id}/accept", response_model=HandoffResponse)
+def accept_handoff(
+    handoff_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    h = db.query(Handoff).filter(Handoff.id == handoff_id).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    # Only the intended recipient may accept (by user id or matching email).
+    is_recipient = (h.to_user_id == current_user.id) or (
+        h.to_email is not None and h.to_email == current_user.email
+    )
+    if not is_recipient:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    h.to_user_id = current_user.id
+    h.state = "accepted"
+    db.commit()
+    db.refresh(h)
+    return h
+
+
 @router.get("/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(
     recipe_id: int,

@@ -128,3 +128,34 @@ def test_email_invite_auto_accepts_on_signup(client, make_user, db_session):
     h = db_session.query(Handoff).filter_by(recipe_id=root["id"], to_email="newmom@example.com").one()
     assert h.state == "accepted"
     assert h.to_user_id is not None
+
+
+def test_shared_with_me_lists_accepted_only(client, make_user):
+    owner, oheaders = make_user()
+    grantee, gheaders = make_user()
+    root = client.post("/recipes", json=_payload(name="Shared Dish"), headers=oheaders).json()
+    other_root = client.post("/recipes", json=_payload(name="Not Shared"), headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)  # accepted
+    listing = client.get("/recipes/shared", headers=gheaders).json()
+    names = [r["name"] for r in listing]
+    assert "Shared Dish" in names
+    assert "Not Shared" not in names
+    # excludes the grantee's own recipes
+    mine = client.post("/recipes", json=_payload(name="My Own"), headers=gheaders).json()
+    assert "My Own" not in [r["name"] for r in client.get("/recipes/shared", headers=gheaders).json()]
+
+
+def test_accept_endpoint_activates_pending_for_recipient(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    # pending email invite, then a user with that email exists and accepts by id
+    grantee, gheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    # create a pending grant targeted at the grantee's email (simulate mismatched/link flow)
+    h = Handoff(recipe_id=root["id"], from_user_id=owner.id,
+                to_email=None, to_user_id=grantee.id, state="pending")
+    db_session.add(h); db_session.commit(); db_session.refresh(h)
+    r = client.post(f"/recipes/handoffs/{h.id}/accept", headers=gheaders)
+    assert r.status_code == 200
+    db_session.refresh(h)
+    assert h.state == "accepted"
