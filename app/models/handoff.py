@@ -10,7 +10,7 @@ from app.database import Base
 
 class Handoff(Base):
     """Passing a recipe to a named person (in-app user or an email invite).
-    state: 'pending' | 'kept' | 'cooked'. The optional growth act — never a gate."""
+    state: 'pending' | 'accepted'. The optional growth act — never a gate."""
     __tablename__ = "handoffs"
 
     id: Mapped[int] = mapped_column(primary_key=True)

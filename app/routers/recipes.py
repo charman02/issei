@@ -136,6 +136,8 @@ def remix_recipe(
     ).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    if not can_view(parent, current_user, db):
+        raise HTTPException(status_code=404, detail="Recipe not found")
 
     # Only a change branches; describe it to pre-fill the prompt.
     diff = diff_recipes(parent.ingredients, parent.steps,
@@ -199,8 +201,12 @@ def handoff_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    # Grants attach to the lineage root (root-binds).
+    # Grants attach to the lineage root (root-binds). Require the caller to own
+    # the ROOT, not just the passed node: otherwise a stranger who owns a branch
+    # off a victim's root could normalize a grant onto that root (grant-forgery).
     root = root_of(recipe, db)
+    if root.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Recipe not found")
 
     # Resolve grantee: an in-app user (instant-accept) or an email invite (pending).
     to_user_id = handoff_in.to_user_id
@@ -244,6 +250,8 @@ def cook_recipe(
         Recipe.id == recipe_id, Recipe.deleted_at == None
     ).first()
     if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     db.add(CookEvent(
@@ -290,6 +298,7 @@ def browse_recipes(db: Session = Depends(get_db)):
         # feed. The growth badge only needs cook_count/child_count/has_grandchildren.
         r.owner_cook_count = 0
         r.last_cooked_at = None
+        r.shared_with_count = 0
     return recipes
 
 @router.get("/shared", response_model=list[RecipeResponse])
@@ -390,7 +399,7 @@ def get_scaled_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Viewable by any logged-in user, like get_recipe.
+    # Gated like get_recipe: owner, public root, or accepted grantee only.
     recipe = db.query(Recipe).filter(
         Recipe.id == recipe_id,
         Recipe.deleted_at == None
@@ -401,6 +410,8 @@ def get_scaled_recipe(
         selectinload(Recipe.user)
     ).first()
     if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     if recipe.servings is None:

@@ -31,17 +31,19 @@ def _make_root(client, headers):
 
 
 def test_remix_creates_child_with_diff_prompt(client, make_user):
+    # The owner remixes their own private root. (A stranger can't remix a recipe
+    # they can't view — see test_sharing.test_stranger_cannot_forge_grant_via_remix_handoff;
+    # remixing a shared recipe by a grantee is covered there too.)
     _, owner = make_user()
     root = _make_root(client, owner)
 
-    _, remixer = make_user()
     remix_payload = {
         "ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
                          "quantity_type": "precise", "position": 1}],
         "steps": [{"content": "Brown the meat", "position": 1}],
         "prompt_answer": "Mom always used lard",
     }
-    r = client.post(f"/recipes/{root['id']}/remix", json=remix_payload, headers=remixer)
+    r = client.post(f"/recipes/{root['id']}/remix", json=remix_payload, headers=owner)
     assert r.status_code == 201
     body = r.json()
     assert body["parent_recipe_id"] == root["id"]
@@ -58,7 +60,11 @@ def test_cook_increments_count_no_node(client, make_user):
     assert r1.status_code == 200
     assert r1.json()["cook_count"] == 1
 
-    _, cook2 = make_user()
+    # A second, different cook must be able to view the recipe first (cook is
+    # now read-gated). Share the private root with them via an accepted grant.
+    cook2_user, cook2 = make_user()
+    client.post(f"/recipes/{root['id']}/handoff",
+                json={"to_user_id": cook2_user.id}, headers=owner)
     r2 = client.post(f"/recipes/{root['id']}/cook",
                      json={"note": "yum"}, headers=cook2)
     assert r2.json()["cook_count"] == 2

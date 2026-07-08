@@ -168,3 +168,86 @@ def test_recipe_response_has_shared_with_count(client, make_user):
     client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
     body = client.get(f"/recipes/{root['id']}", headers=oheaders).json()
     assert body["shared_with_count"] == 1
+
+
+# --- Final-review security fixes: read-authorization holes ---
+
+def _remix_body():
+    return {"ingredients": [{"name": "x", "quantity_text": "1",
+                             "quantity_type": "precise", "position": 1}], "steps": []}
+
+
+def test_stranger_cannot_forge_grant_via_remix_handoff(client, make_user):
+    # Fix 3 entry point: a stranger cannot even remix a private root they can't view.
+    owner, oheaders = make_user()
+    stranger, sheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
+    r = client.post(f"/recipes/{root['id']}/remix", json=_remix_body(), headers=sheaders)
+    assert r.status_code == 404
+
+
+def test_handoff_requires_root_ownership(client, make_user, db_session):
+    # Fix 1 in isolation (data-layer construction, in case remix policy ever changes):
+    # S owns a child whose parent is A's private root; S cannot hand off → normalize
+    # a grant onto A's root.
+    from app.models.recipe import Recipe
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    stranger, sheaders = make_user()
+    target, _ = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+
+    child = Recipe(user_id=stranger.id, name="Forged child",
+                   parent_recipe_id=root["id"], lineage_relation="remixed")
+    db_session.add(child); db_session.commit(); db_session.refresh(child)
+
+    r = client.post(f"/recipes/{child.id}/handoff",
+                    json={"to_user_id": target.id}, headers=sheaders)
+    assert r.status_code == 404
+    # No grant created for T on the root (or anywhere).
+    assert db_session.query(Handoff).filter_by(to_user_id=target.id).count() == 0
+
+
+def test_scale_gated_by_can_view(client, make_user):
+    # Fix 2: scaling a private root leaks its full body to any logged-in user.
+    owner, oheaders = make_user()
+    stranger, sheaders = make_user()
+    root = client.post("/recipes", json=_payload(servings=4), headers=oheaders).json()
+    assert client.get(f"/recipes/{root['id']}/scale?servings=2",
+                      headers=sheaders).status_code == 404
+    assert client.get(f"/recipes/{root['id']}/scale?servings=2",
+                      headers=oheaders).status_code == 200
+
+
+def test_cook_gated_by_can_view(client, make_user):
+    # Fix 3: cooking a private root by a stranger.
+    owner, oheaders = make_user()
+    stranger, sheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    assert client.post(f"/recipes/{root['id']}/cook", headers=sheaders).status_code == 404
+
+
+def test_grantee_can_still_remix_and_cook_shared(client, make_user):
+    # Guard against over-blocking: accepted grantees retain cook + remix rights.
+    owner, oheaders = make_user()
+    grantee, gheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
+    client.post(f"/recipes/{root['id']}/handoff",
+                json={"to_user_id": grantee.id}, headers=oheaders)  # accepted
+    assert client.post(f"/recipes/{root['id']}/remix", json=_remix_body(),
+                       headers=gheaders).status_code == 201
+    assert client.post(f"/recipes/{root['id']}/cook", headers=gheaders).status_code == 200
+
+
+def test_browse_hides_shared_with_count(client, make_user):
+    # Fix 4: shared_with_count must be zeroed on the unauthenticated public feed.
+    owner, oheaders = make_user()
+    grantee, _ = make_user()
+    root = client.post("/recipes", json=_payload(visibility="public"),
+                       headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff",
+                json={"to_user_id": grantee.id}, headers=oheaders)  # accepted grant
+    feed = client.get("/recipes/browse").json()
+    match = [r for r in feed if r["id"] == root["id"]]
+    assert match, "public recipe should appear on browse feed"
+    assert match[0]["shared_with_count"] == 0
