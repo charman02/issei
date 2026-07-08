@@ -38,11 +38,9 @@ def diff_recipes(parent_ingredients, parent_steps, child_ingredients, child_step
     return {"changed": False, "summary": "", "prompt_key": "general_change"}
 
 
-def effective_visibility(recipe, db):
-    """A recipe's visibility is its ROOT's visibility — the root author binds all
-    descendants (a keeper cannot out-share past the origin). Walks parents to root."""
+def root_of(recipe, db):
+    """Walk parent_recipe_id to the lineage root; return the root Recipe."""
     from app.models.recipe import Recipe
-
     seen = set()
     current = recipe
     while current.parent_recipe_id is not None and current.id not in seen:
@@ -51,7 +49,27 @@ def effective_visibility(recipe, db):
         if parent is None:
             break
         current = parent
-    return current.visibility
+    return current
+
+
+def effective_visibility(recipe, db):
+    """A recipe's visibility is its ROOT's visibility (root binds descendants)."""
+    return root_of(recipe, db).visibility
+
+
+def can_view(recipe, user, db):
+    """public root OR owner OR an accepted grant on the root (see sharing spec)."""
+    from app.models.handoff import Handoff
+    if recipe.user_id == user.id:
+        return True
+    root = root_of(recipe, db)
+    if root.visibility == "public":
+        return True
+    return db.query(Handoff).filter(
+        Handoff.recipe_id == root.id,
+        Handoff.to_user_id == user.id,
+        Handoff.state == "accepted",
+    ).first() is not None
 
 
 def _node_summary(recipe, db):
