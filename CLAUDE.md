@@ -28,6 +28,19 @@ alembic upgrade head
 alembic revision --autogenerate -m "description"
 ```
 
+Frontend (from the `frontend/` directory):
+
+```bash
+# Start the Vite dev server (on :5173)
+cd frontend && npm run dev
+
+# Build for production
+cd frontend && npm run build
+
+# Run the frontend test suite (Vitest + React Testing Library)
+cd frontend && npm test
+```
+
 ## Environment
 
 Requires a `.env` file in the project root:
@@ -40,15 +53,15 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 
 ## Architecture
 
-**App entry:** `app/main.py` — mounts four routers (auth, recipes, shopping_list, mom_form).
+**App entry:** `app/main.py` — mounts five routers (auth, recipes, shopping_list, mom_form, upload) and a `/health` endpoint.
 
-**Routers** (`app/routers/`) — endpoint definitions. Each router handles one domain: auth (signup/login/me), recipes (CRUD + scaling), shopping_list (consolidation), mom_form (HTML form served with HTTP Basic Auth).
+**Routers** (`app/routers/`) — endpoint definitions. Each router handles one domain: auth (signup/login/me), recipes (CRUD + scaling), shopping_list (consolidation), mom_form (HTML form served with HTTP Basic Auth), upload (Cloudinary photos). Recipes now also has lineage actions: `POST /{id}/remix`, `POST /{id}/cook`, `POST /{id}/handoff`, `GET /{id}/lineage`, plus the public `GET /recipes/browse`.
 
-**Models** (`app/models/`) — SQLAlchemy ORM models. Key relationship: Recipe → IngredientSection → Ingredient, but ingredients also have a direct `recipe_id` FK (deliberate denormalization for query simplicity).
+**Models** (`app/models/`) — SQLAlchemy ORM models. Key relationship: Recipe → IngredientSection → Ingredient, but ingredients also have a direct `recipe_id` FK (deliberate denormalization for query simplicity). Lineage adds `parent_recipe_id` (self-FK) + `lineage_relation`/`visibility`/`origin_attribution`/`prompt_*` columns on Recipe, and new tables `ghost_ancestor`, `cook_event`, `handoff`.
 
 **Schemas** (`app/schemas/`) — Pydantic models for request/response validation. Separate from ORM models to control what's exposed at the API boundary.
 
-**Services** (`app/services/`) — business logic decoupled from HTTP layer. `scaling.py` handles the three-type quantity model (precise/imprecise/unmeasured), `shopping_list.py` consolidates ingredients, `units.py` handles unit conversion.
+**Services** (`app/services/`) — business logic decoupled from HTTP layer. `scaling.py` handles the three-type quantity model (precise/imprecise/unmeasured), `shopping_list.py` consolidates ingredients, `units.py` handles unit conversion, `lineage.py` handles remix diff → remix prompt, effective visibility, and the lineage-view builder.
 
 **Auth** (`app/auth.py`) — JWT-based stateless auth. `get_current_user` is the dependency injected into protected endpoints.
 
@@ -59,6 +72,7 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 - **Quantity model:** Ingredients have `quantity_type` of "precise", "imprecise", or "unmeasured". Scaling logic branches on this: precise scales mathematically, imprecise scales approximately, unmeasured stays unchanged.
 - **Soft delete:** Recipes use `deleted_at` timestamp. All queries must filter `WHERE deleted_at IS NULL`.
 - **Single transaction pattern:** Recipe creation flushes mid-transaction to get auto-generated IDs for child rows before final commit.
+- **Root-bound visibility:** A recipe's effective visibility is its lineage root's `visibility` (private by default); `get_recipe`, `browse`, and `lineage` all gate on `effective_visibility()`.
 
 ## Frontend (in progress)
 
@@ -73,7 +87,8 @@ Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + A
 - Serif font: Playfair Display (Google Fonts) — headers, recipe names
 - Sans-serif: Inter (Google Fonts) — body text
 - Mobile-first, max-width 430px centered on desktop
-- Bottom navigation: Home, Recipes, Add Recipe, Profile
+- Bottom navigation: Home · Browse · Add · Kitchen · You
+- **Seed→tree lineage** is the chosen visual identity direction (recipes grow from a seed as they're cooked/remixed/handed off); reconcile fonts/palette with the current `tailwind.config.js` (final identity art = task #10)
 
 **Conventions:**
 - JWT stored in localStorage under key `issei_token`
@@ -84,4 +99,4 @@ Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + A
 - No UI libraries (no shadcn, no MUI) — custom Tailwind only
 - Don't git commit without my approval
 
-**MVP screens:** Login/Signup, Home (empty + populated states), Recipe List, Recipe Detail, Add Recipe
+**MVP screens:** Login/Signup, Home (empty + populated states), Recipe List, Recipe Detail, plus PlantRecipe (`/add`, stepped flow — a seed becoming a tree), RemixRecipe (`/recipes/:id/remix`), EditRecipe (`/recipes/:id/edit`), and growth marks / lineage on RecipeCard + RecipeDetail.

@@ -1,6 +1,6 @@
 # Future Roadmap
 
-This document outlines planned features and improvements for Issei. The current v1 is a backend API with core recipe management, scaling, and shopping list features. The roadmap below represents the natural evolution toward a full product.
+This document outlines planned features and improvements for Issei. The current build is a full-stack app (FastAPI backend + React frontend) with recipe management, scaling, shopping lists, and the recipe **lineage tree** (remix / cook / handoff, growth states). The roadmap below represents the natural evolution toward a full product.
 
 ---
 
@@ -14,23 +14,19 @@ This document outlines planned features and improvements for Issei. The current 
 
 **Implementation notes:** Add `families` and `family_members` tables. Update authorization checks from `user_id == current_user.id` to `family_id in current_user.families`. Add invitation endpoints with token-based acceptance.
 
+**Note:** Lineage now introduces a lightweight cross-user sharing path — per-recipe `visibility` (public roots that bind descendants) plus handoffs — so the families-table design should account for this overlap rather than duplicate it.
+
 ---
 
-## Web Frontend
+## Web Frontend — shipped
 
-**Current state:** v1 is a backend API only. Testing is done via the auto-generated /docs page.
-
-**What this adds:** A full web interface for inputting, browsing, scaling, and sharing recipes from any device. Designed for non-technical users — specifically the parents and grandparents who are the primary recipe contributors.
-
-**Why it matters:** The core users (immigrant parents) won't use an API docs page. A simple, mobile-responsive web UI is what makes the product actually usable for its intended audience.
-
-**Implementation notes:** React frontend, deployed alongside the existing FastAPI backend on Render. Mobile-responsive from day one since most users will access from phones.
+**Web frontend — shipped.** React + Vite + Tailwind SPA in `frontend/`, mobile-first, for inputting, browsing, scaling, and sharing recipes from any device — the interface that makes the product usable by non-technical users (the parents and grandparents who are the primary recipe contributors), not just the `/docs` page. Remaining polish is tracked in TECHDEBT.md.
 
 ---
 
 ## iOS Mobile App
 
-**Current state:** No mobile app exists. The web frontend (planned above) will be mobile-responsive as an interim solution.
+**Current state:** No mobile app exists. The web frontend (now shipped) is mobile-responsive as an interim solution.
 
 **What this adds:** A native iOS experience with faster performance, push notifications for family recipe updates, and camera access for photographing handwritten recipes or dishes.
 
@@ -80,9 +76,9 @@ This document outlines planned features and improvements for Issei. The current 
 
 In order of priority:
 
-1. **Web frontend** — the highest priority. The backend is fully functional but unusable by anyone except me through `/docs`. A web frontend makes the app something I can actually hand to my mom and have her use, which is the entire point of the project.
-2. **Multi-user family sharing** — without this, the product can't fulfill its actual purpose. A recipe my mom adds should be visible to me and my siblings without needing separate accounts and manual copying. This is closer to a missing core feature than an enhancement, so it ranks above the more exploratory additions below.
-3. **iOS mobile app** — once the web frontend is live and validated, a native mobile experience makes sense given that the real use case (checking a recipe while cooking, contributing a recipe from a phone) is fundamentally mobile-first.
+1. **Anonymity / account-deletion / tombstone model** — the highest-priority *next* step now that the web frontend and lineage tree have shipped. The 2026-07-06 lineage spec calls for `is_anonymous` / `is_tombstone` columns and an account-deletion / anonymize flow so a contributor can leave without orphaning or leaking their descendants' recipes. It's specced but not built, and recipe deletion stays disabled until it lands (see TECHDEBT items (a) and (h)). This is a near-term correctness/privacy dependency, not an exploratory addition.
+2. **Multi-user family sharing** — without this, the product can't fully fulfill its actual purpose. A recipe my mom adds should be visible to me and my siblings without needing separate accounts and manual copying. Lineage's per-recipe `visibility` + handoffs now provide a lightweight sharing path, but a proper families model is still closer to a missing core feature than an enhancement, so it ranks above the more exploratory additions below.
+3. **iOS mobile app** — now that the web frontend is live, a native mobile experience makes sense given that the real use case (checking a recipe while cooking, contributing a recipe from a phone) is fundamentally mobile-first.
 4. **Translation** — highest priority among the "deeper feature" additions, since it directly addresses the core audience: families where the cooking generation and the reading generation may not share a primary language.
-5. **Photo/video support** — meaningfully improves usability for techniques that are hard to describe in text, and adds a community dimension via the gallery concept.
+5. **Photo/video support** — photo upload already exists via Cloudinary; richer support (step videos, community gallery) meaningfully improves usability for techniques that are hard to describe in text.
 6. **Ingredient canonicalization** — the most clearly-scoped technical improvement, but lower priority than the others since the shopping list already works correctly for the common case (exact or near-exact name matches); this fixes an edge case rather than unlocking new usage.

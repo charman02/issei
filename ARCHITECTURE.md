@@ -43,10 +43,10 @@ database (Postgres / SQLite)
 | `config.py` | Reads settings from the `.env` file (database URL, JWT secret, token lifetime, Cloudinary keys) into a typed `settings` object. |
 | `database.py` | Sets up the SQLAlchemy engine + session. Auto-detects SQLite vs Postgres. `get_db` is the dependency that hands each request a database session. |
 | `auth.py` | Password hashing (bcrypt), JWT creation/decoding, and `get_current_user` — the dependency that protects endpoints by requiring a valid token. |
-| `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step`. |
+| `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step`, and the lineage tables `ghost_ancestor`, `cook_event`, `handoff`. |
 | `schemas/` | **Pydantic models** — define the JSON shape of requests and responses, separately from the DB models. Keeps internal fields (like password hashes) from leaking to the API. |
-| `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me), `recipes` (CRUD + scaling + browse), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
-| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation). |
+| `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me), `recipes` (CRUD + scaling + browse + lineage actions: remix, cook, handoff, and the `/lineage` view), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
+| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `lineage.py` (remix diff detection that pre-fills the remix prompt, effective-visibility resolution where the root binds descendants, and the walkable lineage-view builder). |
 
 **Models vs Schemas — the distinction that trips people up.** A *model*
 (`models/recipe.py`) is the database table. A *schema* (`schemas/recipe.py`) is
@@ -54,6 +54,9 @@ the API contract. They look similar but serve different masters: the model has
 every column (including ones you never expose); the schema has only what the API
 should accept or return. `RecipeCreate` (what you send to create) and
 `RecipeResponse` (what you get back) are different schemas for the same model.
+`RecipeResponse` also includes derived growth counts (`cook_count`,
+`child_count`, `has_grandchildren`, etc.) that are computed per-request in
+`_attach_growth_fields`, not stored columns.
 
 **`alembic/`** (sibling of `app/`, not inside it) — database migrations. Every
 time a model changes (new column, etc.), you generate a migration here and apply
@@ -90,10 +93,13 @@ frontend/
     ├── App.jsx             route table — maps URLs to pages
     ├── index.css           Tailwind imports + custom utilities
     ├── api/
-    │   └── client.js       the axios HTTP client (talks to the backend)
+    │   ├── client.js       the axios HTTP client (talks to the backend)
+    │   └── lineage.js      lineage endpoint calls (remix, cook, handoff, view)
     ├── components/         reusable UI pieces (used across pages)
     ├── pages/              one component per screen / route
-    └── utils/              non-UI helper logic
+    ├── lib/                non-UI logic (growth state, payload builders)
+    ├── utils/              non-UI helper logic
+    └── test/               Vitest setup
 ```
 
 ### How a page actually loads (the data flow)
@@ -114,6 +120,7 @@ frontend/
 | `main.jsx` | The true entry point. Mounts the app and enables routing. You rarely touch this. |
 | `App.jsx` | The **route table**. Each `<Route>` maps a URL path to a page component. Protected routes are wrapped in `<ProtectedRoute>` and `<Layout>` (which adds the bottom nav). When you add a page, you add a route here. |
 | `api/client.js` | A single configured **axios** instance — the *only* thing that talks to the backend. It auto-attaches the JWT token to every request (request interceptor) and, on any 401 response, clears the session and redirects to login (response interceptor). Import `client` anywhere you need data. |
+| `api/lineage.js` | Lineage endpoint calls (remix, cook, handoff, and the `/lineage` view) built on `client`. |
 | `index.css` | Pulls in Tailwind and defines a couple of custom utility classes (e.g. `scrollbar-hide`). |
 
 ### `components/` — reusable pieces
@@ -121,8 +128,14 @@ frontend/
 | Component | Role |
 |---|---|
 | `ProtectedRoute.jsx` | A gate. If there's no token in localStorage, it redirects to `/login`. Wraps every authenticated route. |
-| `BottomNav.jsx` | The fixed bottom navigation bar (Home, Browse, Add, My Recipes, Profile). |
+| `BottomNav.jsx` | The fixed bottom navigation bar (Home, Browse, Add, Kitchen, You). |
 | `CoverImage.jsx` | Renders a recipe's cover photo, or a styled cream placeholder with the 一世 mark when there's no photo. Shared by every screen that shows a recipe. |
+| `GrowthMark.jsx` | Seed → sprout → sapling → tree growth SVG for a recipe, driven by its counts. |
+| `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a named person / email). |
+| `RecipeForm.jsx` | Shared create/edit/remix form body, reused by PlantRecipe, EditRecipe, and RemixRecipe. |
+| `Wordmark.jsx` | The `issei.` wordmark. |
+| `Icon.jsx` / `IconField.jsx` | The line-icon set and a labeled input field. |
+| `SectionHeader.jsx` | A titled section header. |
 
 ### `pages/` — one per screen
 
@@ -133,8 +146,19 @@ frontend/
 | `Browse.jsx` | `/browse` | Discovery: search, diet filters, recipes grouped by cuisine. |
 | `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid. |
 | `RecipeDetail.jsx` | `/recipes/:id` | A single recipe — cover, story, ingredients, steps. |
-| `AddRecipe.jsx` | `/add` | The create-recipe form (photo upload, ingredients, steps, story). |
+| `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm → planted beat → HandoffInvite. |
+| `EditRecipe.jsx` | `/recipes/:id/edit` | Edit an existing recipe (shared RecipeForm). |
+| `RemixRecipe.jsx` | `/recipes/:id/remix` | Branch a child recipe off this one. |
 | `Profile.jsx` | `/profile` | User info + logout. |
+
+(`AddRecipe.jsx` still exists on disk but is no longer routed — `/add` now maps to `PlantRecipe`.)
+
+### `lib/` — non-UI logic
+
+| File | What it does |
+|---|---|
+| `growthState.js` | Derives a recipe's seed→tree growth state (and bloom) from its counts. |
+| `lineagePayload.js` | Builds the remix/plant request payloads sent to the backend. |
 
 ### `utils/` — non-UI logic
 
@@ -186,6 +210,6 @@ React app                FastAPI app          Postgres (Neon)
   automatic. Watch for them when reviewing changes.
 - **Two servers must be running to use the app locally**: `uvicorn app.main:app
   --reload` (backend) and `npm run dev` in `frontend/` (frontend).
-- **Verifying changes:** backend has `pytest`; frontend has `npm run build`
-  (which catches syntax/import errors). There's no automated frontend test
-  suite yet.
+- **Verifying changes:** backend has `pytest`; frontend has Vitest + React
+  Testing Library — run `npm test` (`vitest run`) in `frontend/`. `npm run
+  build` still catches syntax/import errors.

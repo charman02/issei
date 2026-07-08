@@ -8,101 +8,171 @@ accumulating surprises. Claude keeps this current as work happens.
 **Risk if ignored**, and **To resolve**. Severity: 🔴 high (bugs/prod risk),
 🟡 medium (inconsistency/half-done), 🟢 low (cleanup/nice-to-have).
 
-_Last updated: 2026-07-01, on branch `redesign/look-and-feel`._
+_Last updated: 2026-07-08, on branch `lineage-mvp`._
 
 ---
 
-## 🔴 Edit Recipe is half-shipped (backend done & uncommitted, frontend missing)
+## 🔴 (a) Self-parent FK is `ondelete=SET NULL`, not `RESTRICT` — orphan / visibility-leak risk
 
-**What:** Backend support for editing a recipe (including replacing
-ingredients/steps) is written and working in `app/routers/recipes.py` +
-`app/schemas/recipe.py`, but those changes are **uncommitted** on the redesign
-branch. The **frontend has no edit UI at all** — there is no `EditRecipe.jsx`,
-no `RecipeForm.jsx`, and no `/recipes/:id/edit` route. The RecipeDetail mock
-shows an "Edit" button, but it currently has nowhere to go.
+**What:** `app/models/recipe.py:33-35` sets the `parent_recipe_id` FK with
+`ondelete="SET NULL"`. If a parent recipe row were hard-deleted, children
+silently detach — and because `effective_visibility` (`services/lineage.py:41`)
+walks to the (now-missing) root, a formerly-private descendant could resolve to
+its own default `visibility="private"` or become an orphan root.
 
-**Why it exists:** We were mid-way through building Edit Recipe (had finished
-and verified the backend) when we pivoted to the look-and-feel redesign. The
-frontend half was never built.
+**Why it exists:** Deletion semantics were left permissive pending the
+account-deletion / tombstone model.
 
-**Risk if ignored:** Users can create recipes but never fix a typo. The
-half-committed backend could get lost or confuse future work. The "Edit" button
-in the redesign will be a dead end unless wired up.
+**Risk if ignored:** Currently unreachable — there is no account-deletion path
+and remix children default to private, so no leak today. Becomes a real
+orphan/visibility-leak risk the moment hard-delete is enabled.
 
-**To resolve:** Commit the backend edit support; extract the shared `RecipeForm`
-component (originally planned Tasks 10–11); build `EditRecipe.jsx` + the route;
-point the RecipeDetail Edit button at it. Plan section already exists in
-`docs/superpowers/plans/2026-07-01-look-and-feel-redesign.md`.
+**To resolve:** Build the account-deletion + tombstone model (per the 2026-07-06
+spec) before enabling deletion; prefer `RESTRICT` or an explicit
+re-parenting/tombstone step.
 
 ---
 
-## 🟡 Redesign is partially applied — some screens still on the old look
+## 🟡 (b) Remix silently drops edited name/notes
 
-**What:** The look-and-feel redesign (Fraunces, wordmark, RecipeCard, heirloom
-craft) is done on **Login, Home, and the shared components** (BottomNav,
-RecipeCard, CoverImage, Wordmark). Still **not** craft-passed: **Browse,
-RecipeDetail, Kitchen (MyRecipes), You (Profile)** — these had an earlier
-token-swap but not the real component craft. **`AddRecipe.jsx` still uses old
-legacy tokens** (`bg-accent`, `border-secondary`, etc.) and the pre-redesign
-form.
+**What:** `RemixIn` (`app/schemas/recipe.py:93`) carries only `ingredients`,
+`steps`, and `prompt_answer`; `remix_recipe` (`recipes.py:142-156`) copies
+`name` (and description, etc.) from the parent. If the remix form lets a user
+edit the recipe name or notes, those edits are silently discarded.
 
-**Why it exists:** We're executing the craft pass screen-by-screen with review
-checkpoints; only Login + Home are through the high-bar pass so far.
+**Why it exists:** Remix was scoped to branch content, not metadata.
 
-**Risk if ignored:** The app looks inconsistent mid-flight — a polished Login/
-Home next to older-looking other screens.
+**Risk if ignored:** User edits to name/notes on a remix vanish with no error.
 
-**To resolve:** Finish "Craft D" (Browse, RecipeDetail, Kitchen, You) and fold
-`AddRecipe` into the shared `RecipeForm` so it inherits the new look.
+**To resolve:** Add `name`/`notes` (and any other editable scalars) to `RemixIn`
+and apply them in `remix_recipe`, or make the form read-only for those fields.
 
 ---
 
-## 🟡 Legacy color tokens still defined and still referenced
+## 🟡 (c) Unauthenticated browse now exposes owner activity
 
-**What:** `frontend/tailwind.config.js` still defines the old palette
-(`cream`, `primary`, `accent`, `secondary`, `surface`) alongside the new
-heirloom tokens. At least `AddRecipe.jsx` still uses them.
+**What:** `browse_recipes` (`recipes.py:244`) has no auth dependency and returns
+full `RecipeResponse`, so `owner_cook_count` and `last_cooked_at` (added by
+`_attach_growth_fields`) are public for every public-root recipe.
 
-**Why it exists:** Kept intentionally during migration so un-migrated screens
-keep building. Removal was planned as the final cleanup task.
+**Why it exists:** Browse reuses the same `RecipeResponse` schema as the
+authenticated endpoints.
 
-**Risk if ignored:** New code might reach for an old token; the two palettes can
-drift. Low correctness risk, real consistency risk.
+**Risk if ignored:** Owner-scoped activity data leaks to anonymous visitors.
 
-**To resolve:** After every screen is migrated, delete the five legacy tokens
-and run a repo-wide grep to confirm nothing references them (planned Task 12).
-
----
-
-## 🟢 Playfair Display still loaded but no longer the display face
-
-**What:** Fraunces is now the headline font, but `index.html` still loads
-Playfair Display and it lingers as a `font-serif` fallback in the Tailwind
-config.
-
-**Why it exists:** Leftover from before the Fraunces switch.
-
-**Risk if ignored:** A slightly heavier font download than needed; negligible.
-
-**To resolve:** Drop Playfair from the Google Fonts link and the `font-serif`
-stack once we've confirmed Fraunces renders everywhere.
+**To resolve:** Use a slimmer public response schema for browse, or drop
+owner-scoped fields from the unauthenticated feed.
 
 ---
 
-## 🟢 No automated frontend tests
+## 🟢 (d) Unused import
 
-**What:** The frontend has no test framework. Every frontend change is verified
-only by `npm run build` (catches syntax/import errors) plus manual visual review
-on `localhost:5173`.
+**What:** `from sqlalchemy import func` at `recipes.py:20` is never used (no
+`func.` reference anywhere in the file).
 
-**Why it exists:** Out of scope so far; the project started backend-first
-(backend has `pytest`, 5 tests).
+**Why it exists:** Leftover from an earlier iteration.
 
-**Risk if ignored:** Regressions in UI logic (auth flow, quantity parsing, form
-submission) won't be caught automatically. Relies on manual clicking.
+**Risk if ignored:** None — cosmetic lint noise.
 
-**To resolve:** If the frontend grows, add Vitest + React Testing Library for the
-logic-heavy pieces (e.g. `utils/quantity.js`, auth handling, form payloads).
+**To resolve:** Remove the import.
+
+---
+
+## 🟡 (e) N+1 growth queries on list/browse, untested
+
+**What:** `_attach_growth_fields` (`recipes.py:25`) issues 3 queries per recipe
+(cooks, child ids, grandchildren) and is called in a loop by `list_recipes`
+(`:240`) and `browse_recipes` (`:255`). No tests cover the list/browse growth
+path.
+
+**Why it exists:** Growth fields were added per-recipe first; list/browse reused
+the same helper.
+
+**Risk if ignored:** Query count scales with list size (N+1); performance
+degrades as libraries grow, and there's no test guarding the behavior.
+
+**To resolve:** Batch the counts (group-by / aggregate) and add list/browse
+growth tests.
+
+---
+
+## 🔴/🟡 (f) Pre-existing: two migrations fail on fresh SQLite
+
+**What:** `0894735d3ccd_..._.py` (lines 38/47) and
+`bba3856b2139_align_child_fk_ondelete_with_models.py` (lines 24–61) call
+`batch_op.drop_constraint('..._fkey', type_='foreignkey')` on named Postgres FK
+constraints that don't exist on a fresh SQLite DB, so `alembic upgrade head`
+from scratch on SQLite errors.
+
+**Why it exists:** Migrations were authored against the production Postgres
+constraint names.
+
+**Risk if ignored:** A from-scratch SQLite setup (new dev machine, CI) can't run
+migrations end-to-end.
+
+**To resolve:** Guard the drops for SQLite (skip when the dialect is sqlite, or
+use naming-convention-aware batch ops).
+
+---
+
+## 🟢 (g) Dev-dependency npm audit warnings
+
+**What:** The new frontend test tooling (vitest / testing-library / playwright
+dev deps) surfaces npm audit warnings.
+
+**Why it exists:** Transitive dev-dependency advisories.
+
+**Risk if ignored:** Cosmetic — dev-only dependencies, not shipped to users.
+
+**To resolve:** Track and bump when convenient.
+
+---
+
+## 🟡 (h) Anonymity / deletion model specced but NOT built
+
+**What:** The 2026-07-06 spec calls for `is_anonymous` / `is_tombstone` columns
+and an account-deletion / anonymize flow; neither column nor flow exists in the
+code (grep for `is_anonymous` / `is_tombstone` = no matches).
+
+**Why it exists:** Deferred to a later sub-project of the lineage feature.
+
+**Risk if ignored:** This is the counterpart to debt (a): deletion stays disabled
+until this lands, so contributors can't leave cleanly.
+
+**To resolve:** Implement the tombstone/anonymity columns + deletion endpoint per
+spec.
+
+---
+
+## 🟢 (i) Growth 'blooming' state is inert; seed may read faint
+
+**What:** `growthState.js:41` can return `'blooming'`, but `GrowthMark.jsx:43`
+only styles `bloom === 'dormant'` (opacity 0.5) — `'blooming'` renders
+identically to `'normal'`. Also the `seed` glyph is a small filled ellipse that
+can read faint at small sizes (default 20px).
+
+**Why it exists:** Botanical art is still in progress (final art = task #10).
+
+**Risk if ignored:** A state that never shows; a mark that's hard to see at list
+sizes.
+
+**To resolve:** Give `blooming` a visible treatment (e.g. accent/animation) and
+strengthen the seed mark at small sizes.
+
+---
+
+## Resolved (2026-07-08)
+
+Cleared on the `lineage-mvp` branch: **Edit Recipe half-shipped** (backend
+committed — `patch_recipe`, `recipes.py:370` — plus `EditRecipe.jsx`,
+`RecipeForm.jsx`, and the `/recipes/:id/edit` route); **No automated frontend
+tests** (Vitest + RTL harness now exists — `package.json` `test` script,
+`test/setup.js`, and 9 `*.test.*` files); **Playfair Display still loaded**
+(verified gone from `index.html` and `tailwind.config.js`); **Redesign partially
+applied** (all live/routed screens are on the new look; the only laggard,
+`AddRecipe.jsx`, is no longer routed); **Legacy color tokens still referenced**
+(no live/routed screen references `cream`/`primary`/`accent`/`secondary`/
+`surface` — only the dead, unrouted `AddRecipe.jsx` did).
 
 ---
 

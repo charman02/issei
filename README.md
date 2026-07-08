@@ -1,8 +1,8 @@
 ## What It Is
-A REST API for preserving and sharing family recipes, built for the Asian immigrant community to keep cultural cooking traditions alive across generations. Designed around how Asian home cooks actually share recipes — with imprecise measurements like "a dash" or "a soup spoon" — rather than forcing Western precision. Features include fuzzy quantity modeling, unit conversion, recipe scaling, and shopping list consolidation.
+A full-stack app (FastAPI backend + React frontend) for preserving and sharing family recipes, built for the Asian immigrant community to keep cultural cooking traditions alive across generations. Designed around how Asian home cooks actually share recipes — with imprecise measurements like "a dash" or "a soup spoon" — rather than forcing Western precision. Features include fuzzy quantity modeling, unit conversion, recipe scaling, shopping-list consolidation, and a **recipe lineage tree** — recipes grow from a seed as they're cooked, remixed, and handed off across generations.
 
 ## Tech Stack
-**FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for an API-only backend.
+**FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
 
 **SQLAlchemy** - ORM that maps Python classes to database tables. Lets me write queries in Python while being database-agnostic - same code runs on SQLite locally and Postgres in production.
 
@@ -17,6 +17,12 @@ A REST API for preserving and sharing family recipes, built for the Asian immigr
 **python-jose** JWT creation and verification for stateless authentication. Tokens are signed with a secret key and include expiry - no server-side session storage needed.
 
 **pytest** - automated tests for the scaling service, auth endpoints, and unit conversion logic.
+
+**Vitest + React Testing Library** - frontend unit/component tests (growth-state logic, remix/plant payloads, form and page components). Run with `npm test` in `frontend/`.
+
+**Cloudinary** - hosts recipe photos uploaded through the `/upload` endpoint.
+
+**React + Vite + Tailwind CSS** - the frontend single-page app (`frontend/`), with **axios** for API calls and **React Router** for client-side routing. Mobile-first, talks to the backend over HTTP.
 
 **Render** - deployment platform with GitHub integration. Every push to main auto-deploys to production.
 
@@ -43,7 +49,15 @@ A REST API for preserving and sharing family recipes, built for the Asian immigr
 | GET | /recipes/{recipe_id}/scale?servings={n} | Yes | Returns the recipe scaled to the target serving size. |
 | PATCH | /recipes/{recipe_id} | Yes | Modifies the queried recipe. |
 | DELETE | /recipes/{recipe_id} | Yes | Deletes the queried recipe. |
+| POST | /recipes/{recipe_id}/remix | Yes | Creates a child recipe branched from this one. |
+| POST | /recipes/{recipe_id}/cook | Yes | Logs a cook event; returns updated cook_count. |
+| POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a named person / email invite. |
+| GET | /recipes/{recipe_id}/lineage | Yes | Returns the walkable lineage spine + tree counts. |
+| GET | /recipes/browse | No | Public discovery feed (root-visibility gated). |
 | POST | /shopping-list | Yes | Creates a shopping list. |
+| POST | /upload | Yes | Uploads a photo to Cloudinary. |
+
+`GET /recipes/{recipe_id}` and `/lineage` are also visible to non-owners when the root recipe's visibility is public.
 
 ## Setup Instructions
 1. **Clone the repo:**
@@ -78,8 +92,28 @@ uvicorn app.main:app --reload
 http://localhost:8000/docs
 ```
 
+### Frontend
+The React frontend lives in `frontend/`. Run it alongside the backend (both servers must be running locally).
+1. **Install dependencies:**
+```
+cd frontend
+npm install
+```
+2. **Start the Vite dev server (on :5173):**
+```
+npm run dev
+```
+3. **Build for production:**
+```
+npm run build
+```
+4. **Run the frontend test suite:**
+```
+npm test
+```
+
 ## Future Roadmap
-See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, a web frontend, iOS mobile app, translation support, and photo/video support.
+See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, iOS mobile app, translation support, and richer photo/video support.
 
 ## Live Demo
 API: https://family-recipe-library.onrender.com/docs
