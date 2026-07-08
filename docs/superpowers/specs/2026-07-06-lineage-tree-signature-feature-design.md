@@ -30,6 +30,85 @@ her name."*
 
 ---
 
+## 1a. Product strategy & growth (why this scales beyond the founder's circle)
+
+Evaluated as a product competing with best-in-class consumer apps (e.g. Beli),
+not as a personal project. The honest risk for any emotional/archival app: **the
+core act happens once** — you capture a recipe, feel moved, then have no reason to
+return. "It's meaningful" is why people *download*; it is not why they *retain* or
+why the app *scales*. The mechanics below are therefore the product, not garnish.
+The organizing frame is **Wedge → Loop → Moat**.
+
+### Wedge — why someone uses it alone, day one (no network required)
+One sentence: **"Capture your family's recipes and the stories behind them before
+they're gone forever."** A real, urgent, universal pain (aging parents, immigrant
+heritage, the recipe that dies with a person). It is useful *solo* — the
+ghost-ancestor cold-start makes recipe #1 valuable with zero network (§2.3). The
+first-run experience must land as *"I just saved something I was scared to lose."*
+Protect this above all else.
+
+### Loop — why it spreads (the growth engine / CAC advantage)
+The **Handoff** is the viral coefficient, and it is structurally stronger than a
+restaurant app's friend-invite: *"Mom, I saved your adobo — can you add the part I
+always forget?"* People invite **family** to preserve heritage far more readily
+than they invite anyone to a utility app. Every recipe with a ghost ancestor is a
+pending invitation to a real person. Consequence for design: the Handoff invite is
+**part of the core plant act, not an afterthought** — planting a seed flows
+straight into *"who else should have this?"* (see §-plant-flow).
+
+### Moat — why we win when a fast-follower clones the tree
+- **Data moat (the real defensibility):** once a family's lineage lives in Issei —
+  the tree, the memories, who cooked what — it is irreplaceable and non-portable. A
+  competitor can copy the UI in a quarter; they cannot copy your grandmother's
+  tree. Every remix and cook deepens switching cost. **The retention/growth
+  mechanics exist to maximize the rate at which this data accumulates.**
+- **Aesthetic moat (real but weak):** the seed→tree identity is differentiated and
+  memorable — it makes Issei the category-defining app people screenshot. Worth
+  having; not mistaken for defensibility.
+
+### The mechanics, tagged by engine
+**Retention engine (must-have — converts one-time archival into a weekly habit):**
+- **The tree grows + notifies you when it travels** — "Someone in Manila just
+  cooked your grandmother's adobo." You open the app to *watch your heritage
+  travel.* Strongest loop; pure warmth, no leaderboard. (Backend cook/remix events
+  already support this.)
+- **Kitchen-as-garden** — the Kitchen tab is a living garden of your trees at
+  different growth stages; dormant recipes gently invite revival ("bring this back
+  to life?"). Tending = cooking real family food.
+- **Memory resurfacing** — "A year ago today you cooked Lola's adobo"; "It's Lunar
+  New Year — your mom's dumplings are here." A memory-keeper that reaches out.
+
+**Growth engine (must-have):**
+- **The Handoff + ghost-ancestor invites** — front-and-center in the plant flow.
+- **Lineage collision** — "someone you've never met cooks a dish descended from the
+  same root." Directly attacks the empty-network problem; feels like finding
+  family. Prioritized as a near-term discovery hook, not a distant nicety.
+
+**Delight (nice-to-have — sequence after the two engines):**
+- Growth-state art (seed→sprout→sapling→tree), reverent lineage milestones (tree
+  rings / "3 generations deep", never points), "N people cooking this tonight."
+
+### Explicitly rejected (would cheapen the app / break its soul)
+Points, leaderboards, public like/follower counts, punitive streaks, competitive
+challenges ("best adobo"). Anything that ranks grandmothers is out.
+
+### The two threats to design against
+1. **Liquidity / empty network** — most trees stay one node forever. Mitigation:
+   the app must be fully rewarding *solo* (wedge + garden), and **lineage collision**
+   is the cheat code that makes a lonely tree feel connected.
+2. **Frequency ceiling** — people cook a known family recipe weekly at most (lower
+   frequency than Beli's per-meal use). Retention hooks must punch above that:
+   resurfacing + the garden create reasons to open the app *between* cooking events.
+
+### Visual identity (approved 2026-07-07)
+The **seed → tree** metaphor is the signature identity (name "Issei" kept):
+planting a recipe = sowing a seed; cooking/remixing grows it; the lineage tree is
+the grown tree. Growth-state marks visibly show a recipe's life-stage — the visual
+engine behind retention. Full rollout tracked separately (task #10); the plant-flow
++ growth-state motifs are locked alongside this feature.
+
+---
+
 ## 2. Core concepts
 
 ### 2.1 The node
