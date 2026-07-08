@@ -173,7 +173,7 @@ export default function RecipeDetail() {
         {cookBeat && <p className="font-serif italic text-herb text-sm mt-3">{cookBeat}</p>}
         {showHandoff && (
           <div className="mt-4 border-t border-line pt-4">
-            <HandoffInvite recipeId={recipe.id} onSent={() => setShowHandoff(false)} onSkip={() => setShowHandoff(false)} />
+            <HandoffInvite recipeId={recipe.id} recipeVisibility={recipe.visibility} onSent={() => setShowHandoff(false)} onSkip={() => setShowHandoff(false)} />
           </div>
         )}
 

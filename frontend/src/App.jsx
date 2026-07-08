@@ -9,6 +9,7 @@ import RecipeDetail from './pages/RecipeDetail'
 import PlantRecipe from './pages/PlantRecipe'
 import EditRecipe from './pages/EditRecipe'
 import RemixRecipe from './pages/RemixRecipe'
+import SharedWithMe from './pages/SharedWithMe'
 import Profile from './pages/Profile'
 
 function Layout({ children }) {
@@ -69,6 +70,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout><RemixRecipe /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/shared"
+        element={
+          <ProtectedRoute>
+            <Layout><SharedWithMe /></Layout>
           </ProtectedRoute>
         }
       />
