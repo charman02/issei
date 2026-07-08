@@ -180,6 +180,7 @@ class RecipeUpdate(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
     language: Optional[str] = None
+    visibility: Optional[Literal["private", "public"]] = None
     # When provided, these fully replace the recipe's existing children.
     # Omit them to leave the collections untouched (scalar-only update).
     ingredient_sections: Optional[list[IngredientSectionCreate]] = None

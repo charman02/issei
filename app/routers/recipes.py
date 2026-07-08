@@ -400,6 +400,15 @@ def patch_recipe(
     # set to detect presence, but read the values off the Pydantic model so
     # they stay as typed objects (IngredientCreate/StepCreate), not dicts.
     sent_fields = recipe_in.model_dump(exclude_unset=True)
+
+    # Root-binds: only a lineage root's visibility is authoritative; a branch
+    # inherits its root's visibility, so reject direct edits on a branch.
+    if "visibility" in sent_fields and recipe.parent_recipe_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Visibility is controlled by this recipe's original; it can't be set on a branch.",
+        )
+
     sections_sent = "ingredient_sections" in sent_fields
     ingredients_sent = "ingredients" in sent_fields
     steps_sent = "steps" in sent_fields
