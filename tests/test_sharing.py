@@ -39,3 +39,53 @@ def test_can_view_owner_public_and_grant(db_session, make_user):
                            to_user_id=other2.id, state="pending"))
     db_session.commit()
     assert can_view(root, other2, db_session) is False
+
+
+def test_handoff_to_user_is_instant_accepted_and_root_normalized(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    from app.models.recipe import Recipe
+    owner, oheaders = make_user()
+    grantee, _ = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    # pass the ROOT to the grantee (by user id)
+    r = client.post(f"/recipes/{root['id']}/handoff",
+                    json={"to_user_id": grantee.id}, headers=oheaders)
+    assert r.status_code == 201
+    h = db_session.query(Handoff).filter_by(recipe_id=root["id"], to_user_id=grantee.id).one()
+    assert h.state == "accepted"
+
+
+def test_handoff_normalizes_branch_to_root(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    grantee, _ = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    child = client.post(f"/recipes/{root['id']}/remix",
+                        json={"ingredients": [{"name": "x", "quantity_text": "1",
+                              "quantity_type": "precise", "position": 1}], "steps": []},
+                        headers=oheaders).json()
+    # owner passes the CHILD → grant must attach to the ROOT
+    client.post(f"/recipes/{child['id']}/handoff",
+                json={"to_user_id": grantee.id}, headers=oheaders)
+    assert db_session.query(Handoff).filter_by(recipe_id=root["id"], to_user_id=grantee.id).count() == 1
+    assert db_session.query(Handoff).filter_by(recipe_id=child["id"]).count() == 0
+
+
+def test_handoff_email_is_pending(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff",
+                json={"to_email": "mom@example.com"}, headers=oheaders)
+    h = db_session.query(Handoff).filter_by(recipe_id=root["id"], to_email="mom@example.com").one()
+    assert h.state == "pending" and h.to_user_id is None
+
+
+def test_handoff_idempotent_per_grantee(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    grantee, _ = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
+    assert db_session.query(Handoff).filter_by(recipe_id=root["id"], to_user_id=grantee.id).count() == 1

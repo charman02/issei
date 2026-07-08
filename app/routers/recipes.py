@@ -13,7 +13,7 @@ from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
 from app.services.scaling import scale_ingredient
-from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility
+from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of
 
 from datetime import datetime, timezone
 
@@ -196,10 +196,34 @@ def handoff_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    # Grants attach to the lineage root (root-binds).
+    root = root_of(recipe, db)
+
+    # Resolve grantee: an in-app user (instant-accept) or an email invite (pending).
+    to_user_id = handoff_in.to_user_id
+    to_email = handoff_in.to_email
+    resolved_user = None
+    if to_user_id is not None:
+        resolved_user = db.query(User).filter(User.id == to_user_id).first()
+        if resolved_user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    # Idempotent per (root, grantee): return the existing grant if present.
+    existing_q = db.query(Handoff).filter(Handoff.recipe_id == root.id)
+    if resolved_user is not None:
+        existing = existing_q.filter(Handoff.to_user_id == resolved_user.id).first()
+    else:
+        existing = existing_q.filter(Handoff.to_email == to_email).first()
+    if existing is not None:
+        return existing
+
     handoff = Handoff(
-        recipe_id=recipe_id, from_user_id=current_user.id,
-        to_user_id=handoff_in.to_user_id, to_email=handoff_in.to_email,
-        state="pending", note=handoff_in.note,
+        recipe_id=root.id,
+        from_user_id=current_user.id,
+        to_user_id=(resolved_user.id if resolved_user else None),
+        to_email=(None if resolved_user else to_email),
+        state=("accepted" if resolved_user else "pending"),
+        note=handoff_in.note,
     )
     db.add(handoff)
     db.commit()
