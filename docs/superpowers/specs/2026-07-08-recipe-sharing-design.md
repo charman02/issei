@@ -95,14 +95,20 @@ accept endpoint.
 - If `to_email` given → grant `state="pending"`, `to_user_id=null`.
 - Idempotent per (root, grantee).
 
-**4.2 Accept / claim (`POST /recipes/handoffs/{id}/accept`)** — the missing piece
-- The invited user accepts → `state="accepted"`, and if it was an email invite,
-  set `to_user_id = current_user.id` (once their email matches).
+**4.2 Accept / claim (`POST /recipes/handoffs/{id}/accept`)** — backend only, no MVP UI
+- Endpoint exists for the future invite-link / mismatched-email flow: an invited
+  user claims a `pending` grant → `state="accepted"`, `to_user_id=current_user.id`.
+  **Not surfaced in the MVP UI** (see §5.2) — the two auto-accept paths below cover
+  every in-app case.
 - **Email-invite resolution on signup (AUTO-ACCEPT — decided):** when a new user
   signs up, any `pending` handoffs with `to_email == their email` get `to_user_id`
   linked **and** flipped to `accepted`, so the shared recipes "just appear" in
-  their shared list on arrival. The explicit accept endpoint still exists for
-  manual accepts, but signup auto-accepts.
+  their shared list on arrival.
+- **Orphaned invite (known, accepted limitation):** if the invitee signs up with a
+  *different* email than the one invited, the `pending` grant never auto-resolves
+  and stays dormant — harmless (no access leaked; a dormant `pending` row). It's
+  reclaimable later via the deferred invite-link flow (the accept endpoint above).
+  Not handled in MVP UI; documented so it isn't a silent surprise.
 
 **4.3 Read gate (extend `effective_visibility`-based check)**
 - Add a helper `can_view(recipe, user, db)`: `True` if
@@ -132,10 +138,14 @@ arises on list endpoints — `/recipes/shared` is a single filtered query, fine.
 - On success, if private, the recipe's control shows "Shared with N" (see §5.3).
 
 **5.2 "Shared with me" surface**
-- A section (in Kitchen, or a dedicated view) listing recipes passed to me:
-  - **Accepted** → the recipe cards (tap → detail, full grantee rights).
-  - **Pending invites** → an "accept" affordance ("Priya passed you Grandma's
-    Adobo — [Accept]").
+- A section (in Kitchen, or a dedicated view) listing recipes shared with me:
+  **accepted grants only** → the recipe cards (tap → detail, full grantee rights).
+- **No "Accept" affordance in MVP.** Because in-app grants are instant-accept and
+  email invites auto-accept on signup, a logged-in user never has a visible,
+  actionable pending invite — so an accept button would be dead UI. Shared-with-me
+  therefore shows only what's already accepted; a shared recipe simply appears.
+  (The `POST /handoffs/{id}/accept` endpoint stays in the backend for the future
+  invite-link / mismatched-email flow — see §4.2 — but has no MVP UI.)
 
 **5.3 "Shared with N people" indicator**
 - On a **private** recipe the owner is viewing, if it has accepted grants, the
@@ -155,8 +165,9 @@ shared recipe still shows "kept by [owner]".
    create; `can_view` helper + apply to `get_recipe`/`get_lineage`; instant-accept
    for in-app grants, pending for email; `POST /handoffs/{id}/accept`; email-invite
    linking on signup; `GET /recipes/shared`; index on the lookup.
-2. Frontend: HandoffInvite copy adapts to visibility; "shared with me" view +
-   accept affordance; "Shared with N" indicator on the owner's private recipe.
+2. Frontend: HandoffInvite copy adapts to visibility; "shared with me" view
+   (accepted grants only — NO accept UI, §5.2); "Shared with N" indicator on the
+   owner's private recipe.
 3. Visual-verify: pass a private recipe to a 2nd user → it appears in their
    "shared with me" → they can view/cook/remix → a non-grantee still gets 404;
    email invite → signup → recipe appears.
@@ -166,8 +177,10 @@ shared recipe still shows "kept by [owner]".
 - root-binds: grantee can view a *descendant* of the shared root.
 - pass normalizes to root: passing a branch grants access to the root's subtree.
 - owner-only: non-owner passing → 404.
-- email invite pending → grantee not yet resolved → no access; after signup+link
-  (+accept) → access.
+- email invite pending → grantee not yet resolved → no access; after signup with
+  the matching email → auto-accepted → access (recipe appears in "shared with me").
+- orphaned invite: signup with a *different* email than invited → grant stays
+  `pending`, no access leaked, recipe does NOT appear.
 - `GET /recipes/shared` returns accepted-grant recipes, excludes own, excludes
   pending.
 - re-pass to same grantee is idempotent (no duplicate active grant).
@@ -182,7 +195,7 @@ fast-follow); family-group shortcut; re-share by grantees (explicitly not allowe
 
 1. **In-app grant = INSTANT access.** Passing a private recipe to an existing user
    creates the grant `state="accepted"` immediately; it appears in their "shared
-   with me" with no accept step. Explicit accept is only for email invites. (§4.1)
+   with me" with no accept step. **No Accept UI anywhere in MVP** (§5.2). (§4.1)
 2. **Email-invite on signup = AUTO-ACCEPT.** When a user signs up with an email
    that has `pending` handoffs, those grants link to their account **and** flip to
    `accepted`, so the shared recipes are already present on arrival — the warmest
