@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -84,6 +84,7 @@ class RecipeCreate(BaseModel):
     source: Optional[str] = None
     notes: Optional[str] = None
     language: str = "en"
+    visibility: Literal["private", "public"] = "private"
     ingredient_sections: list[IngredientSectionCreate] = []
     ingredients: list[IngredientCreate] = []
     steps: list[StepCreate] = []

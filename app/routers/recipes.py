@@ -55,6 +55,7 @@ def create_recipe(
         source=recipe_in.source,
         notes=recipe_in.notes,
         language=recipe_in.language,
+        visibility=recipe_in.visibility,
     )
     db.add(new_recipe)
     # flush to get new_recipe.id before committing
