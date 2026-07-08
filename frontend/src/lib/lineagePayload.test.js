@@ -15,7 +15,10 @@ describe('buildRemixInitialValues', () => {
   const parent = {
     name: "Grandma's Adobo", servings: 4, cuisine: 'Filipino',
     source: 'Lola', notes: 'Use cane vinegar', story: 'Her Sunday dish',
-    ingredients: [{ name: 'butter', quantity_text: '2 tbsp' }],
+    ingredients: [{ name: 'butter', quantity_text: '2 tbsp', position: 1 }],
+    ingredient_sections: [
+      { name: 'Sauce', position: 1, ingredients: [{ name: 'soy sauce', quantity_text: '1/4 cup', position: 2 }] },
+    ],
     steps: [{ content: 'Brown the meat', position: 1 }],
   }
   it('carries source and notes, drops story', () => {
@@ -24,8 +27,20 @@ describe('buildRemixInitialValues', () => {
     expect(v.notes).toBe('Use cane vinegar')
     expect(v.story).toBe('')
   })
-  it('deep-copies ingredients/steps (edits do not mutate parent)', () => {
+  it('maps quantity_text to the form\'s quantity field', () => {
     const v = buildRemixInitialValues(parent)
+    expect(v.ingredients[0]).toEqual({ name: 'butter', quantity: '2 tbsp' })
+  })
+  it('flattens sectioned ingredients into the row list, ordered by position', () => {
+    const v = buildRemixInitialValues(parent)
+    expect(v.ingredients).toEqual([
+      { name: 'butter', quantity: '2 tbsp' },
+      { name: 'soy sauce', quantity: '1/4 cup' },
+    ])
+  })
+  it('maps steps to { content } and deep-copies (edits do not mutate parent)', () => {
+    const v = buildRemixInitialValues(parent)
+    expect(v.steps[0]).toEqual({ content: 'Brown the meat' })
     v.ingredients[0].name = 'lard'
     expect(parent.ingredients[0].name).toBe('butter')
   })

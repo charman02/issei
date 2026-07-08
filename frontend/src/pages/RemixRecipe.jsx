@@ -20,7 +20,14 @@ export default function RemixRecipe() {
   if (!parent) return <div className="p-6 text-center text-ink-soft">Loading…</div>
 
   async function handleSubmit(formPayload) {
+    // Send the edited scalars too, so a remixer's name/notes/etc. edits aren't
+    // silently dropped (the backend inherits from the parent only when omitted).
     const { data } = await remixRecipe(id, {
+      name: formPayload.name,
+      servings: formPayload.servings,
+      cuisine: formPayload.cuisine,
+      description: formPayload.description,
+      notes: formPayload.notes,
       ingredients: formPayload.ingredients,
       steps: formPayload.steps,
       prompt_answer: promptAnswer.trim() || null,

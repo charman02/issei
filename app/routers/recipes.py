@@ -17,8 +17,6 @@ from app.services.lineage import diff_recipes, build_lineage_view, effective_vis
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func
-
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
@@ -139,15 +137,21 @@ def remix_recipe(
     diff = diff_recipes(parent.ingredients, parent.steps,
                         remix_in.ingredients, remix_in.steps)
 
+    # Edited scalars override the inherited parent value; omitted ones inherit.
+    def _inherit(edited, parent_value):
+        return edited if edited is not None else parent_value
+
     child = Recipe(
         user_id=current_user.id,
-        name=parent.name,
+        name=_inherit(remix_in.name, parent.name),
         cover_photo_url=parent.cover_photo_url,
-        description=parent.description,
-        servings=parent.servings,
+        description=_inherit(remix_in.description, parent.description),
+        notes=_inherit(remix_in.notes, parent.notes),
+        servings=_inherit(remix_in.servings, parent.servings),
         prep_time_minutes=parent.prep_time_minutes,
-        cuisine=parent.cuisine,
+        cuisine=_inherit(remix_in.cuisine, parent.cuisine),
         diet=parent.diet,
+        source=parent.source,  # source carried from parent; story NOT carried
         language=parent.language,
         parent_recipe_id=parent.id,
         lineage_relation="remixed",
@@ -254,6 +258,10 @@ def browse_recipes(db: Session = Depends(get_db)):
     recipes = [r for r in recipes if effective_visibility(r, db) == "public"]
     for r in recipes:
         _attach_growth_fields(r, db)
+        # Browse is unauthenticated — don't leak per-owner activity on the public
+        # feed. The growth badge only needs cook_count/child_count/has_grandchildren.
+        r.owner_cook_count = 0
+        r.last_cooked_at = None
     return recipes
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)

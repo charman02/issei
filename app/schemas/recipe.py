@@ -94,6 +94,14 @@ class RemixIn(BaseModel):
     ingredients: list[IngredientCreate] = []
     steps: list[StepCreate] = []
     prompt_answer: Optional[str] = None
+    # Optional edited scalars. When provided (not None), they override the
+    # inherited parent value for the child; when omitted, the child inherits
+    # the parent's value (see remix_recipe).
+    name: Optional[str] = None
+    servings: Optional[int] = None
+    cuisine: Optional[str] = None
+    description: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class CookIn(BaseModel):

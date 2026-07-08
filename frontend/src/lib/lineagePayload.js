@@ -8,6 +8,22 @@ export function buildOriginPayload({ name, place, year, memory }) {
 }
 
 export function buildRemixInitialValues(parent) {
+  // Merge direct-FK + sectioned ingredients into flat rows ordered by position,
+  // mapping to RecipeForm's row shape ({ name, quantity }). Mirror EditRecipe:
+  // the form binds a single free-text `quantity`, so surface `quantity_text`
+  // verbatim — otherwise seeded quantities show blank and are wiped on submit.
+  const flatIngredients = [
+    ...(parent.ingredients || []),
+    ...(parent.ingredient_sections || []).flatMap((s) => s.ingredients || []),
+  ]
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((ing) => ({ name: ing.name, quantity: ing.quantity_text || '' }))
+
+  const flatSteps = [...(parent.steps || [])]
+    .sort((a, b) => a.position - b.position)
+    .map((s) => ({ content: s.content }))
+
   return {
     name: parent.name || '',
     servings: parent.servings ?? '',
@@ -15,7 +31,7 @@ export function buildRemixInitialValues(parent) {
     source: parent.source || '',
     notes: parent.notes || '',   // pre-filled, editable
     story: '',                   // remixer writes their own
-    ingredients: (parent.ingredients || []).map((i) => ({ ...i })),
-    steps: (parent.steps || []).map((s) => ({ ...s })),
+    ingredients: flatIngredients,
+    steps: flatSteps,
   }
 }
