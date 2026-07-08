@@ -33,51 +33,6 @@ re-parenting/tombstone step.
 
 ---
 
-## 🟡 (b) Remix silently drops edited name/notes
-
-**What:** `RemixIn` (`app/schemas/recipe.py:93`) carries only `ingredients`,
-`steps`, and `prompt_answer`; `remix_recipe` (`recipes.py:142-156`) copies
-`name` (and description, etc.) from the parent. If the remix form lets a user
-edit the recipe name or notes, those edits are silently discarded.
-
-**Why it exists:** Remix was scoped to branch content, not metadata.
-
-**Risk if ignored:** User edits to name/notes on a remix vanish with no error.
-
-**To resolve:** Add `name`/`notes` (and any other editable scalars) to `RemixIn`
-and apply them in `remix_recipe`, or make the form read-only for those fields.
-
----
-
-## 🟡 (c) Unauthenticated browse now exposes owner activity
-
-**What:** `browse_recipes` (`recipes.py:244`) has no auth dependency and returns
-full `RecipeResponse`, so `owner_cook_count` and `last_cooked_at` (added by
-`_attach_growth_fields`) are public for every public-root recipe.
-
-**Why it exists:** Browse reuses the same `RecipeResponse` schema as the
-authenticated endpoints.
-
-**Risk if ignored:** Owner-scoped activity data leaks to anonymous visitors.
-
-**To resolve:** Use a slimmer public response schema for browse, or drop
-owner-scoped fields from the unauthenticated feed.
-
----
-
-## 🟢 (d) Unused import
-
-**What:** `from sqlalchemy import func` at `recipes.py:20` is never used (no
-`func.` reference anywhere in the file).
-
-**Why it exists:** Leftover from an earlier iteration.
-
-**Risk if ignored:** None — cosmetic lint noise.
-
-**To resolve:** Remove the import.
-
----
-
 ## 🟡 (e) N+1 growth queries on list/browse, untested
 
 **What:** `_attach_growth_fields` (`recipes.py:25`) issues 3 queries per recipe
@@ -173,6 +128,19 @@ applied** (all live/routed screens are on the new look; the only laggard,
 `AddRecipe.jsx`, is no longer routed); **Legacy color tokens still referenced**
 (no live/routed screen references `cream`/`primary`/`accent`/`secondary`/
 `surface` — only the dead, unrouted `AddRecipe.jsx` did).
+
+Cleared in the sub-project-2 final-review fix (`461f028`): **(b) Remix dropped
+edited name/notes** (`RemixIn` now carries `name`/`servings`/`cuisine`/
+`description`/`notes`, applied edited-else-inherit in `remix_recipe`); **(c)
+Unauthenticated browse exposed owner activity** (`browse_recipes` now zeroes
+`owner_cook_count` and nulls `last_cooked_at` on the public feed); **(d) Unused
+`func` import** (removed).
+
+Cleared by the **recipe-visibility feature** (`daac1d9`..`6ec098a`): recipes had
+**no way to be made public** — `RecipeCreate`/`RecipeUpdate` never accepted
+`visibility`, so every recipe was permanently private and Browse showed nothing.
+Now: `visibility` is accepted on create (root-only) and patch (root-only, `400` on
+a branch), with an owner status pill + publish/un-publish control on RecipeDetail.
 
 ---
 
