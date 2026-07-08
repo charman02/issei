@@ -24,7 +24,7 @@ function hasAcceptedExtension(filename) {
   return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
-export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit }) {
+export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit, submitLabel, beforeSubmitSlot = null }) {
   const [name, setName] = useState(initialValues.name || '')
   const [servings, setServings] = useState(
     initialValues.servings != null ? String(initialValues.servings) : ''
@@ -45,7 +45,8 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit 
   const [loading, setLoading] = useState(false)
 
   const heading = mode === 'edit' ? 'Edit recipe' : 'Keep a recipe'
-  const submitLabel = mode === 'edit' ? 'Save changes' : 'Keep this recipe'
+  const defaultSubmitLabel = mode === 'edit' ? 'Save changes' : 'Keep this recipe'
+  const submitText = submitLabel || defaultSubmitLabel
   const loadingLabel = mode === 'edit' ? 'Saving…' : 'Keeping…'
 
   async function handlePhotoSelect(e) {
@@ -325,8 +326,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit 
           + Add Step
         </button>
 
+        {beforeSubmitSlot}
         <button type="submit" disabled={loading} className="btn-primary mt-5">
-          {loading ? loadingLabel : submitLabel}
+          {loading ? loadingLabel : submitText}
         </button>
       </form>
     </div>
