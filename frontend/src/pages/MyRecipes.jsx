@@ -22,6 +22,13 @@ export default function MyRecipes() {
       <h1 className="font-serif font-black text-[28px] text-ink">Your Kitchen</h1>
       <p className="font-serif italic text-sm text-ink-soft mt-0.5">Everything you've kept.</p>
 
+      <button
+        onClick={() => navigate('/shared')}
+        className="mt-2 font-sans text-[11.5px] font-semibold text-terra"
+      >
+        Shared with you →
+      </button>
+
       <IconField
         icon="search"
         iconClassName="text-ink-soft"
