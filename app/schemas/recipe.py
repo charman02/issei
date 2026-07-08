@@ -131,6 +131,7 @@ class RecipeResponse(BaseModel):
     owner_cook_count: int = 0
     child_count: int = 0
     has_grandchildren: bool = False
+    shared_with_count: int = 0
     last_cooked_at: Optional[datetime] = None
     visibility: str = "private"
     origin_attribution: Optional[str] = None

@@ -45,6 +45,9 @@ export default function VisibilityControl({ recipe, onChange }) {
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-3">
         <span className="font-sans text-[12px] font-semibold text-ink-soft">{label}</span>
+        {!isPublic && (recipe.shared_with_count || 0) > 0 && (
+          <span className="font-sans text-[11px] text-ink-soft">· Shared with {recipe.shared_with_count}</span>
+        )}
         <button
           onClick={onToggle} disabled={busy}
           className="font-sans text-[11.5px] font-semibold text-terra disabled:opacity-50"

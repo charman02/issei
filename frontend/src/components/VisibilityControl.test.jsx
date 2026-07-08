@@ -45,4 +45,9 @@ describe('VisibilityControl', () => {
     expect(screen.getByText(/inherited from the original/i)).toBeInTheDocument()
     expect(screen.queryByRole('button')).toBeNull()
   })
+
+  it('shows "Shared with N" when a private root has accepted grants', () => {
+    render(<VisibilityControl recipe={{ id: 1, parent_recipe_id: null, visibility: 'private', child_count: 0, shared_with_count: 2 }} onChange={() => {}} />)
+    expect(screen.getByText(/shared with 2/i)).toBeInTheDocument()
+  })
 })

@@ -33,6 +33,9 @@ def _attach_growth_fields(recipe, db):
     recipe.has_grandchildren = bool(child_ids) and db.query(Recipe.id).filter(
         Recipe.parent_recipe_id.in_(child_ids), Recipe.deleted_at == None
     ).first() is not None
+    recipe.shared_with_count = db.query(Handoff).filter(
+        Handoff.recipe_id == recipe.id, Handoff.state == "accepted"
+    ).count()
     return recipe
 
 

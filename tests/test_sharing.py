@@ -159,3 +159,12 @@ def test_accept_endpoint_activates_pending_for_recipient(client, make_user, db_s
     assert r.status_code == 200
     db_session.refresh(h)
     assert h.state == "accepted"
+
+
+def test_recipe_response_has_shared_with_count(client, make_user):
+    owner, oheaders = make_user()
+    grantee, _ = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
+    body = client.get(f"/recipes/{root['id']}", headers=oheaders).json()
+    assert body["shared_with_count"] == 1
