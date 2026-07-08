@@ -85,3 +85,18 @@ def test_branch_of_private_root_stays_hidden(client, make_user):
     _, other = make_user()
     # child inherits private root → not publicly visible even though child row default is private
     assert client.get(f"/recipes/{child['id']}", headers=other).status_code == 404
+
+
+def test_branch_of_public_root_is_visible_to_non_owner(client, make_user):
+    # A remix child's OWN row is private-by-default, but its PUBLIC root must make it
+    # visible to a non-owner via effective_visibility (root-binds). This fails if the
+    # root-walk is dropped and the child's own (private) visibility is used.
+    _, owner = make_user()
+    root = client.post("/recipes", json=_payload(visibility="public"), headers=owner).json()
+    child = client.post(f"/recipes/{root['id']}/remix",
+                        json={"ingredients": [{"name": "lard", "quantity_text": "1 tbsp",
+                              "quantity_type": "precise", "position": 1}], "steps": []},
+                        headers=owner).json()
+    _, other = make_user()
+    # child inherits the PUBLIC root → visible to a non-owner even though its own row is private
+    assert client.get(f"/recipes/{child['id']}", headers=other).status_code == 200
