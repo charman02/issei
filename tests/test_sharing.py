@@ -114,3 +114,17 @@ def test_non_grantee_still_404(client, make_user):
     stranger, sheaders = make_user()
     root = client.post("/recipes", json=_payload(), headers=oheaders).json()
     assert client.get(f"/recipes/{root['id']}", headers=sheaders).status_code == 404
+
+
+def test_email_invite_auto_accepts_on_signup(client, make_user, db_session):
+    from app.models.handoff import Handoff
+    owner, oheaders = make_user()
+    root = client.post("/recipes", json=_payload(), headers=oheaders).json()
+    client.post(f"/recipes/{root['id']}/handoff",
+                json={"to_email": "newmom@example.com"}, headers=oheaders)
+    # new user signs up with that email
+    client.post("/auth/signup", json={"email": "newmom@example.com", "password": "password123",
+                                      "first_name": "Mom", "last_name": "X"})
+    h = db_session.query(Handoff).filter_by(recipe_id=root["id"], to_email="newmom@example.com").one()
+    assert h.state == "accepted"
+    assert h.to_user_id is not None
