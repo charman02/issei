@@ -56,25 +56,32 @@ made visible** (parent spec §1a).
 | **Sapling** | small branching stem | has been remixed (has ≥1 child branch) |
 | **Tree** | fuller branching form | a deep lineage (multiple generations / many branches) |
 
-### 2.2 What advances the state — **the rule (confirm at review)**
+### 2.2 What advances the state — **the rule (decided 2026-07-08)**
 Two independent signals, two meanings — so the mark encodes both *depth* and
 *liveliness*:
 - **Branches (lineage depth) drive the main seed→sapling→tree progression.** The
   tree literally grows as the dish travels and mutates across people. This is the
   structural, permanent growth.
-- **Cooks add a "bloom / liveliness" layer** on top — a well-cooked recipe visibly
-  flourishes (leafier, warmer), and going long uncooked lets it go quietly dormant
-  (the garden's "bring this back to life" nudge). This is the reversible, activity
-  growth.
-- Concretely for MVP: `seed` = 0 cooks & no children; `sprout` = ≥1 cook, no
+- **Cooks — including the owner's own cooks — drive a "bloom / liveliness" layer**
+  on top. Every `CookEvent` counts, *whoever* cooked it: this deliberately rewards
+  a user for **continuing to make their own recipe**, not just logging it once, so
+  a dish you cook weekly visibly thrives even if no one else has touched it (a
+  beloved private recipe should never look like a dead seed). Going long uncooked
+  lets it go quietly dormant (the garden's "bring this back to life" nudge). This
+  layer is the reversible, activity growth.
+- **The owner's own cook count is tracked and surfaced** (distinct from total
+  cooks across everyone): "you've made this 12 times." It advances bloom and
+  powers the "keep the flame" retention beat (parent §1a).
+- Concretely for MVP, base state from lineage depth + any cooks:
+  `seed` = 0 cooks & no children; `sprout` = ≥1 cook (owner's or anyone's), no
   children; `sapling` = ≥1 child; `tree` = children spanning ≥2 generations
-  (grandchildren exist). Bloom/dormancy is a lighter visual modifier on top of
-  whichever base state, driven by recency of the last `CookEvent`.
+  (grandchildren exist). Bloom/dormancy is a lighter visual modifier on top of the
+  base state, driven by **cook frequency + recency** of `CookEvent`s.
   *(Exact thresholds are tunable knobs; the ordering is the locked part.)*
 
-> **OPEN FOR REVIEW:** confirm branches-drive-progression + cooks-drive-bloom, vs.
-> cooks-alone-drive-growth. Everything else in this spec is independent of the
-> exact thresholds; only the state-derivation helper changes.
+Data note: `CookEvent` already carries `user_id`, so the **owner's own cook count**
+is derivable today (`cook_events` where `user_id == recipe.user_id`) with no schema
+change — the flows/`stateForRecipe` just compute both totals.
 
 ### 2.3 Where marks appear
 - **Recipe cards** (Home/Browse/Kitchen): a small growth-state mark corner-badge.
@@ -84,13 +91,15 @@ Two independent signals, two meanings — so the mark encodes both *depth* and
 - **Plant/cook/remix confirmation beats:** the mark animates/advances as the
   emotional payoff.
 
-### 2.4 The coffee-bean fix (carried from task #10)
-The bare terra seed shape reads as a **coffee bean**. Since the seed is the most
-load-bearing symbol, its production mark must not read as coffee — resolve by a
-distinguishing sprout cue and/or shape/notch, and keep the **bottom-nav Home icon
-as a house** (reserve the seed strictly for plant/growth contexts) so the two
-never collide. Final mark set is produced in task #10; these flows reference the
-states by name.
+### 2.4 The seed mark & the coffee-bean note (scoped to the app icon)
+The seed mark **in-context** (plant flow, growth badges, beats) reads fine — it's
+specifically the **app icon** rendering of the bare terra seed that read as a
+**coffee bean**. So the fix is icon-specific, not a constraint on the seed
+everywhere. The seed mark is **open for design + color exploration** (shape, notch,
+sprout cue, palette — herb-green shoot, saffron accents, etc.) as part of the
+task #10 identity pass; only the app-icon lockup must be unambiguously *not* coffee
+(a sprout cue and/or the wordmark resolves it). These flows reference the growth
+states by name and can build against a provisional seed mark.
 
 ---
 
@@ -186,13 +195,25 @@ Each flow is a self-contained unit with a clear boundary; `GrowthMark` +
 
 ---
 
-## 6. Open questions for review
+## 6. Guiding principle & resolved decisions
 
-1. **Growth-state rule (§2.2):** confirm branches-drive-progression +
-   cooks-drive-bloom, vs. cooks-alone. (Only affects `stateForRecipe`.)
-2. **Plant refactor vs. wrapper:** rebuild `AddRecipe` into `PlantRecipe`, or wrap
-   the existing form with pre/post steps? (Impl-plan detail; lean = refactor into a
-   stepped `PlantRecipe` that still renders `RecipeForm` for the form step.)
-3. **Coffee-bean fix ownership:** the final seed mark is produced in task #10; is a
-   provisional non-coffee seed acceptable for this sub-project's build, refined
-   later? (Lean = yes.)
+**Guiding principle (founder, 2026-07-08):** prioritize Issei being a **top-tier
+product**. Do not treat what's already built (backend or frontend) as a
+constraint — where the existing design/structure doesn't serve this product
+vision, innovate and restructure rather than conform. The built backend is a
+strong, correct foundation; the frontend/Craft D layer is fair game to reshape
+where the lineage vision or a better design calls for it.
+
+**Resolved:**
+1. **Growth-state rule (§2.2):** DECIDED — branches drive seed→sapling→tree
+   progression; cooks (including the **owner's own** cooks) drive a bloom/dormancy
+   layer, rewarding continued cooking of one's own recipes. Owner cook count is
+   tracked + surfaced.
+2. **Seed mark / coffee-bean (§2.4):** DECIDED — issue was app-icon-specific; the
+   seed mark is open for design/color exploration in task #10; flows build against
+   a provisional mark.
+
+**Still open (impl-plan detail, non-blocking):**
+- **Plant refactor vs. wrapper:** rebuild `AddRecipe` into a stepped `PlantRecipe`
+  (lean, given the guiding principle) that still renders `RecipeForm` for the form
+  step, vs. wrapping the current page. Resolve when planning.
