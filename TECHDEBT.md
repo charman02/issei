@@ -116,6 +116,81 @@ strengthen the seed mark at small sizes.
 
 ---
 
+## 🔴 (j) `GET /recipes/{id}/scale` has no visibility/grant gate
+
+**What:** `get_scaled_recipe` (`app/routers/recipes.py`) filters only on
+`deleted_at IS NULL` — it does **not** apply `can_view`. Any logged-in user can
+call `/recipes/{id}/scale?servings=n` on ANY recipe (private, shared, or public)
+and receive the full recipe body (name, ingredients, steps). Introduced by commit
+`c99d420` ("Allow viewing any recipe"), predating the sharing work.
+
+**Why it exists:** Scaling was made broadly viewable before per-root visibility
+and grant-based sharing existed. The sharing feature gated `get_recipe` and
+`get_lineage` on `can_view` but deliberately kept scope to those two endpoints;
+`/scale` was flagged during Task 3 and left for a focused fix.
+
+**Risk if ignored:** Read-authorization bypass — a private or shared-only recipe's
+contents leak to any authenticated user who guesses/enumerates an id via the scale
+endpoint. Now inconsistent with the grant-aware read endpoints.
+
+**To resolve:** Gate `get_scaled_recipe` on `can_view(recipe, current_user, db)`
+(same 404-on-deny as `get_recipe`), and add a test: non-owner/non-grantee scaling
+a private recipe → 404.
+
+---
+
+## 🟡 (k) Sharing: manage/revoke grants UI deferred (MVP is count-only)
+
+**What:** The owner sees "Shared with N" on a private recipe (read-only count),
+but there is no UI to list grantees or revoke a grant. The `handoffs` grant rows
+exist and could be revoked at the data layer, but nothing surfaces it.
+
+**Why it exists:** MVP scope (sharing spec §6 "Deferred") — count-only was chosen
+to ship the loop; manage/revoke is a documented fast-follow.
+
+**Risk if ignored:** An owner can share but not un-share from the UI; a mistaken
+share can't be walked back without direct DB access.
+
+**To resolve:** Add a grantee list + revoke action (delete/deactivate the
+`handoffs` row) behind the "Shared with N" indicator.
+
+---
+
+## 🟡 (l) Sharing: orphaned email invite (mismatched email) never resolves in-app
+
+**What:** If an owner emails an invite to `a@x.com` but the invitee signs up with
+`b@y.com`, the `pending` handoff never auto-accepts (auto-accept matches on email).
+The grant stays a dormant `pending` row — no access leaked, but the recipe never
+appears for that user. The `POST /recipes/handoffs/{id}/accept` endpoint exists to
+claim it, but has no MVP UI (no invite-link flow).
+
+**Why it exists:** Accepted MVP limitation (sharing spec §4.2) — the two auto-accept
+paths (in-app instant, email-match on signup) cover the common cases; the
+invite-link/claim flow was deferred.
+
+**Risk if ignored:** A minority of email invites silently do nothing if the invitee
+uses a different email; the inviter isn't told.
+
+**To resolve:** Build an invite-link flow (tokenized URL → `accept` endpoint), or
+surface pending-invite claiming in-app.
+
+---
+
+## 🟢 (m) Sharing: family-group shortcut not built
+
+**What:** "Pass to everyone in this list" (a family group) is not implemented;
+sharing is one recipient at a time.
+
+**Why it exists:** Deferred sugar over the per-person grant (sharing spec §2);
+YAGNI for MVP.
+
+**Risk if ignored:** Sharing a recipe with a whole family is N separate passes.
+
+**To resolve:** Add a group abstraction that expands to per-person grants on the
+root, reusing the existing handoff mechanism.
+
+---
+
 ## Resolved (2026-07-08)
 
 Cleared on the `lineage-mvp` branch: **Edit Recipe half-shipped** (backend

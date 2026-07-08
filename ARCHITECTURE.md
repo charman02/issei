@@ -45,8 +45,10 @@ database (Postgres / SQLite)
 | `auth.py` | Password hashing (bcrypt), JWT creation/decoding, and `get_current_user` — the dependency that protects endpoints by requiring a valid token. |
 | `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step`, and the lineage tables `ghost_ancestor`, `cook_event`, `handoff`. |
 | `schemas/` | **Pydantic models** — define the JSON shape of requests and responses, separately from the DB models. Keeps internal fields (like password hashes) from leaking to the API. |
-| `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me), `recipes` (CRUD + scaling + browse + lineage actions: remix, cook, handoff, and the `/lineage` view), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
-| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `lineage.py` (remix diff detection that pre-fills the remix prompt, effective-visibility resolution where the root binds descendants, and the walkable lineage-view builder). |
+| `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me — signup also auto-accepts pending recipe invites addressed to the new user's email), `recipes` (CRUD + scaling + browse + lineage actions: remix, cook, handoff, the `/lineage` view, plus sharing: `/recipes/shared` and `/recipes/handoffs/{id}/accept`), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
+| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `lineage.py` (remix diff detection that pre-fills the remix prompt; `root_of` + `effective_visibility` where the root binds descendants; `can_view`, the single read-authorization rule — public root **or** owner **or** an accepted grant on the root; and the walkable lineage-view builder). |
+
+**Sharing model (the "Shared" tier).** Passing a recipe *is* sharing — there is no separate access-grant concept. The `handoffs` table doubles as the grant: passing a private recipe to someone creates a `Handoff` normalized to the lineage **root** (so a grant covers the whole subtree), with `state` in `pending | accepted`. In-app recipients are accepted instantly; email invites stay `pending` until that address signs up (then they auto-accept). `can_view` in `lineage.py` gates `get_recipe` and `get_lineage` on this. `GET /recipes/shared` lists a user's accepted-grant recipes; `RecipeResponse.shared_with_count` tells an owner how many people a private recipe is shared with (count only — no identities). Grantees get view + cook + remix, but cannot edit the owner's copy or re-share.
 
 **Models vs Schemas — the distinction that trips people up.** A *model*
 (`models/recipe.py`) is the database table. A *schema* (`schemas/recipe.py`) is
@@ -120,7 +122,7 @@ frontend/
 | `main.jsx` | The true entry point. Mounts the app and enables routing. You rarely touch this. |
 | `App.jsx` | The **route table**. Each `<Route>` maps a URL path to a page component. Protected routes are wrapped in `<ProtectedRoute>` and `<Layout>` (which adds the bottom nav). When you add a page, you add a route here. |
 | `api/client.js` | A single configured **axios** instance — the *only* thing that talks to the backend. It auto-attaches the JWT token to every request (request interceptor) and, on any 401 response, clears the session and redirects to login (response interceptor). Import `client` anywhere you need data. |
-| `api/lineage.js` | Lineage endpoint calls (remix, cook, handoff, and the `/lineage` view) built on `client`. |
+| `api/lineage.js` | Lineage + sharing endpoint calls (remix, cook, handoff, the `/lineage` view, `getSharedWithMe`, and `setVisibility`) built on `client`. |
 | `index.css` | Pulls in Tailwind and defines a couple of custom utility classes (e.g. `scrollbar-hide`). |
 
 ### `components/` — reusable pieces
@@ -131,7 +133,7 @@ frontend/
 | `BottomNav.jsx` | The fixed bottom navigation bar (Home, Browse, Add, Kitchen, You). |
 | `CoverImage.jsx` | Renders a recipe's cover photo, or a styled cream placeholder with the 一世 mark when there's no photo. Shared by every screen that shows a recipe. |
 | `GrowthMark.jsx` | Seed → sprout → sapling → tree growth SVG for a recipe, driven by its counts. |
-| `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a named person / email). |
+| `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a person / email). Copy adapts to the recipe's visibility — access-granting for a private recipe, a nudge for a public one. |
 | `RecipeForm.jsx` | Shared create/edit/remix form body, reused by PlantRecipe, EditRecipe, and RemixRecipe. |
 | `Wordmark.jsx` | The `issei.` wordmark. |
 | `Icon.jsx` / `IconField.jsx` | The line-icon set and a labeled input field. |
@@ -144,8 +146,9 @@ frontend/
 | `Login.jsx` | `/login` | Login + signup (tabs). The only public page. |
 | `Home.jsx` | `/` | Greeting + recent recipes (or a welcome empty state). |
 | `Browse.jsx` | `/browse` | Discovery: search, diet filters, recipes grouped by cuisine. |
-| `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid. |
-| `RecipeDetail.jsx` | `/recipes/:id` | A single recipe — cover, story, ingredients, steps. |
+| `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid (Kitchen). Links to "Shared with you". |
+| `SharedWithMe.jsx` | `/shared` | Recipes others have passed to the user (accepted grants only; no accept UI). |
+| `RecipeDetail.jsx` | `/recipes/:id` | A single recipe — cover, story, ingredients, steps. Owner sees a "Shared with N" indicator + "Pass it on"; the invite copy adapts to the recipe's visibility. |
 | `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm → planted beat → HandoffInvite. |
 | `EditRecipe.jsx` | `/recipes/:id/edit` | Edit an existing recipe (shared RecipeForm). |
 | `RemixRecipe.jsx` | `/recipes/:id/remix` | Branch a child recipe off this one. |

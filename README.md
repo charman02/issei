@@ -51,13 +51,15 @@ A full-stack app (FastAPI backend + React frontend) for preserving and sharing f
 | DELETE | /recipes/{recipe_id} | Yes | Deletes the queried recipe. |
 | POST | /recipes/{recipe_id}/remix | Yes | Creates a child recipe branched from this one. |
 | POST | /recipes/{recipe_id}/cook | Yes | Logs a cook event; returns updated cook_count. |
-| POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a named person / email invite. |
+| POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a person (in-app user or email invite). On a **private** recipe this grants the recipient access (view + cook + remix); the grant attaches to the lineage root. |
 | GET | /recipes/{recipe_id}/lineage | Yes | Returns the walkable lineage spine + tree counts. |
+| GET | /recipes/shared | Yes | Returns recipes shared *with* the current user (accepted grants; excludes their own). |
+| POST | /recipes/handoffs/{handoff_id}/accept | Yes | Claims a pending invite for the current user (backend-only; the two auto-accept paths cover the in-app cases, so there is no MVP UI for this). |
 | GET | /recipes/browse | No | Public discovery feed (root-visibility gated). |
 | POST | /shopping-list | Yes | Creates a shopping list. |
 | POST | /upload | Yes | Uploads a photo to Cloudinary. |
 
-`GET /recipes/{recipe_id}` and `/lineage` are also visible to non-owners when the root recipe's visibility is public.
+**Three visibility tiers — Private → Shared → Public.** A recipe is viewable by a user when: the root recipe's visibility is `public`, **or** they own it, **or** they hold an accepted handoff (grant) on its root. "Shared" is not a stored enum value — `visibility` stays `private | public`; a private recipe with ≥1 accepted grant *is* shared with those people. In-app grants are accepted instantly; email invites are pending until the invitee signs up with the matching email, at which point they auto-accept. `GET /recipes/{recipe_id}` and `/lineage` apply this same `can_view` rule.
 
 ## Setup Instructions
 1. **Clone the repo:**
