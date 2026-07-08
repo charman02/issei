@@ -28,6 +28,18 @@ describe('VisibilityControl', () => {
     expect(setVisibility).toHaveBeenCalledWith(6, 'public')
   })
 
+  it('confirm pluralizes a single descendant correctly (1 version)', async () => {
+    render(<VisibilityControl recipe={{ id: 8, parent_recipe_id: null, visibility: 'private', child_count: 1 }} onChange={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: /make public/i }))
+    expect(screen.getByText(/\b1 version\b/i)).toBeInTheDocument()
+    expect(screen.queryByText(/1 versions/i)).toBeNull()
+  })
+
+  it('public root shows a reversibility advisory note', () => {
+    render(<VisibilityControl recipe={{ id: 9, parent_recipe_id: null, visibility: 'public', child_count: 2 }} onChange={() => {}} />)
+    expect(screen.getByText(/versions already kept stay with their owners/i)).toBeInTheDocument()
+  })
+
   it('branch shows inherited status, no toggle', () => {
     render(<VisibilityControl recipe={{ id: 7, parent_recipe_id: 5, visibility: 'public' }} onChange={() => {}} />)
     expect(screen.getByText(/inherited from the original/i)).toBeInTheDocument()
