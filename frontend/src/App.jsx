@@ -8,6 +8,7 @@ import MyRecipes from './pages/MyRecipes'
 import RecipeDetail from './pages/RecipeDetail'
 import AddRecipe from './pages/AddRecipe'
 import EditRecipe from './pages/EditRecipe'
+import RemixRecipe from './pages/RemixRecipe'
 import Profile from './pages/Profile'
 
 function Layout({ children }) {
@@ -60,6 +61,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout><EditRecipe /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/recipes/:id/remix"
+        element={
+          <ProtectedRoute>
+            <Layout><RemixRecipe /></Layout>
           </ProtectedRoute>
         }
       />
