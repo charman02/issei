@@ -17,7 +17,25 @@ from app.services.lineage import diff_recipes, build_lineage_view, effective_vis
 
 from datetime import datetime, timezone
 
+from sqlalchemy import func
+
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+
+def _attach_growth_fields(recipe, db):
+    """Compute the growth-state counts the frontend reads. Small N per request."""
+    cooks = db.query(CookEvent).filter(CookEvent.recipe_id == recipe.id).all()
+    recipe.cook_count = len(cooks)
+    recipe.owner_cook_count = sum(1 for c in cooks if c.user_id == recipe.user_id)
+    recipe.last_cooked_at = max((c.cooked_at for c in cooks), default=None)
+    child_ids = [r.id for r in db.query(Recipe.id).filter(
+        Recipe.parent_recipe_id == recipe.id, Recipe.deleted_at == None
+    ).all()]
+    recipe.child_count = len(child_ids)
+    recipe.has_grandchildren = bool(child_ids) and db.query(Recipe.id).filter(
+        Recipe.parent_recipe_id.in_(child_ids), Recipe.deleted_at == None
+    ).first() is not None
+    return recipe
 
 
 @router.post("", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
@@ -210,7 +228,7 @@ def list_recipes(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return db.query(Recipe).filter(
+    recipes = db.query(Recipe).filter(
         Recipe.user_id == current_user.id,
         Recipe.deleted_at == None
     ).options(
@@ -219,6 +237,9 @@ def list_recipes(
         selectinload(Recipe.steps),
         selectinload(Recipe.user)
     ).all()
+    for r in recipes:
+        _attach_growth_fields(r, db)
+    return recipes
 
 @router.get("/browse", response_model=list[RecipeResponse])
 def browse_recipes(db: Session = Depends(get_db)):
@@ -231,6 +252,8 @@ def browse_recipes(db: Session = Depends(get_db)):
         selectinload(Recipe.user)
     ).order_by(Recipe.created_at.desc()).all()
     recipes = [r for r in recipes if effective_visibility(r, db) == "public"]
+    for r in recipes:
+        _attach_growth_fields(r, db)
     return recipes
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
@@ -255,6 +278,7 @@ def get_recipe(
         raise HTTPException(status_code=404, detail="Recipe not found")
     if recipe.user_id != current_user.id and effective_visibility(recipe, db) != "public":
         raise HTTPException(status_code=404, detail="Recipe not found")
+    _attach_growth_fields(recipe, db)
     return recipe
 
 @router.get("/{recipe_id}/lineage", response_model=LineageView)

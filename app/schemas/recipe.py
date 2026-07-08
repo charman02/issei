@@ -118,6 +118,11 @@ class RecipeResponse(BaseModel):
     language: str
     parent_recipe_id: Optional[int] = None
     lineage_relation: str = "root"
+    cook_count: int = 0
+    owner_cook_count: int = 0
+    child_count: int = 0
+    has_grandchildren: bool = False
+    last_cooked_at: Optional[datetime] = None
     visibility: str = "private"
     origin_attribution: Optional[str] = None
     prompt_key: Optional[str] = None
