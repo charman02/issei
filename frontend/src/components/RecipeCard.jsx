@@ -1,4 +1,6 @@
 import CoverImage from './CoverImage'
+import GrowthMark from './GrowthMark'
+import { stateForRecipe, bloomForRecipe } from '../lib/growthState'
 
 // The signature repeated unit: a recipe as a designed "card in a recipe box."
 // - squared corners (heirloom, not app-rounded)
@@ -27,6 +29,13 @@ export default function RecipeCard({ recipe, onClick, variant = 'row' }) {
             {recipe.cuisine}
           </span>
         )}
+        <span className="absolute top-[7px] right-[7px] bg-[rgba(247,238,221,0.94)] rounded-full p-[3px] shadow-[0_1px_3px_rgba(90,60,30,0.2)]">
+          <GrowthMark
+            state={stateForRecipe(recipe)}
+            bloom={bloomForRecipe(recipe)}
+            size={16}
+          />
+        </span>
       </div>
       <div className="px-[11px] pt-[9px] pb-[11px]">
         <p className="font-serif font-bold text-[15px] leading-[1.15] text-ink">
