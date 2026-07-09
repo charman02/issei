@@ -33,6 +33,29 @@ substrate for this. The tree still exists as (a) a quiet provenance line
 rare large lineage. The seed→tree metaphor survives — now applied to the *single
 recipe's growth*, not the network's shape.
 
+### 0.1 Remixing is cut from v1
+
+**Remixing (a user creating their own branched child of another user's recipe) is
+removed from the v1 product surface.** Rationale: remix only creates value once
+multiple family members are actively on the app cooking the same dish differently —
+a network-maturity feature, not a day-one one (the real early user graph is *one
+person capturing one elder's recipe*). Keeping it would add conceptual clutter
+("whose version is this?") that competes with the clean, reverent "this is *the
+person's* recipe" framing, for a case almost no early user hits.
+
+- **Divergence is captured via cook-notes instead.** "I use coconut milk instead"
+  is recorded as a **cook with a note** (an existing cook event that already feeds
+  growth) — low-friction, preserved as a memory *on* the recipe, without
+  fragmenting one heirloom into parallel copies.
+- **Provenance survives without remix.** "Lola → Mom → you" as *heritage* comes from
+  **ghost ancestors** (captured origins), which stay. Only cross-*app-user* version
+  branching is removed — which wouldn't occur at this stage anyway.
+- **Reversible safeguard:** the `parent_recipe_id` FK stays in the database
+  (already built, harmless); only the remix UI/endpoint exposure is removed. If the
+  app ever grows dense multi-member family networks that genuinely want divergent
+  versions side by side, reviving remix is a cheap UI addition, not a
+  re-architecture.
+
 ---
 
 ## 1. The living recipe page — the hero
@@ -108,6 +131,9 @@ qualities.
 
 **Use (depth — contributes to vitality, bounded):**
 - Each additional cook after the first
+- A **cook-note** (a variation or comment left when cooking — "I used coconut milk
+  instead") — this is also how personal divergence is captured now that remix is
+  cut (see §0.1)
 
 **Spread (both breadth + depth):**
 - First handoff opens the dimension (breadth/stage)
@@ -216,12 +242,33 @@ person captured in the ghost-ancestor / origin), the "add your part" starter is
 pre-selected — because there it's near-certain, and still editable. Everywhere
 else: neutral + note carries it.
 
-### 4.3 Existing substrate
+**Copy note (post-remix-cut):** handoff copy invites the recipient to **cook it and
+keep it** (and, for the source, *add their part*) — it does **not** invite them to
+"make their own version" (remix is cut, §0.1).
+
+### 4.3 Accounts & the recipient landing (the growth loop)
+
+**Accessing a handed-off recipe requires an account.** This is deliberate: the
+handoff-as-signup-gate *is* the app's primary acquisition loop — "Mom, I saved your
+adobo, add the part I forget" pulls a real person into the app far more reliably
+than a generic invite. Family will make an account to preserve heritage. Requiring
+an account here is a feature, not friction.
+
+**Recipient landing = soft wall (decided).** A recipient (esp. via email invite,
+before they have an account) sees a **warm preview first** — the recipe name, who
+it's from, the story, the growth plant — *then* a signup prompt to unlock cooking /
+keeping / adding their part. The emotional hook ("that's Grandma's adobo, and it
+says her name") lands *before* the ask, which converts better than a cold gate while
+still requiring an account to participate. (Exact preview scope + gated actions are
+an implementation detail to refine during the build; the principle — preview, then
+sign up to participate — is locked.)
+
+### 4.4 Existing substrate
 
 The handoff endpoint (`POST /recipes/{id}/handoff`) + the sharing tier (instant-
 accept for in-app users, pending for email, auto-accept on signup) are already
 built. This spec adds copy + light frontend logic (starters, per-source
-pre-selection) on top of existing plumbing.
+pre-selection) + the soft-wall recipient landing on top of existing plumbing.
 
 ---
 
@@ -294,3 +341,9 @@ is the retention surface — the reason to open the app between cooking events.
 9. **One signature plant v1; species-agnostic architecture** for future variety
    (deferred to identity work / task #10; framed as heritage, not gacha).
 10. **Sequence: spec → identity → build.** Avoids building hero screens twice.
+11. **Remix is cut from v1** (§0.1). Divergence captured via cook-notes;
+    provenance via ghost ancestors; `parent_recipe_id` FK kept dormant so remix is
+    revivable later without re-architecture.
+12. **Handoff requires an account, with a soft-wall recipient landing** (§4.3):
+    preview the recipe (name, source, story, plant) first, then sign up to
+    participate. The signup gate is the intended growth loop, not friction.
