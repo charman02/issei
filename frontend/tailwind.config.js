@@ -14,6 +14,9 @@ export default {
         saffron: '#D99A2B',
         herb: '#6F8A4D',
         plum: '#8A3D5A',
+        // Semantic roles (spec §4): warm for "do", green for "grow"
+        action: '#BD5A2C', // = terra — buttons, links, active states
+        growth: '#6F8A4D', // = herb  — plants, growth-stage pills, the garden
       },
       fontFamily: {
         serif: ['Cormorant Garamond', 'Georgia', 'serif'],

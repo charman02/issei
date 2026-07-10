@@ -13,3 +13,18 @@ describe('tailwind font families', () => {
     expect(fam.hand[0]).toBe('Caveat')
   })
 })
+
+describe('tailwind color roles', () => {
+  const c = config.theme.extend.colors
+  it('action maps to terra', () => {
+    expect(c.action).toBe('#BD5A2C')
+  })
+  it('growth maps to herb', () => {
+    expect(c.growth).toBe('#6F8A4D')
+  })
+  it('keeps the heirloom palette', () => {
+    expect(c.paper).toBe('#EFE4D2')
+    expect(c.terra).toBe('#BD5A2C')
+    expect(c.herb).toBe('#6F8A4D')
+  })
+})
