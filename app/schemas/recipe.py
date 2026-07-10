@@ -132,6 +132,9 @@ class RecipeResponse(BaseModel):
     child_count: int = 0
     has_grandchildren: bool = False
     shared_with_count: int = 0
+    growth_stage: str = "seed"
+    growth_vitality: str = "bare"
+    soul_count: int = 0
     last_cooked_at: Optional[datetime] = None
     visibility: str = "private"
     origin_attribution: Optional[str] = None

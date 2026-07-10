@@ -32,3 +32,17 @@ def test_vitality_states():
     assert growth_vitality(cook_count=30, share_count=2) == "fruiting"
     # caps: 30 and 300 both fruiting (no higher state)
     assert growth_vitality(cook_count=300, share_count=9) == "fruiting"
+
+
+def test_recipe_response_has_growth_fields(client, make_user):
+    _, headers = make_user()
+    payload = {"name": "Adobo",
+               "story": "Lola made it every Sunday",
+               "ingredients": [{"name": "chicken", "quantity_text": "2 lbs",
+                                "quantity_type": "precise", "position": 1}],
+               "steps": [{"content": "Cook", "position": 1}]}
+    r = client.post("/recipes", json=payload, headers=headers)
+    body = r.json()
+    assert body["growth_stage"] == "sprout"   # 1 soul dimension (story), 0 cooks
+    assert body["growth_vitality"] == "bare"
+    assert body["soul_count"] == 1

@@ -14,6 +14,7 @@ from app.models.handoff import Handoff
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
 from app.services.scaling import scale_ingredient
 from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of, can_view
+from app.services.growth import soul_count, growth_stage, growth_vitality
 
 from datetime import datetime, timezone
 
@@ -36,6 +37,10 @@ def _attach_growth_fields(recipe, db):
     recipe.shared_with_count = db.query(Handoff).filter(
         Handoff.recipe_id == recipe.id, Handoff.state == "accepted"
     ).count()
+    soul = soul_count(recipe)
+    recipe.soul_count = soul
+    recipe.growth_stage = growth_stage(soul, recipe.cook_count)
+    recipe.growth_vitality = growth_vitality(recipe.cook_count, recipe.shared_with_count)
     return recipe
 
 
@@ -119,6 +124,7 @@ def create_recipe(
 
     db.commit()
     db.refresh(new_recipe)
+    _attach_growth_fields(new_recipe, db)
     return new_recipe
 
 @router.post("/{recipe_id}/remix", response_model=RecipeResponse,
