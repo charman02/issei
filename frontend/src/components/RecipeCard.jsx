@@ -29,11 +29,11 @@ export default function RecipeCard({ recipe, onClick, variant = 'row' }) {
             {recipe.cuisine}
           </span>
         )}
-        <span className="absolute top-[7px] right-[7px] bg-[rgba(247,238,221,0.94)] rounded-full p-[3px] shadow-[0_1px_3px_rgba(90,60,30,0.2)]">
+        <span className="absolute top-[6px] right-[6px] bg-[rgba(247,238,221,0.94)] rounded-full p-[5px] shadow-[0_1px_3px_rgba(90,60,30,0.2)]">
           <Plant
             stage={stageForRecipe(recipe)}
             vitality={vitalityForRecipe(recipe)}
-            size={22}
+            size={38}
           />
         </span>
       </div>
