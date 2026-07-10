@@ -46,7 +46,7 @@ database (Postgres / SQLite)
 | `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step`, and the lineage tables `ghost_ancestor`, `cook_event`, `handoff`. |
 | `schemas/` | **Pydantic models** — define the JSON shape of requests and responses, separately from the DB models. Keeps internal fields (like password hashes) from leaking to the API. |
 | `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me — signup also auto-accepts pending recipe invites addressed to the new user's email), `recipes` (CRUD + scaling + browse + lineage actions: remix, cook, handoff, the `/lineage` view, plus sharing: `/recipes/shared` and `/recipes/handoffs/{id}/accept`), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
-| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `lineage.py` (remix diff detection that pre-fills the remix prompt; `root_of` + `effective_visibility` where the root binds descendants; `can_view`, the single read-authorization rule — public root **or** owner **or** an accepted grant on the root; and the walkable lineage-view builder). |
+| `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `growth.py` (the seed→tree growth model — `soul_count`, `growth_stage`, `growth_vitality`; stage from soul-breadth + use where **use advances only to sapling and only soul reaches tree**, vitality from repeated use), `lineage.py` (`root_of` + `effective_visibility` where the root binds descendants; `can_view`, the single read-authorization rule — public root **or** owner **or** an accepted grant on the root; and the walkable lineage-view builder). |
 
 **Sharing model (the "Shared" tier).** Passing a recipe *is* sharing — there is no separate access-grant concept. The `handoffs` table doubles as the grant: passing a private recipe to someone creates a `Handoff` normalized to the lineage **root** (so a grant covers the whole subtree), with `state` in `pending | accepted`. In-app recipients are accepted instantly; email invites stay `pending` until that address signs up (then they auto-accept). `can_view` in `lineage.py` gates `get_recipe` and `get_lineage` on this. `GET /recipes/shared` lists a user's accepted-grant recipes; `RecipeResponse.shared_with_count` tells an owner how many people a private recipe is shared with (count only — no identities). Grantees get view + cook + remix, but cannot edit the owner's copy or re-share.
 
@@ -132,7 +132,7 @@ frontend/
 | `ProtectedRoute.jsx` | A gate. If there's no token in localStorage, it redirects to `/login`. Wraps every authenticated route. |
 | `BottomNav.jsx` | The fixed bottom navigation bar (Home, Browse, Add, Kitchen, You). |
 | `CoverImage.jsx` | Renders a recipe's cover photo, or a styled cream placeholder with the 一世 mark when there's no photo. Shared by every screen that shows a recipe. |
-| `GrowthMark.jsx` | Seed → sprout → sapling → tree growth SVG for a recipe, driven by its counts. |
+| `Plant.jsx` | The seed→sprout→sapling→tree plant SVG (4 distinct stage shapes × bare/blooming/fruiting vitality). Props `stage`/`vitality`/`size`; reads growth from the recipe via `lib/growth.js`. Replaced the old `GrowthMark`. |
 | `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a person / email). Copy adapts to the recipe's visibility — access-granting for a private recipe, a nudge for a public one. |
 | `RecipeForm.jsx` | Shared create/edit/remix form body, reused by PlantRecipe, EditRecipe, and RemixRecipe. |
 | `Wordmark.jsx` | The `issei.` wordmark. |
@@ -160,7 +160,7 @@ frontend/
 
 | File | What it does |
 |---|---|
-| `growthState.js` | Derives a recipe's seed→tree growth state (and bloom) from its counts. |
+| `growth.js` | `stageForRecipe` / `vitalityForRecipe` — read the server-computed `recipe.growth_stage`/`growth_vitality` (source of truth), with a client fallback that mirrors `app/services/growth.py` exactly. Replaced the old `growthState.js`. |
 | `lineagePayload.js` | Builds the remix/plant request payloads sent to the backend. |
 
 ### `utils/` — non-UI logic

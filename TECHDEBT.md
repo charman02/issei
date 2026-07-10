@@ -8,7 +8,38 @@ accumulating surprises. Claude keeps this current as work happens.
 **Risk if ignored**, and **To resolve**. Severity: 🔴 high (bugs/prod risk),
 🟡 medium (inconsistency/half-done), 🟢 low (cleanup/nice-to-have).
 
-_Last updated: 2026-07-08, on branch `lineage-mvp`._
+_Last updated: 2026-07-10, on branch `lineage-mvp`._
+
+## 🟢 (n) Growth thresholds are first-pass tunables
+
+**What:** `app/services/growth.py` (and its mirror in `frontend/src/lib/growth.js`)
+use hardcoded constants for stage/vitality (`_SAPLING_SOUL=3`, `_TREE_SOUL=3`,
+`_HEAVY_USE=5`, `_BLOOM_COOKS=2`, `_FRUIT_COOKS=12`). These are first-pass values,
+not calibrated against real usage. **Two copies must stay in sync** (backend is the
+source of truth; the frontend fallback mirrors it) — a divergence is a latent bug.
+
+**Risk if ignored:** Plants may advance too fast/slow relative to what feels right;
+a future edit to one copy but not the other causes server/client disagreement.
+
+**To resolve:** Calibrate against real recipes once there's usage; consider a single
+shared source (e.g. serve thresholds from the API) if drift becomes a problem.
+
+---
+
+## 🟢 (o) "The person's words" is not yet a growth soul-dimension
+
+**What:** `growth.soul_count` counts four soul dimensions (story, photo, origin,
+notes). The living-recipe page (a later sub-project) adds a dedicated
+"their words / woven quote" field — when it lands, it should be added to
+`soul_count` (and the frontend mirror) so it contributes to growth.
+
+**Risk if ignored:** Once quotes exist, a recipe rich in the person's words but
+missing the other dimensions won't get growth credit for them.
+
+**To resolve:** Add the quote field to `soul_count` when the living-recipe sub-project
+introduces it; re-check the `_TREE_SOUL` threshold against the new max.
+
+---
 
 ---
 
