@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
@@ -241,6 +243,7 @@ def handoff_recipe(
         to_email=(None if resolved_user else to_email),
         state=("accepted" if resolved_user else "pending"),
         note=handoff_in.note,
+        token=secrets.token_urlsafe(32),
     )
     db.add(handoff)
     db.commit()

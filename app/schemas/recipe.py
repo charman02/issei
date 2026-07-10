@@ -170,6 +170,7 @@ class HandoffResponse(BaseModel):
     to_email: Optional[str] = None
     to_user_id: Optional[int] = None
     note: Optional[str] = None
+    token: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

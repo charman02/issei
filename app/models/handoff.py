@@ -26,4 +26,5 @@ class Handoff(Base):
     to_email: Mapped[Optional[str]] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(server_default="pending")
     note: Mapped[Optional[str]] = mapped_column(nullable=True)
+    token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
