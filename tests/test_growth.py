@@ -46,3 +46,15 @@ def test_recipe_response_has_growth_fields(client, make_user):
     assert body["growth_stage"] == "sprout"   # 1 soul dimension (story), 0 cooks
     assert body["growth_vitality"] == "bare"
     assert body["soul_count"] == 1
+
+
+def test_cook_note_is_persisted(client, make_user, db_session):
+    from app.models.cook_event import CookEvent
+    _, headers = make_user()
+    root = client.post("/recipes", json={"name": "Adobo",
+        "ingredients": [{"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}],
+        "steps": []}, headers=headers).json()
+    client.post(f"/recipes/{root['id']}/cook",
+                json={"note": "I used coconut milk instead"}, headers=headers)
+    ev = db_session.query(CookEvent).filter_by(recipe_id=root["id"]).one()
+    assert ev.note == "I used coconut milk instead"
