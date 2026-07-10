@@ -24,7 +24,7 @@ function hasAcceptedExtension(filename) {
   return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
-export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit, submitLabel, beforeSubmitSlot = null }) {
+export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit, submitLabel, beforeSubmitSlot = null, intro = null }) {
   const [name, setName] = useState(initialValues.name || '')
   const [servings, setServings] = useState(
     initialValues.servings != null ? String(initialValues.servings) : ''
@@ -157,6 +157,8 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
   return (
     <div className="px-[18px] pt-6 pb-8">
       <h1 className="font-serif font-black text-[26px] text-ink mb-4">{heading}</h1>
+
+      {intro}
 
       {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 

@@ -10,12 +10,15 @@ vi.mock('../api/lineage', () => ({ plantRecipe: vi.fn(() => Promise.resolve({ da
 // exposes initialValues so we can assert the mine-path seed is passed through.
 let lastInitialValues = null
 vi.mock('../components/RecipeForm', () => ({
-  default: ({ onSubmit, initialValues = {} }) => {
+  default: ({ onSubmit, initialValues = {}, intro = null }) => {
     lastInitialValues = initialValues
     return (
-      <button onClick={() => onSubmit({ name: 'Congee', ingredients: [], steps: [], story: initialValues.story || null })}>
-        submit-form
-      </button>
+      <div>
+        {intro}
+        <button onClick={() => onSubmit({ name: 'Congee', ingredients: [], steps: [], story: initialValues.story || null })}>
+          submit-form
+        </button>
+      </div>
     )
   },
 }))
@@ -37,6 +40,9 @@ describe('PlantRecipe', () => {
     // Mine path seeds RecipeForm's Story field with the doorway memory, so
     // there is a single, editable story input (no competing second field).
     expect(lastInitialValues).toEqual({ story: 'I riffed on it for years' })
+
+    // The capture flow frames the recipe step as low-pressure (spec §3.2.3).
+    expect(screen.getByText(/a splash of vinegar/i)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /submit-form/i }))
     expect(plantRecipe).toHaveBeenCalled()

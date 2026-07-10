@@ -81,7 +81,18 @@ export default function PlantRecipe() {
     // ONE story input. Ancestor path: no seed — the doorway memory is the
     // ancestor's (captured in origin.memory), not the dish's story.
     const initialValues = originMode === 'mine' ? { story: selfMemory } : {}
-    return <RecipeForm mode="add" initialValues={initialValues} onSubmit={handleFormSubmit} />
+    return (
+      <RecipeForm
+        mode="add"
+        initialValues={initialValues}
+        onSubmit={handleFormSubmit}
+        intro={
+          <p className="font-serif italic text-[14px] text-ink-soft -mt-2 mb-4">
+            Add what you’ve got — “a splash of vinegar” is perfect. Only the name is required.
+          </p>
+        }
+      />
+    )
   }
 
   if (step === 'planted') {

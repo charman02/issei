@@ -66,3 +66,15 @@ describe('RecipeForm voice-notes', () => {
     expect(payload.steps[0].voice_note).toBeNull()
   })
 })
+
+describe('RecipeForm intro', () => {
+  it('renders the intro node under the heading when provided', () => {
+    render(<RecipeForm mode="add" intro={<p>splash-of-vinegar-framing</p>} onSubmit={() => {}} />)
+    expect(screen.getByText('splash-of-vinegar-framing')).toBeInTheDocument()
+  })
+
+  it('renders no intro by default (Edit/Remix reuse stays clean)', () => {
+    render(<RecipeForm mode="edit" onSubmit={() => {}} />)
+    expect(screen.queryByText('splash-of-vinegar-framing')).not.toBeInTheDocument()
+  })
+})
