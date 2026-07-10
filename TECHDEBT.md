@@ -187,24 +187,6 @@ share can't be walked back without direct DB access.
 
 ---
 
-## 🟡 (l) Sharing: orphaned email invite (mismatched email) never resolves in-app
-
-**What:** If an owner emails an invite to `a@x.com` but the invitee signs up with
-`b@y.com`, the `pending` handoff never auto-accepts (auto-accept matches on email).
-The grant stays a dormant `pending` row — no access leaked, but the recipe never
-appears for that user. The `POST /recipes/handoffs/{id}/accept` endpoint exists to
-claim it, but has no MVP UI (no invite-link flow).
-
-**Why it exists:** Accepted MVP limitation (sharing spec §4.2) — the two auto-accept
-paths (in-app instant, email-match on signup) cover the common cases; the
-invite-link/claim flow was deferred.
-
-**Risk if ignored:** A minority of email invites silently do nothing if the invitee
-uses a different email; the inviter isn't told.
-
-**To resolve:** Build an invite-link flow (tokenized URL → `accept` endpoint), or
-surface pending-invite claiming in-app.
-
 ---
 
 ## 🟢 (m) Sharing: family-group shortcut not built
@@ -247,6 +229,14 @@ Cleared by the **recipe-visibility feature** (`daac1d9`..`6ec098a`): recipes had
 `visibility`, so every recipe was permanently private and Browse showed nothing.
 Now: `visibility` is accepted on create (root-only) and patch (root-only, `400` on
 a branch), with an owner status pill + publish/un-publish control on RecipeDetail.
+
+Cleared by the **soft-wall invite flow** (SP5, handoff refinement): **(l) Orphaned
+email invite (mismatched email) never resolves in-app** — now resolved by the
+token-based claim path (`POST /recipes/invite/{token}/claim`). Any signed-in holder
+of the invite link can claim the grant regardless of which email the invite was
+addressed to; the token IS the authorization. The invite-link flow is built (public
+`/invite/:token` landing → signup → auto-claim), and both the email auto-accept
+(on signup) and the token-claim are complementary paths that coexist.
 
 ---
 
