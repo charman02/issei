@@ -79,3 +79,30 @@ describe('RecipeDetail living-recipe weavings', () => {
     expect(screen.queryByText(/their way/i)).not.toBeInTheDocument()
   })
 })
+
+describe('RecipeDetail warm-invitational empty state', () => {
+  it('offers the owner a warm invitation when there is no story', async () => {
+    // recipe owned by the current user (id 7), story absent
+    localStorage.setItem('issei_user', JSON.stringify({ id: 7 }))
+    vi.mocked(client.get).mockResolvedValueOnce({ data: {
+      id: 1, name: 'Adobo', user_id: 7, author_full_name: 'Yoko M.',
+      visibility: 'private', parent_recipe_id: null, story: null,
+      ingredients: [], ingredient_sections: [], steps: [], cook_count: 3, child_count: 0,
+    } })
+    renderDetail()
+    expect(await screen.findByText(/add a memory/i)).toBeInTheDocument()
+  })
+
+  it('does NOT show the invitation to a non-owner', async () => {
+    // recipe.user_id (7) != current user (999); story absent
+    localStorage.setItem('issei_user', JSON.stringify({ id: 999 }))
+    vi.mocked(client.get).mockResolvedValueOnce({ data: {
+      id: 1, name: 'Adobo', user_id: 7, author_full_name: 'Yoko M.',
+      visibility: 'private', parent_recipe_id: null, story: null,
+      ingredients: [], ingredient_sections: [], steps: [], cook_count: 3, child_count: 0,
+    } })
+    renderDetail()
+    expect(await screen.findByText('Adobo')).toBeInTheDocument()
+    expect(screen.queryByText(/add a memory/i)).not.toBeInTheDocument()
+  })
+})

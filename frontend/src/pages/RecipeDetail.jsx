@@ -207,6 +207,19 @@ export default function RecipeDetail() {
           </div>
         )}
 
+        {/* No story yet — a soft, owner-only door (never a nag). A warm
+            invitation to add the memory behind the recipe. */}
+        {isOwner && !recipe.story && (
+          <button
+            onClick={() => navigate(`/recipes/${recipe.id}/edit`)}
+            className="mt-[15px] w-full text-left rounded-xl border border-dashed border-line bg-card/60 px-[15px] py-3"
+          >
+            <span className="font-serif italic text-[13px] text-terra">
+              Whose hands does this come from? Add a memory ↦
+            </span>
+          </button>
+        )}
+
         <RuleHeader>Ingredients</RuleHeader>
         <div className="font-serif text-[13.5px]">
           {allIngredients.map((ing) => (
