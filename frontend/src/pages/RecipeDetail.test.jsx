@@ -32,6 +32,12 @@ describe('RecipeDetail cook action', () => {
     expect(cookRecipe).toHaveBeenCalledWith('1', {})
     expect(await screen.findByText(/4 times/i)).toBeInTheDocument()
   })
+
+  it('does not offer remix ("make it mine") — remix is cut from v1', async () => {
+    renderDetail()
+    expect(await screen.findByRole('button', { name: /i cooked this/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /make it mine/i })).not.toBeInTheDocument()
+  })
 })
 
 describe('RecipeDetail visibility control', () => {

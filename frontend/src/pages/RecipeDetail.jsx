@@ -173,7 +173,6 @@ export default function RecipeDetail() {
 
         <div className="flex flex-wrap gap-2 mt-4">
           <button onClick={handleCook} className="btn-primary !w-auto px-5">I cooked this</button>
-          <button onClick={() => navigate(`/recipes/${recipe.id}/remix`)} className="px-5 py-3 rounded-[10px] border border-terra text-terra font-serif font-semibold text-sm">Make it mine</button>
           {isOwner && (
             <button onClick={() => setShowHandoff(true)} className="px-5 py-3 rounded-[10px] border border-line text-ink-soft font-serif text-sm">Pass it on</button>
           )}

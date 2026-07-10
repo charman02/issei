@@ -8,7 +8,6 @@ import MyRecipes from './pages/MyRecipes'
 import RecipeDetail from './pages/RecipeDetail'
 import PlantRecipe from './pages/PlantRecipe'
 import EditRecipe from './pages/EditRecipe'
-import RemixRecipe from './pages/RemixRecipe'
 import SharedWithMe from './pages/SharedWithMe'
 import Profile from './pages/Profile'
 import InviteLanding from './pages/InviteLanding'
@@ -64,14 +63,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout><EditRecipe /></Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/recipes/:id/remix"
-        element={
-          <ProtectedRoute>
-            <Layout><RemixRecipe /></Layout>
           </ProtectedRoute>
         }
       />
