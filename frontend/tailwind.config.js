@@ -16,8 +16,9 @@ export default {
         plum: '#8A3D5A',
       },
       fontFamily: {
-        serif: ['Fraunces', 'serif'],
-        sans: ['Inter', 'sans-serif'],
+        serif: ['Cormorant Garamond', 'Georgia', 'serif'],
+        sans: ['Nunito Sans', 'system-ui', 'sans-serif'],
+        hand: ['Caveat', 'cursive'],
       },
       boxShadow: {
         warm: '0 2px 10px rgba(120, 80, 40, 0.10)',
