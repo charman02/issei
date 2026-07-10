@@ -7,7 +7,9 @@ import { cookRecipe } from '../api/lineage'
 import Plant from '../components/Plant'
 import HandoffInvite from '../components/HandoffInvite'
 import VisibilityControl from '../components/VisibilityControl'
+import Provenance from '../components/Provenance'
 import { stageForRecipe, vitalityForRecipe } from '../lib/growth'
+import { isImprecise, impreciseLabel } from '../lib/measures'
 
 // Section header used inside the recipe body: Fraunces 700 bold label with a
 // trailing hairline rule. (Distinct from the uppercase-Inter SectionHeader used
@@ -131,6 +133,11 @@ export default function RecipeDetail() {
           </div>
         )}
 
+        {/* Provenance line — "🌱 Lola → you". Reads at a single node. */}
+        <div className="mt-1.5">
+          <Provenance recipe={recipe} />
+        </div>
+
         {isOwner && (
           <div className="mt-2">
             <VisibilityControl
@@ -209,6 +216,11 @@ export default function RecipeDetail() {
               </span>
               <span className="text-ink">
                 {ing.name}
+                {isImprecise(ing) && (
+                  <span className="ml-1.5 align-middle text-[8.5px] font-sans text-ink-soft border border-line rounded px-1 py-px">
+                    {impreciseLabel()}
+                  </span>
+                )}
                 {ing.notes && <span className="text-ink-soft italic"> — {ing.notes}</span>}
               </span>
             </div>
@@ -222,9 +234,17 @@ export default function RecipeDetail() {
               <span className="font-serif font-black text-2xl leading-[0.9] text-terra w-6 text-center flex-shrink-0">
                 {idx + 1}
               </span>
-              <p className="font-serif text-[13.5px] leading-[1.55] text-ink pt-0.5">
-                {step.content}
-              </p>
+              <div className="flex-1 flex flex-col">
+                <p className="font-serif text-[13.5px] leading-[1.55] text-ink pt-0.5">
+                  {step.content}
+                </p>
+                {/* Voice note — the person's own words, kept as a quote (not a rule). */}
+                {step.voice_note && (
+                  <p className="mt-1.5 pl-2.5 border-l-2 border-terra/50 font-hand text-[15px] text-terra leading-snug">
+                    &ldquo;{step.voice_note}&rdquo;
+                  </p>
+                )}
+              </div>
             </div>
           ))}
         </div>
