@@ -150,7 +150,7 @@ frontend/
 | `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid (Kitchen). Links to "Shared with you". |
 | `SharedWithMe.jsx` | `/shared` | Recipes others have passed to the user (accepted grants only; no accept UI). |
 | `RecipeDetail.jsx` | `/recipes/:id` | The **living recipe page** — three registers of voice: the framing **story** leads; each step's `voice_note` renders as a woven **quote** (Caveat hand) beneath it; **imprecise measures** are tagged "their way" (via `lib/measures.js`), never normalized. Plus a `<Provenance>` line (🌱 origin → keeper), the growth `<Plant>`, and — for the owner when there's no story yet — a warm "add a memory" invitation (empty-state). Owner also sees "Shared with N" + "Pass it on". |
-| `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm → planted beat → HandoffInvite. |
+| `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm (with a soul-invitation framing line — only a name is required) → **planted beat** that launches the growth loop (shows the recipe's real computed stage — a recipe planted with an origin/story is born a sprout, not a seed — and invites the three nourishing acts: cook it · add its story · pass it on, via `lib/plantedBeat.js`) → HandoffInvite. The beat's secondary CTA lands on the new recipe page. |
 | `EditRecipe.jsx` | `/recipes/:id/edit` | Edit an existing recipe (shared RecipeForm). |
 | `RemixRecipe.jsx` | `/recipes/:id/remix` | Branch a child recipe off this one. |
 | `Profile.jsx` | `/profile` | User info + logout. |
@@ -163,6 +163,7 @@ frontend/
 |---|---|
 | `growth.js` | `stageForRecipe` / `vitalityForRecipe` — read the server-computed `recipe.growth_stage`/`growth_vitality` (source of truth), with a client fallback that mirrors `app/services/growth.py` exactly. Replaced the old `growthState.js`. |
 | `measures.js` | `isImprecise` / `impreciseLabel` — flags imprecise/unmeasured ingredient amounts so the recipe page tags them "their way" (celebrated as fidelity, never normalized). |
+| `plantedBeat.js` | `plantedBeatCopy(recipe, sourceName)` — the copy for the capture flow's "planted!" beat, derived from the recipe's real growth stage (server-first via `growth.js`) + the source's name. Names the three growth-loop acts. |
 | `lineagePayload.js` | Builds the remix/plant request payloads sent to the backend. |
 
 ### `utils/` — non-UI logic
