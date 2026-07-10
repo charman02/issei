@@ -120,6 +120,15 @@ qualities.
 | **Sapling** | Taking shape: ~3 dimensions filled. |
 | **Tree** | A full heirloom: most dimensions filled — richly told, cooked, and passed on. |
 
+**Refinement (added 2026-07-10, from the identity/plant design):** **use advances
+stage, but only up to Sapling — reaching Tree requires SOUL.** A recipe cooked/
+shared heavily but never storied grows into a *Sapling* (a living staple deserves
+to be more than a Sprout), and its vitality (§2.4) shows there as a fruiting
+Sapling — but it cannot become a full Tree on use alone; the majestic heirloom
+requires its story. Asymmetry: *use → Sapling max; soul → Tree.* (This also means a
+Seed can't accumulate cooks — the first cook is itself a dimension, so it graduates
+to Sprout.) See the visual-identity spec §2.3 for the vitality states.
+
 ### 2.3 What feeds the seed
 
 **Soul (breadth — each counts once, contributes to stage):**
