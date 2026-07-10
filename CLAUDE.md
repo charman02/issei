@@ -78,17 +78,15 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 
 Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + Axios.
 
-**Design system:**
-- Background: #F7F2EA (warm cream)
-- Primary text: #1A1A1A
-- Accent: #8B5E3C (warm brown)
-- Secondary: #D4C5B0
-- Card surface: #FFFFFF
-- Serif font: Playfair Display (Google Fonts) — headers, recipe names
-- Sans-serif: Inter (Google Fonts) — body text
+**Design system** (visual identity locked — see `docs/superpowers/specs/2026-07-10-visual-identity-design.md`; palette is the source of truth in `frontend/tailwind.config.js`):
+- Heirloom palette: paper `#EFE4D2` · card `#FBF6EC` · ink `#3A2A1C` · ink-soft `#6D5844` · line `#E3D3BA` · terra `#BD5A2C` · saffron `#D99A2B` · herb `#6F8A4D` · plum `#8A3D5A`
+- **Color roles:** `action` (= terra) for interactive UI (buttons, links, active); `growth` (= herb) for plants/growth/garden. "Warm for do, green for grow."
+- **Type:** Cormorant Garamond (`font-serif`) — display/titles; Nunito Sans (`font-sans`) — body/UI; Caveat (`font-hand`) — the handwritten `issei` wordmark + special moments only (e.g. the story quote), not every title.
+- **Logo:** handwritten `issei` wordmark (no icon, no period) via `<Wordmark />`.
+- **Theme:** light/cream throughout — no dark theme (splash included).
 - Mobile-first, max-width 430px centered on desktop
 - Bottom navigation: Home · Browse · Add · Kitchen · You
-- **Seed→tree lineage** is the chosen visual identity direction (recipes grow from a seed as they're cooked/remixed/handed off); reconcile fonts/palette with the current `tailwind.config.js` (final identity art = task #10)
+- **Signature = the seed→tree plant system** (each recipe grows seed→sprout→sapling→tree, with bare→blooming→fruiting vitality); art + growth logic specced, built in later identity sub-projects.
 
 **Conventions:**
 - JWT stored in localStorage under key `issei_token`
