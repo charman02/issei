@@ -13,7 +13,7 @@ from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
 from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, LineageView
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, InvitePreview, LineageView
 from app.services.scaling import scale_ingredient
 from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of, can_view
 from app.services.growth import soul_count, growth_stage, growth_vitality
@@ -355,6 +355,54 @@ def accept_handoff(
         h.to_email is not None and h.to_email == current_user.email
     )
     if not is_recipient:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    h.to_user_id = current_user.id
+    h.state = "accepted"
+    db.commit()
+    db.refresh(h)
+    return h
+
+
+@router.get("/invite/{token}", response_model=InvitePreview)
+def preview_invite(token: str, db: Session = Depends(get_db)):
+    # Unauthenticated soft-wall preview (spec §4.3). Limited by construction — this
+    # response model cannot carry ingredients/steps. The token is the capability.
+    h = db.query(Handoff).filter(Handoff.token == token).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    recipe = db.query(Recipe).filter(
+        Recipe.id == h.recipe_id, Recipe.deleted_at == None
+    ).options(selectinload(Recipe.user)).first()
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    _attach_growth_fields(recipe, db)
+    from_name = None
+    if recipe.user is not None:
+        from_name = " ".join(p for p in [recipe.user.first_name, recipe.user.last_name] if p) or None
+    return InvitePreview(
+        recipe_id=recipe.id,
+        name=recipe.name,
+        from_name=from_name,
+        origin_attribution=recipe.origin_attribution,
+        story=recipe.story,
+        growth_stage=recipe.growth_stage,
+        growth_vitality=recipe.growth_vitality,
+        cover_photo_url=recipe.cover_photo_url,
+    )
+
+
+@router.post("/invite/{token}/claim", response_model=HandoffResponse)
+def claim_invite(
+    token: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Authenticated claim: the token IS the authorization to accept, so any
+    # signed-in user holding the link can claim it — this resolves the
+    # mismatched-email orphan (an invite to a@x claimed by someone who signed up
+    # as b@y). Idempotent: re-claiming returns the accepted grant.
+    h = db.query(Handoff).filter(Handoff.token == token).first()
+    if h is None:
         raise HTTPException(status_code=404, detail="Invite not found")
     h.to_user_id = current_user.id
     h.state = "accepted"

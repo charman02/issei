@@ -175,6 +175,19 @@ class HandoffResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvitePreview(BaseModel):
+    # The soft-wall preview (spec §4.3). DELIBERATELY LIMITED: name, who-it's-from,
+    # story, growth plant — NEVER ingredients/steps/notes. Viewable without an account.
+    recipe_id: int
+    name: str
+    from_name: Optional[str] = None
+    origin_attribution: Optional[str] = None
+    story: Optional[str] = None
+    growth_stage: str = "seed"
+    growth_vitality: str = "bare"
+    cover_photo_url: Optional[str] = None
+
+
 class RecipeUpdate(BaseModel):
     name: Optional[str] = None
     cover_photo_url: Optional[str] = None
