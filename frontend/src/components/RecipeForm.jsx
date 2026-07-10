@@ -12,7 +12,7 @@ import { parseQuantity } from '../utils/quantity'
 // mode: 'add' | 'edit' — drives the heading and button labels.
 
 const emptyIngredient = () => ({ name: '', quantity: '' })
-const emptyStep = () => ({ content: '' })
+const emptyStep = () => ({ content: '', voice_note: '' })
 
 // Keep in sync with the backend's accepted formats in app/routers/upload.py.
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -101,9 +101,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
     setIngredients((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function updateStep(index, value) {
+  function updateStep(index, field, value) {
     // Spread to preserve any non-edited fields (e.g. section_header on edit).
-    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, content: value } : s)))
+    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)))
   }
 
   function removeStep(index) {
@@ -139,6 +139,7 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
         .filter((s) => s.content.trim())
         .map((s, idx) => ({
           content: s.content.trim(),
+          voice_note: s.voice_note?.trim() || null,
           section_header: s.section_header ?? null,
           position: idx + 1,
         })),
@@ -311,9 +312,16 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
               <textarea
                 placeholder="Describe this step…"
                 value={step.content}
-                onChange={(e) => updateStep(idx, e.target.value)}
+                onChange={(e) => updateStep(idx, 'content', e.target.value)}
                 rows={2}
                 className="field resize-none"
+              />
+              <input
+                type="text"
+                placeholder={'Their words for this step (optional) — "don\'t rush the onions"'}
+                value={step.voice_note || ''}
+                onChange={(e) => updateStep(idx, 'voice_note', e.target.value)}
+                className="field mt-1.5"
               />
             </div>
           ))}

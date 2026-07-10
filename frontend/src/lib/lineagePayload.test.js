@@ -19,7 +19,7 @@ describe('buildRemixInitialValues', () => {
     ingredient_sections: [
       { name: 'Sauce', position: 1, ingredients: [{ name: 'soy sauce', quantity_text: '1/4 cup', position: 2 }] },
     ],
-    steps: [{ content: 'Brown the meat', position: 1 }],
+    steps: [{ content: 'Brown the meat', voice_note: "don't rush the onions", position: 1 }],
   }
   it('carries source and notes, drops story', () => {
     const v = buildRemixInitialValues(parent)
@@ -38,9 +38,9 @@ describe('buildRemixInitialValues', () => {
       { name: 'soy sauce', quantity: '1/4 cup' },
     ])
   })
-  it('maps steps to { content } and deep-copies (edits do not mutate parent)', () => {
+  it('carries content + voice_note into the remix seed and deep-copies (edits do not mutate parent)', () => {
     const v = buildRemixInitialValues(parent)
-    expect(v.steps[0]).toEqual({ content: 'Brown the meat' })
+    expect(v.steps[0]).toEqual({ content: 'Brown the meat', voice_note: "don't rush the onions" })
     v.ingredients[0].name = 'lard'
     expect(parent.ingredients[0].name).toBe('butter')
   })

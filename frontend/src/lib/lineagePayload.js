@@ -22,7 +22,7 @@ export function buildRemixInitialValues(parent) {
 
   const flatSteps = [...(parent.steps || [])]
     .sort((a, b) => a.position - b.position)
-    .map((s) => ({ content: s.content }))
+    .map((s) => ({ content: s.content, voice_note: s.voice_note }))
 
   return {
     name: parent.name || '',
