@@ -43,7 +43,7 @@ database (Postgres / SQLite)
 | `config.py` | Reads settings from the `.env` file (database URL, JWT secret, token lifetime, Cloudinary keys) into a typed `settings` object. |
 | `database.py` | Sets up the SQLAlchemy engine + session. Auto-detects SQLite vs Postgres. `get_db` is the dependency that hands each request a database session. |
 | `auth.py` | Password hashing (bcrypt), JWT creation/decoding, and `get_current_user` — the dependency that protects endpoints by requiring a valid token. |
-| `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step`, and the lineage tables `ghost_ancestor`, `cook_event`, `handoff`. |
+| `models/` | **ORM models** — Python classes mapping to database tables. One file per table: `user`, `recipe`, `ingredient`, `ingredient_section`, `step` (carries `voice_note` — the person's words for that step), and the lineage tables `ghost_ancestor`, `cook_event` (carries `note` — a cook's variation), `handoff`. |
 | `schemas/` | **Pydantic models** — define the JSON shape of requests and responses, separately from the DB models. Keeps internal fields (like password hashes) from leaking to the API. |
 | `routers/` | **Endpoint definitions**, grouped by domain: `auth` (signup/login/me — signup also auto-accepts pending recipe invites addressed to the new user's email), `recipes` (CRUD + scaling + browse + lineage actions: remix, cook, handoff, the `/lineage` view, plus sharing: `/recipes/shared` and `/recipes/handoffs/{id}/accept`), `shopping_list`, `upload` (Cloudinary photos), `mom_form` (an HTML form). |
 | `services/` | **Business logic**, decoupled from HTTP. `scaling.py` (the precise/imprecise/unmeasured quantity math), `units.py` (unit conversion), `shopping_list.py` (ingredient consolidation), `growth.py` (the seed→tree growth model — `soul_count`, `growth_stage`, `growth_vitality`; stage from soul-breadth + use where **use advances only to sapling and only soul reaches tree**, vitality from repeated use), `lineage.py` (`root_of` + `effective_visibility` where the root binds descendants; `can_view`, the single read-authorization rule — public root **or** owner **or** an accepted grant on the root; and the walkable lineage-view builder). |
@@ -135,7 +135,8 @@ frontend/
 | `Plant.jsx` | The seed→sprout→sapling→tree plant SVG (4 distinct stage shapes × bare/blooming/fruiting vitality). Props `stage`/`vitality`/`size`; reads growth from the recipe via `lib/growth.js`. Replaced the old `GrowthMark`. |
 | `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a person / email). Copy adapts to the recipe's visibility — access-granting for a private recipe, a nudge for a public one. |
 | `RecipeForm.jsx` | Shared create/edit/remix form body, reused by PlantRecipe, EditRecipe, and RemixRecipe. |
-| `Wordmark.jsx` | The `issei.` wordmark. |
+| `Wordmark.jsx` | The handwritten `issei` wordmark (Caveat). |
+| `Provenance.jsx` | The provenance line — `🌱 <origin> → <keeper>` — built from the recipe's `origin_attribution` + `author_full_name` (no tree/network needed; reads at 1 node). |
 | `Icon.jsx` / `IconField.jsx` | The line-icon set and a labeled input field. |
 | `SectionHeader.jsx` | A titled section header. |
 
@@ -148,7 +149,7 @@ frontend/
 | `Browse.jsx` | `/browse` | Discovery: search, diet filters, recipes grouped by cuisine. |
 | `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid (Kitchen). Links to "Shared with you". |
 | `SharedWithMe.jsx` | `/shared` | Recipes others have passed to the user (accepted grants only; no accept UI). |
-| `RecipeDetail.jsx` | `/recipes/:id` | A single recipe — cover, story, ingredients, steps. Owner sees a "Shared with N" indicator + "Pass it on"; the invite copy adapts to the recipe's visibility. |
+| `RecipeDetail.jsx` | `/recipes/:id` | The **living recipe page** — three registers of voice: the framing **story** leads; each step's `voice_note` renders as a woven **quote** (Caveat hand) beneath it; **imprecise measures** are tagged "their way" (via `lib/measures.js`), never normalized. Plus a `<Provenance>` line (🌱 origin → keeper), the growth `<Plant>`, and — for the owner when there's no story yet — a warm "add a memory" invitation (empty-state). Owner also sees "Shared with N" + "Pass it on". |
 | `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm → planted beat → HandoffInvite. |
 | `EditRecipe.jsx` | `/recipes/:id/edit` | Edit an existing recipe (shared RecipeForm). |
 | `RemixRecipe.jsx` | `/recipes/:id/remix` | Branch a child recipe off this one. |
@@ -161,6 +162,7 @@ frontend/
 | File | What it does |
 |---|---|
 | `growth.js` | `stageForRecipe` / `vitalityForRecipe` — read the server-computed `recipe.growth_stage`/`growth_vitality` (source of truth), with a client fallback that mirrors `app/services/growth.py` exactly. Replaced the old `growthState.js`. |
+| `measures.js` | `isImprecise` / `impreciseLabel` — flags imprecise/unmeasured ingredient amounts so the recipe page tags them "their way" (celebrated as fidelity, never normalized). |
 | `lineagePayload.js` | Builds the remix/plant request payloads sent to the backend. |
 
 ### `utils/` — non-UI logic
