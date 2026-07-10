@@ -1,24 +1,11 @@
-// The Issei brand mark: lowercase "issei." in Fraunces with a terra period.
-// The wordmark IS the brand — no separate symbol. Size is controlled by the
-// caller via `className` (font-size + any color overrides on the base text).
-//
-// `muted` renders the faded-terra watermark variant used on empty-photo
-// surfaces (recipe cards / detail hero) in place of a cover image — the whole
-// mark in low-opacity terra with a slightly stronger period, so the brand,
-// not a kanji glyph, fills the empty state.
+// The Issei brand mark: the word "issei", hand-lettered (no icon, no period) —
+// per the visual-identity spec §1. Size is controlled by the caller via
+// `className`. `muted` renders the faded variant used on empty-photo surfaces
+// (recipe cards / detail hero) in place of a cover image.
 export default function Wordmark({ className = 'text-5xl', as: Tag = 'span', muted = false }) {
+  const base = 'font-hand leading-none'
   if (muted) {
-    return (
-      <Tag className={`font-serif font-black tracking-[-0.03em] text-terra/40 leading-none ${className}`}>
-        issei<span className="text-terra/55">.</span>
-      </Tag>
-    )
+    return <Tag className={`${base} text-terra/40 ${className}`}>issei</Tag>
   }
-  return (
-    <Tag
-      className={`font-serif font-black tracking-[-0.03em] text-ink leading-none ${className}`}
-    >
-      issei<span className="text-terra">.</span>
-    </Tag>
-  )
+  return <Tag className={`${base} text-ink ${className}`}>issei</Tag>
 }
