@@ -4,10 +4,10 @@ import client from '../api/client'
 import Icon from '../components/Icon'
 import Wordmark from '../components/Wordmark'
 import { cookRecipe } from '../api/lineage'
-import GrowthMark from '../components/GrowthMark'
+import Plant from '../components/Plant'
 import HandoffInvite from '../components/HandoffInvite'
 import VisibilityControl from '../components/VisibilityControl'
-import { stateForRecipe, bloomForRecipe } from '../lib/growthState'
+import { stageForRecipe, vitalityForRecipe } from '../lib/growth'
 
 // Section header used inside the recipe body: Fraunces 700 bold label with a
 // trailing hairline rule. (Distinct from the uppercase-Inter SectionHeader used
@@ -115,7 +115,7 @@ export default function RecipeDetail() {
       <div className="px-[18px] pt-4 pb-6">
         <h1 className="font-serif font-black text-[28px] leading-[1.02] tracking-[-0.01em] text-ink">
           {recipe.name}
-          <GrowthMark state={stateForRecipe(growthRecipe)} bloom={bloomForRecipe(growthRecipe)} size={22} className="inline-block align-middle ml-2" />
+          <Plant stage={stageForRecipe(growthRecipe)} vitality={vitalityForRecipe(growthRecipe)} size={22} className="inline-block align-middle ml-2" />
         </h1>
 
         {recipe.author_full_name && (

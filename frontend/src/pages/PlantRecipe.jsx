@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import RecipeForm from '../components/RecipeForm'
 import HandoffInvite from '../components/HandoffInvite'
-import GrowthMark from '../components/GrowthMark'
+import Plant from '../components/Plant'
 import { buildOriginPayload } from '../lib/lineagePayload'
 import { plantRecipe } from '../api/lineage'
 
@@ -86,7 +86,7 @@ export default function PlantRecipe() {
   if (step === 'planted') {
     return (
       <div className="px-[18px] pt-12 text-center flex flex-col items-center">
-        <GrowthMark state="seed" size={96} />
+        <Plant stage="seed" size={96} />
         <p className="font-sans text-[10px] font-semibold tracking-[0.18em] uppercase text-herb mt-5 mb-2">Seed sown</p>
         <h1 className="font-serif font-black italic text-[26px] text-ink leading-tight">{planted?.name} is planted.</h1>
         <p className="font-serif italic text-[14px] text-ink-soft mt-3 mb-8 max-w-[16rem]">It lives in your lineage now — the first node on a tree only you can start.</p>
