@@ -15,4 +15,5 @@ class Step(Base):
     position: Mapped[int] = mapped_column()
     content: Mapped[str] = mapped_column(Text)
     section_header: Mapped[Optional[str]] = mapped_column(nullable=True)
+    voice_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     recipe: Mapped["Recipe"] = relationship("Recipe", back_populates="steps")

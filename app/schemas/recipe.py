@@ -16,6 +16,7 @@ class StepCreate(BaseModel):
     position: int
     content: str
     section_header: Optional[str] = None
+    voice_note: Optional[str] = None
 
 
 class StepResponse(BaseModel):
@@ -23,6 +24,7 @@ class StepResponse(BaseModel):
     position: int
     content: str
     section_header: Optional[str] = None
+    voice_note: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

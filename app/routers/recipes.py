@@ -120,6 +120,7 @@ def create_recipe(
             position=step_in.position,
             content=step_in.content,
             section_header=step_in.section_header,
+            voice_note=step_in.voice_note,
         ))
 
     db.commit()
@@ -185,6 +186,7 @@ def remix_recipe(
         db.add(Step(
             recipe_id=child.id, position=step_in.position,
             content=step_in.content, section_header=step_in.section_header,
+            voice_note=step_in.voice_note,
         ))
 
     db.commit()
@@ -581,6 +583,7 @@ def patch_recipe(
                 position=step_in.position,
                 content=step_in.content,
                 section_header=step_in.section_header,
+                voice_note=step_in.voice_note,
             ))
 
     db.commit()
