@@ -149,16 +149,16 @@ frontend/
 | `Login.jsx` | `/login` | Login + signup (tabs). The only public page. |
 | `Home.jsx` | `/` | Greeting + recent recipes (or a welcome empty state). |
 | `Browse.jsx` | `/browse` | Discovery: search, diet filters, recipes grouped by cuisine. |
-| `MyRecipes.jsx` | `/my-recipes` | The logged-in user's recipe grid (Kitchen). Links to "Shared with you". |
+| `MyRecipes.jsx` | `/my-recipes` | The Kitchen — **a garden of your recipe-plants grouped into growth bands** (Needs tending → Growing → Thriving, via `lib/gardenBands.js`); empty bands are omitted, and searching collapses to a flat grid. Links to "Shared with you". |
 | `SharedWithMe.jsx` | `/shared` | Recipes others have passed to the user (accepted grants only; no accept UI). |
 | `RecipeDetail.jsx` | `/recipes/:id` | The **living recipe page** — three registers of voice: the framing **story** leads; each step's `voice_note` renders as a woven **quote** (Caveat hand) beneath it; **imprecise measures** are tagged "their way" (via `lib/measures.js`), never normalized. Plus a `<Provenance>` line (🌱 origin → keeper), the growth `<Plant>`, and — for the owner when there's no story yet — a warm "add a memory" invitation (empty-state). Owner also sees "Shared with N" + "Pass it on". |
 | `PlantRecipe.jsx` | `/add` | Stepped plant-a-recipe flow: choose a doorway (ghost ancestor vs. self-authored root) → RecipeForm (with a soul-invitation framing line — only a name is required) → **planted beat** that launches the growth loop (shows the recipe's real computed stage — a recipe planted with an origin/story is born a sprout, not a seed — and invites the three nourishing acts: cook it · add its story · pass it on, via `lib/plantedBeat.js`) → HandoffInvite. The beat's secondary CTA lands on the new recipe page. |
 | `EditRecipe.jsx` | `/recipes/:id/edit` | Edit an existing recipe (shared RecipeForm). |
-| `RemixRecipe.jsx` | `/recipes/:id/remix` | Branch a child recipe off this one. |
+| `RemixRecipe.jsx` | *(unrouted)* | Dormant: remix is cut from the v1 surface (spec §0.1). The page, `buildRemixInitialValues`, `remixRecipe`, and the backend `/remix` endpoint remain on disk so remix is a cheap UI revival, not a re-architecture. |
 | `InviteLanding.jsx` | `/invite/:token` | **Public** soft-wall: a warm preview of a handed-off recipe (name, who it's from, story, plant — never the body) via the unauthenticated preview endpoint, then a signup-to-participate gate that carries the token to Login. |
 | `Profile.jsx` | `/profile` | User info + logout. |
 
-(`AddRecipe.jsx` still exists on disk but is no longer routed — `/add` now maps to `PlantRecipe`.)
+(`AddRecipe.jsx` and `RemixRecipe.jsx` still exist on disk but are no longer routed — `/add` maps to `PlantRecipe`, and remix is cut from the v1 surface per spec §0.1. Both are dormant-but-revivable.)
 
 ### `lib/` — non-UI logic
 
@@ -169,6 +169,7 @@ frontend/
 | `plantedBeat.js` | `plantedBeatCopy(recipe, sourceName)` — the copy for the capture flow's "planted!" beat, derived from the recipe's real growth stage (server-first via `growth.js`) + the source's name. Names the three growth-loop acts. |
 | `handoffStarters.js` | `HANDOFF_STARTERS` (two starter objects: fill-in + sharing) and `defaultStarterKey(sourceName)` — logic for the one-tap note starters + the safe auto-touch when passing back to the recorded source. |
 | `sourceName.js` | `sourceNameOf(recipe)` — extracts the recorded source's name from `origin_attribution` (leading segment before `·`). Used to trigger the auto-preselect on HandoffInvite. |
+| `gardenBands.js` | `gardenBands(recipes)` — groups a recipe list into ordered growth bands (tending/growing/thriving) by `stageForRecipe`, omitting empty bands. The data behind the Kitchen-as-garden view. |
 | `lineagePayload.js` | Builds the remix/plant request payloads sent to the backend. |
 
 ### `utils/` — non-UI logic
