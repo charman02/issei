@@ -11,6 +11,7 @@ import EditRecipe from './pages/EditRecipe'
 import RemixRecipe from './pages/RemixRecipe'
 import SharedWithMe from './pages/SharedWithMe'
 import Profile from './pages/Profile'
+import InviteLanding from './pages/InviteLanding'
 
 function Layout({ children }) {
   return (
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/invite/:token" element={<InviteLanding />} />
       <Route
         path="/"
         element={

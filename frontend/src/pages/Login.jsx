@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import client from '../api/client'
+import { claimInvite } from '../api/lineage'
 import Wordmark from '../components/Wordmark'
 import IconField from '../components/IconField'
 
 export default function Login() {
-  const [tab, setTab] = useState('login')
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('invite')
+  const [tab, setTab] = useState(searchParams.get('tab') === 'signup' ? 'signup' : 'login')
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -14,6 +17,21 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+
+  async function finishAuth(data) {
+    localStorage.setItem('issei_token', data.access_token)
+    localStorage.setItem('issei_user', JSON.stringify(data.user))
+    if (inviteToken) {
+      // The token IS the authorization; claim the grant for this account, then
+      // land the user on the recipe they were invited to.
+      try {
+        await claimInvite(inviteToken)
+      } catch {
+        // A bad/expired token shouldn't block sign-in; just proceed home.
+      }
+    }
+    navigate('/')
+  }
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -26,9 +44,7 @@ export default function Login() {
       const { data } = await client.post('/auth/login', params, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
-      localStorage.setItem('issei_token', data.access_token)
-      localStorage.setItem('issei_user', JSON.stringify(data.user))
-      navigate('/')
+      await finishAuth(data)
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed')
     } finally {
@@ -57,9 +73,7 @@ export default function Login() {
       const { data } = await client.post('/auth/login', params, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       })
-      localStorage.setItem('issei_token', data.access_token)
-      localStorage.setItem('issei_user', JSON.stringify(data.user))
-      navigate('/')
+      await finishAuth(data)
     } catch (err) {
       setError(err.response?.data?.detail || 'Signup failed')
     } finally {
