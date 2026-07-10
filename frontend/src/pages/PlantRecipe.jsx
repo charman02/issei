@@ -4,6 +4,7 @@ import RecipeForm from '../components/RecipeForm'
 import HandoffInvite from '../components/HandoffInvite'
 import Plant from '../components/Plant'
 import { buildOriginPayload } from '../lib/lineagePayload'
+import { plantedBeatCopy } from '../lib/plantedBeat'
 import { plantRecipe } from '../api/lineage'
 
 export default function PlantRecipe() {
@@ -84,14 +85,21 @@ export default function PlantRecipe() {
   }
 
   if (step === 'planted') {
+    // The ancestor's first name personalizes the "add their story" act; the
+    // self-authored path has no source, so the act reads "add a memory".
+    const sourceName =
+      originMode === 'ancestor' && origin.name.trim()
+        ? origin.name.trim().split(/\s+/)[0]
+        : null
+    const beat = plantedBeatCopy(planted, sourceName)
     return (
       <div className="px-[18px] pt-12 text-center flex flex-col items-center">
-        <Plant stage="seed" size={96} />
-        <p className="font-sans text-[10px] font-semibold tracking-[0.18em] uppercase text-herb mt-5 mb-2">Seed sown</p>
-        <h1 className="font-serif font-black italic text-[26px] text-ink leading-tight">{planted?.name} is planted.</h1>
-        <p className="font-serif italic text-[14px] text-ink-soft mt-3 mb-8 max-w-[16rem]">It lives in your lineage now — the first node on a tree only you can start.</p>
+        <Plant stage={beat.stage} vitality={planted?.growth_vitality || 'bare'} size={96} />
+        <p className="font-sans text-[10px] font-semibold tracking-[0.18em] uppercase text-herb mt-5 mb-2">{beat.eyebrow}</p>
+        <h1 className="font-serif font-black italic text-[26px] text-ink leading-tight">{beat.heading}</h1>
+        <p className="font-serif italic text-[14px] text-ink-soft mt-3 mb-8 max-w-[16rem]">{beat.body}</p>
         <button className="btn-primary" onClick={() => setStep('handoff')}>Pass it on →</button>
-        <button className="mt-3 font-serif italic text-ink-soft text-sm" onClick={() => navigate('/my-recipes')}>Not now — take me to my kitchen</button>
+        <button className="mt-3 font-serif italic text-ink-soft text-sm" onClick={() => navigate(`/recipes/${planted.id}`)}>Take me to it →</button>
       </div>
     )
   }

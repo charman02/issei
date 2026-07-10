@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
-vi.mock('../api/lineage', () => ({ plantRecipe: vi.fn(() => Promise.resolve({ data: { id: 42, name: 'Congee' } })) }))
+vi.mock('../api/lineage', () => ({ plantRecipe: vi.fn(() => Promise.resolve({ data: { id: 42, name: 'Congee', growth_stage: 'sprout', growth_vitality: 'bare' } })) }))
 // RecipeForm is heavy; stub it to immediately submit a minimal payload. The
 // stub echoes back initialValues.story (seeded from the doorway memory) so the
 // test proves the form's story — not a separate override — is what's sent, and
@@ -45,7 +45,14 @@ describe('PlantRecipe', () => {
     // Story comes straight from the form payload (seeded from selfMemory),
     // with no silent override in handleFormSubmit.
     expect(payload.story).toBe('I riffed on it for years')
-    expect(await screen.findByText(/is planted/i)).toBeInTheDocument()
+    // The planted beat launches the growth loop with real stage + loop copy.
+    expect(await screen.findByText('Congee is planted.')).toBeInTheDocument()
+    expect(screen.getByText(/and watch it grow/i)).toBeInTheDocument()
+    // Mine path has no source name → generic "add a memory"
+    expect(screen.getByText(/add a memory/i)).toBeInTheDocument()
+    // 'sprout' from the API → sprout eyebrow, and a secondary CTA to the recipe
+    expect(screen.getByText(/first sprout/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /take me to it/i })).toBeInTheDocument()
   })
 
   it('mine path: an edited form story is authoritative (no doorway override)', async () => {
