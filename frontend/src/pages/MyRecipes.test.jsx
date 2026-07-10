@@ -1,11 +1,17 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
-vi.mock('../api/client', () => ({ default: { get: vi.fn(() => Promise.resolve({ data: [] })) } }))
+vi.mock('../api/client', () => ({ default: { get: vi.fn() } }))
 vi.mock('../components/RecipeCard', () => ({ default: ({ recipe }) => <div>{recipe.name}</div> }))
+import client from '../api/client'
 import MyRecipes from './MyRecipes'
+
+beforeEach(() => {
+  client.get.mockReset()
+  client.get.mockResolvedValue({ data: [] })  // default: empty kitchen
+})
 
 describe('MyRecipes', () => {
   it('renders the kitchen header', () => {
@@ -26,5 +32,20 @@ describe('MyRecipes', () => {
     expect(link).toBeInTheDocument()
     await userEvent.click(link)
     expect(await screen.findByText('shared page')).toBeInTheDocument()
+  })
+
+  it('groups kept recipes into growth bands (the garden)', async () => {
+    const { default: client } = await import('../api/client')
+    client.get.mockResolvedValueOnce({ data: [
+      { id: 1, name: 'Seedling Stew', growth_stage: 'seed' },
+      { id: 2, name: 'Old Faithful', growth_stage: 'tree' },
+    ] })
+    render(<MemoryRouter><MyRecipes /></MemoryRouter>)
+    expect(await screen.findByText('Needs tending')).toBeInTheDocument()
+    expect(screen.getByText('Thriving')).toBeInTheDocument()
+    expect(screen.getByText('Seedling Stew')).toBeInTheDocument()
+    expect(screen.getByText('Old Faithful')).toBeInTheDocument()
+    // no sapling → 'Growing' band header absent
+    expect(screen.queryByText('Growing')).not.toBeInTheDocument()
   })
 })
