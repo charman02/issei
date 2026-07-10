@@ -10,6 +10,7 @@ import VisibilityControl from '../components/VisibilityControl'
 import Provenance from '../components/Provenance'
 import { stageForRecipe, vitalityForRecipe } from '../lib/growth'
 import { isImprecise, impreciseLabel } from '../lib/measures'
+import { sourceNameOf } from '../lib/sourceName'
 
 // Section header used inside the recipe body: Fraunces 700 bold label with a
 // trailing hairline rule. (Distinct from the uppercase-Inter SectionHeader used
@@ -180,7 +181,7 @@ export default function RecipeDetail() {
         {cookBeat && <p className="font-serif italic text-herb text-sm mt-3">{cookBeat}</p>}
         {showHandoff && (
           <div className="mt-4 border-t border-line pt-4">
-            <HandoffInvite recipeId={recipe.id} recipeVisibility={recipe.visibility} onSent={() => setShowHandoff(false)} onSkip={() => setShowHandoff(false)} />
+            <HandoffInvite recipeId={recipe.id} recipeVisibility={recipe.visibility} sourceName={sourceNameOf(recipe)} onSent={() => setShowHandoff(false)} onSkip={() => setShowHandoff(false)} />
           </div>
         )}
 

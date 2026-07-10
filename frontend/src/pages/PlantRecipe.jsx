@@ -121,6 +121,7 @@ export default function PlantRecipe() {
   return (
     <HandoffInvite
       recipeId={planted.id}
+      sourceName={originMode === 'ancestor' && origin.name.trim() ? origin.name.trim() : null}
       onSent={() => navigate(`/recipes/${planted.id}`)}
       onSkip={() => navigate(`/recipes/${planted.id}`)}
     />
