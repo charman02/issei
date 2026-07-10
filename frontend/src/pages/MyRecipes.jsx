@@ -40,7 +40,7 @@ export default function MyRecipes() {
   return (
     <div className="px-4 pt-6">
       <h1 className="font-serif font-black text-[28px] text-ink">Your Kitchen</h1>
-      <p className="font-serif italic text-sm text-ink-soft mt-0.5">A garden of everything you've kept.</p>
+      <p className="font-serif italic text-sm text-ink-soft mt-0.5">A garden of everything you’ve kept.</p>
 
       <button
         onClick={() => navigate('/shared')}
@@ -76,7 +76,7 @@ export default function MyRecipes() {
       )}
       {!searching && recipes.length === 0 && (
         <p className="text-center text-ink-soft text-sm mt-8">
-          Your kitchen's just getting started. Keep your first recipe.
+          Your kitchen’s just getting started. Keep your first recipe.
         </p>
       )}
     </div>
