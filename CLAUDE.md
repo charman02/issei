@@ -78,14 +78,16 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 
 Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + Axios.
 
-**Design system** (visual identity locked — see `docs/superpowers/specs/2026-07-10-visual-identity-design.md`; palette is the source of truth in `frontend/tailwind.config.js`):
-- Heirloom palette: paper `#EFE4D2` · card `#FBF6EC` · ink `#3A2A1C` · ink-soft `#6D5844` · line `#E3D3BA` · terra `#BD5A2C` · saffron `#D99A2B` · herb `#6F8A4D` · plum `#8A3D5A`
-- **Color roles:** `action` (= terra) for interactive UI (buttons, links, active); `growth` (= herb) for plants/growth/garden. "Warm for do, green for grow."
-- **Type:** Cormorant Garamond (`font-serif`) — display/titles; Nunito Sans (`font-sans`) — body/UI; Caveat (`font-hand`) — the handwritten `issei` wordmark + special moments only (e.g. the story quote), not every title.
+**Design system** (garden palette — R1, `docs/superpowers/specs/2026-07-11-r1-readable-garden-foundation-design.md`; palette is the source of truth in `frontend/tailwind.config.js`. Supersedes the earlier "Heirloom" browns from `2026-07-10-visual-identity-design.md`):
+- Garden palette (green is the ambient lead; terra is the action accent): paper `#F3EAD6` · card `#FCF8EE` · ink `#2E3A24` (deep leaf) · ink-soft `#4A5540` · line `#E3D9C4` · growth `#5C7A3F` (lead green, = herb) · growth-bright `#7FA05A` · terra `#B5502A` · saffron `#D99A2B` · plum `#8A3D5A` · soil `#C9A277`
+- **Color roles:** `growth`/green = ambient + grow (the world, plants, garden, eyebrows); `action` (= terra) = interactive intent (buttons, links, active); `plum` = the person / heritage byline ("from Lola"); `saffron` = vitality sparks. "Green for the world, warm for what you do."
+- **Type:** Cormorant Garamond (`font-serif`) — display/titles; Nunito Sans (`font-sans`) — body/UI (body/ingredients at 14.5px, bold amounts — the R1 readability baseline; see `.ingredient-row`/`.ingredient-amount`); Caveat (`font-hand`) — the handwritten `issei` wordmark + special moments only.
 - **Logo:** handwritten `issei` wordmark (no icon, no period) via `<Wordmark />`.
+- **Language:** garden voice, not cookbook — "Your Garden" (not Kitchen), "Plant your first seed" (signup). Recipes are named by the **dish** ("Adobo"); the person shows as "from {source}" (from `origin_attribution`). Domain words (cook/recipe) stay.
 - **Theme:** light/cream throughout — no dark theme (splash included).
 - Mobile-first, max-width 430px centered on desktop
-- Bottom navigation: Home · Browse · Add · Kitchen · You
+- Bottom navigation: Home · Browse · Add · Garden · You
+- **Second renovation (R1–R4) in progress:** R1 = readable garden foundation (done); R2 = the immersive garden (a place you enter); R3 = the plant interface + growth animations (cooking becomes a tactile tending ritual, Finch-inspired); R4 = bottom-nav redesign + the living "front door" (login) + capture. Never a scoreboard — playful/alive + personal/significant (the wordmark duality).
 - **Signature = the seed→tree plant system** (each recipe grows seed→sprout→sapling→tree, with bare→blooming→fruiting vitality); art + growth logic specced, built in later identity sub-projects.
 
 **Conventions:**
