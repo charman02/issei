@@ -41,4 +41,12 @@
   .story-callout {
     @apply bg-[#EDEAD6] border-l-[3px] border-terra rounded-r-xl p-4;
   }
+  /* Readable body scale (R1). Body/ingredients read too thin+small in serif; the
+     reading surfaces use Nunito Sans at a legible size with bold amounts. */
+  .ingredient-row {
+    @apply flex gap-2.5 py-1 font-sans text-[14.5px] leading-[1.65] text-ink;
+  }
+  .ingredient-amount {
+    @apply w-24 flex-shrink-0 font-sans font-bold text-ink;
+  }
 }

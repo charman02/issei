@@ -84,6 +84,19 @@ describe('RecipeDetail living-recipe weavings', () => {
     expect(await screen.findByText('soy sauce')).toBeInTheDocument()
     expect(screen.queryByText(/their way/i)).not.toBeInTheDocument()
   })
+
+  it('renders ingredient amounts in a bold, legible treatment (readability fix)', async () => {
+    vi.mocked(client.get).mockResolvedValueOnce({ data: {
+      id: 1, name: 'Adobo', user_id: 7, author_full_name: 'Yoko M.',
+      visibility: 'private', parent_recipe_id: null,
+      ingredients: [{ id: 1, position: 0, name: 'chicken thighs', quantity_text: '2 lbs', quantity_type: 'precise' }],
+      ingredient_sections: [], steps: [], cook_count: 3, child_count: 0,
+    } })
+    renderDetail()
+    const amount = await screen.findByText('2 lbs')
+    // amount carries the shared bold amount class, not the old terra-semibold inline
+    expect(amount.className).toMatch(/ingredient-amount/)
+  })
 })
 
 describe('RecipeDetail warm-invitational empty state', () => {

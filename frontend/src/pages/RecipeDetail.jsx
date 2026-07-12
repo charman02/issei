@@ -187,7 +187,7 @@ export default function RecipeDetail() {
         {recipe.description && (
           <>
             <RuleHeader>About this dish</RuleHeader>
-            <p className="font-serif text-[13.5px] leading-relaxed text-ink-soft">
+            <p className="font-serif text-[14.5px] leading-relaxed text-ink-soft">
               {recipe.description}
             </p>
           </>
@@ -200,7 +200,7 @@ export default function RecipeDetail() {
               The Story
             </div>
             <div className="px-[15px] py-[13px]">
-              <p className="font-serif italic text-[13.5px] leading-relaxed text-ink/85 whitespace-pre-line">
+              <p className="font-serif italic text-[14.5px] leading-relaxed text-ink/85 whitespace-pre-line">
                 {recipe.story}
               </p>
             </div>
@@ -221,16 +221,16 @@ export default function RecipeDetail() {
         )}
 
         <RuleHeader>Ingredients</RuleHeader>
-        <div className="font-serif text-[13.5px]">
+        <div>
           {allIngredients.map((ing) => (
-            <div key={ing.id} className="flex gap-2.5 py-1">
-              <span className="w-20 flex-shrink-0 text-terra font-semibold">
+            <div key={ing.id} className="ingredient-row">
+              <span className="ingredient-amount">
                 {ing.quantity_text}
               </span>
               <span className="text-ink">
                 {ing.name}
                 {isImprecise(ing) && (
-                  <span className="ml-1.5 align-middle text-[8.5px] font-sans text-ink-soft border border-line rounded px-1 py-px">
+                  <span className="ml-1.5 align-middle text-[10px] font-sans text-ink-soft border border-line rounded px-1 py-px">
                     {impreciseLabel()}
                   </span>
                 )}
@@ -248,7 +248,7 @@ export default function RecipeDetail() {
                 {idx + 1}
               </span>
               <div className="flex-1 flex flex-col">
-                <p className="font-serif text-[13.5px] leading-[1.55] text-ink pt-0.5">
+                <p className="font-serif text-[14.5px] leading-[1.55] text-ink pt-0.5">
                   {step.content}
                 </p>
                 {/* Voice note — the person's own words, kept as a quote (not a rule). */}
