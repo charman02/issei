@@ -85,7 +85,7 @@ export default function Home() {
         </>
       )}
 
-      <div className="px-4"><SectionHeader className="mt-5">From your kitchen</SectionHeader></div>
+      <div className="px-4"><SectionHeader className="mt-5">From your garden</SectionHeader></div>
       <div className="flex gap-3.5 overflow-x-auto pb-1 px-4 scrollbar-hide">
         {mine.slice(0, 12).map((recipe) => (
           <RecipeCard

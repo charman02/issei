@@ -76,7 +76,7 @@ export default function MyRecipes() {
       )}
       {!searching && recipes.length === 0 && (
         <p className="text-center text-ink-soft text-sm mt-8">
-          Your kitchen’s just getting started. Keep your first recipe.
+          Your garden’s just getting started. Plant your first seed.
         </p>
       )}
     </div>

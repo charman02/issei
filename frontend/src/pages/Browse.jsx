@@ -95,7 +95,7 @@ export default function Browse() {
       <div className="px-4">
         <h1 className="font-serif font-black text-[28px] text-ink">Browse</h1>
         <p className="font-serif italic text-sm text-ink-soft mt-0.5">
-          Wander through everyone's kitchens.
+          Wander through everyone’s gardens.
         </p>
 
         <IconField

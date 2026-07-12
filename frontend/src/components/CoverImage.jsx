@@ -3,7 +3,7 @@ import Wordmark from './Wordmark'
 // Renders a recipe cover photo, or a warm cream placeholder with the faded
 // issei. wordmark watermark when no photo is set. The prompt text shows at
 // md/lg (form dropzone, detail hero) but is suppressed at sm — small cards read
-// cleaner with just the mark, matching the mockup's Kitchen grid placeholder.
+// cleaner with just the mark, matching the mockup's garden grid placeholder.
 const sizes = {
   sm: { mark: 'text-2xl', text: 'text-[10px]', prompt: false },
   md: { mark: 'text-4xl', text: 'text-xs', prompt: true },

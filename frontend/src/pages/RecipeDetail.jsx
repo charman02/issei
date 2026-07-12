@@ -55,7 +55,7 @@ export default function RecipeDetail() {
       <div className="p-6 text-center">
         <p className="text-red-600 mb-4">{error}</p>
         <button onClick={() => navigate('/my-recipes')} className="text-terra text-sm">
-          Back to your kitchen
+          Back to your garden
         </button>
       </div>
     )
