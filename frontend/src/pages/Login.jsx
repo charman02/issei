@@ -18,6 +18,16 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
+  function switchTab(next) {
+    setTab(next)
+    setError('')
+    setEmail('')
+    setPassword('')
+    setConfirmPassword('')
+    setFirstName('')
+    setLastName('')
+  }
+
   async function finishAuth(data) {
     localStorage.setItem('issei_token', data.access_token)
     localStorage.setItem('issei_user', JSON.stringify(data.user))
@@ -102,7 +112,7 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="flex bg-[#E6D7BD] rounded-full p-1 mb-6">
           <button
-            onClick={() => { setTab('login'); setError('') }}
+            onClick={() => switchTab('login')}
             className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
               tab === 'login' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
             }`}
@@ -110,12 +120,12 @@ export default function Login() {
             Sign In
           </button>
           <button
-            onClick={() => { setTab('signup'); setError('') }}
+            onClick={() => switchTab('signup')}
             className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
               tab === 'signup' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
             }`}
           >
-            Join the table
+            Plant your first seed
           </button>
         </div>
 
@@ -193,7 +203,7 @@ export default function Login() {
               className="field--login"
             />
             <button type="submit" disabled={loading} className="btn-primary !mt-4">
-              {loading ? 'Setting your table…' : 'Join the table'}
+              {loading ? 'Planting…' : 'Plant your first seed'}
             </button>
           </form>
         )}
