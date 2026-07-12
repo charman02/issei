@@ -17,14 +17,16 @@ describe('tailwind font families', () => {
 describe('tailwind color roles', () => {
   const c = config.theme.extend.colors
   it('action maps to terra', () => {
-    expect(c.action).toBe('#BD5A2C')
+    expect(c.action).toBe('#B5502A')
+    expect(c.action).toBe(c.terra)
   })
-  it('growth maps to herb', () => {
-    expect(c.growth).toBe('#6F8A4D')
+  it('growth maps to the lead green', () => {
+    expect(c.growth).toBe('#5C7A3F')
+    expect(c.growth).toBe(c.herb)
   })
-  it('keeps the heirloom palette', () => {
-    expect(c.paper).toBe('#EFE4D2')
-    expect(c.terra).toBe('#BD5A2C')
-    expect(c.herb).toBe('#6F8A4D')
+  it('uses the garden palette', () => {
+    expect(c.paper).toBe('#F3EAD6')
+    expect(c.terra).toBe('#B5502A')
+    expect(c.herb).toBe('#5C7A3F')
   })
 })

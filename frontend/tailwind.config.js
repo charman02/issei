@@ -4,19 +4,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Heirloom palette
-        paper: '#EFE4D2',
-        card: '#FBF6EC',
-        ink: '#3A2A1C',
-        'ink-soft': '#6D5844',
-        line: '#E3D3BA',
-        terra: '#BD5A2C',
-        saffron: '#D99A2B',
-        herb: '#6F8A4D',
-        plum: '#8A3D5A',
-        // Semantic roles (spec §4): warm for "do", green for "grow"
-        action: '#BD5A2C', // = terra — buttons, links, active states
-        growth: '#6F8A4D', // = herb  — plants, growth-stage pills, the garden
+        // Garden palette (R1) — green is the ambient lead; terra is the action accent.
+        paper: '#F3EAD6',        // warm cream app background
+        card: '#FCF8EE',         // surface
+        ink: '#2E3A24',          // deep leaf — primary text
+        'ink-soft': '#4A5540',   // green-gray — secondary text
+        line: '#E3D9C4',         // hairline
+        terra: '#B5502A',        // warm action accent
+        saffron: '#D99A2B',      // vitality sparks
+        herb: '#5C7A3F',         // (kept as alias of the lead green)
+        plum: '#8A3D5A',         // the person / heritage accent
+        soil: '#C9A277',         // garden ground
+        // Semantic roles: green = grow/ambient, terra = do/act
+        action: '#B5502A',       // = terra — buttons, links, active states
+        growth: '#5C7A3F',       // lead green — plants, growth, garden ambient, eyebrows
+        'growth-bright': '#7FA05A', // leaf highlights, plant accents
       },
       fontFamily: {
         serif: ['Cormorant Garamond', 'Georgia', 'serif'],
