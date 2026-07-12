@@ -153,7 +153,13 @@ patterns):
 
 **Constraints:**
 - The **login kanji callout** (一世 · issei) and the wordmark are heritage identity,
-  **not** cookbook metaphor — leave them.
+  **not** cookbook metaphor — leave them (the kanji stays; decided 2026-07-12).
+- The **login screen's layout/visual reimagining** (the "living front door" — a
+  growing-seed entrance, motion, the heritage story arriving *into* a garden rather
+  than sitting on paper) is **deferred to R4** ("the frame & the front door"). R1
+  only refreshes login within its *current* layout: new palette, "Plant your first
+  seed" CTA, field reset. The meaning blurb + issei story are kept as-is (they're the
+  "soul" half of the wordmark duality and a good newcomer hook); R4 gives them life.
 - "Cook"/"cooked"/"recipe" are the *domain* (this is still a recipe app) — those
   stay; only the **table/kitchen hospitality metaphor** is retired.
 - The bottom-nav visual redesign is **R4**; R1 only changes the *label text*
@@ -224,7 +230,10 @@ R1 is frontend-only — no backend tests change.
    R1 so we don't build a mechanic R3 replaces.
 10. **Cookbook metaphor is retired** ("the table"/"the kitchen" → garden voice): signup
     CTA = "Plant your first seed"; "Your Kitchen" → "Your Garden". The *domain* words
-    (cook/recipe) and heritage identity (一世, wordmark) stay.
+    (cook/recipe) and heritage identity (一世 kanji + wordmark) stay.
+11. **Login screen stays this layout in R1** (palette + CTA + reset only). Its full
+    "living front door" reimagining — growing-seed entrance, motion, story arriving into
+    a garden — is deferred to **R4**, where the entrance/capture experience lives.
 4. **Palette = green-forward** ("Sunlit garden"): green is the ambient lead, terra the
    action accent, cream the surface. Chosen over cookbook browns on a real mockup.
 5. **Flat SVG plant art confirmed** — clean/artistic, not 3D/pixel/gamey; and
