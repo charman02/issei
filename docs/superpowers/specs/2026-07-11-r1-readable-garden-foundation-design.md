@@ -24,21 +24,28 @@ grandmother's recipe; spec `2026-07-09` §2.6).
 
 ## 1. Scope of R1
 
-R1 is deliberately the *foundation* pass: it changes tokens, type, and a few
-mechanics that every later screen inherits — without building the garden/nav/plant
-interfaces (those are R2–R4). Five pieces:
+R1 is deliberately the *foundation* pass: it changes tokens, type, language, and
+naming that every later screen inherits — without building the garden/nav/plant
+interfaces (those are R2–R4). **R1 is frontend-only** (no backend changes, no
+migration). Five pieces:
 
 1. **A garden-forward palette** (green promoted to the ambient lead; terra becomes a
    warm action accent).
 2. **Readable body type** (fix the thin/small regression on ingredients & body).
-3. **Login field reset** on switching Sign in ↔ Join the table.
-4. **"I cooked this" undo + a visible cook count** on a recipe.
+3. **Login field reset** on switching Sign in ↔ the signup tab.
+4. **A cookbook→garden metaphor sweep** (retire "the table"/"the kitchen" language;
+   the garden is the center now).
 5. **Dish-led recipe naming** (the dish is the name; the person shows as "from …").
 
-Explicitly **out of scope** (deferred to R2–R4): the immersive garden layout, plant
-tap-to-tend interface, growth animations, bottom-nav redesign, capture-flow
-reimagining, page transitions. R1 must not try to make the Garden feel immersive —
-that's R2's whole job.
+Explicitly **out of scope**:
+- **The cook mechanic** (logging a cook, undo, count) — deferred to **R3**, where
+  cooking becomes a *tactile plant-tending ritual* (Finch-inspired: tend → the plant
+  visibly grows), not a throwaway button. Building a button+undo in R1 for a mechanic
+  R3 replaces would be wasted work.
+- The immersive garden layout, plant tap-to-tend interface, growth animations,
+  bottom-nav redesign, capture-flow reimagining, page transitions (R2–R4).
+
+R1 must not try to make the Garden feel immersive — that's R2's whole job.
 
 ---
 
@@ -114,7 +121,7 @@ instead of re-guessing per screen.
 
 ## 4. Login field reset
 
-**Problem:** switching the Login tabs (Sign in ↔ Join the table) keeps whatever was
+**Problem:** switching the Login tabs (Sign in ↔ the signup tab) keeps whatever was
 typed, so stale values bleed across modes.
 
 **Behavior:** switching tabs **clears all form fields** (email, password, confirm
@@ -124,30 +131,36 @@ ride along if trivial, but the reset is the requirement).
 
 ---
 
-## 5. "I cooked this" — undo + visible count
+## 5. Cookbook → garden metaphor sweep
 
-**Problem:** "I cooked this" fires immediately with no recovery (a misclick
-permanently adds a cook event and feeds growth), and the recipe never shows *how many
-times* it's been cooked.
+**Problem:** the app's language is still cookbook-era ("Join the table," "Your
+Kitchen," "Setting your table…"), which now actively fights the vision: the **garden
+is the app's center**, and the copy should say so. This must land in R1, before R2
+builds garden screens, so the whole app speaks one language.
 
-**Behavior:**
+**Behavior:** sweep live/routed screens and replace table/kitchen metaphors with
+garden voice. Known replacements (not exhaustive — the implementer greps for the
+patterns):
 
-- **Undo:** after tapping "I cooked this", show an inline confirmation with an
-  **Undo** affordance (e.g. "🍲 Cooked! · Undo") that reverses the just-logged cook.
-  Undo removes that specific cook event (and thus its growth contribution). The undo
-  stays available until it's dismissed/navigated away — it does **not** silently
-  vanish on a timer (misclick recovery must be reliable).
-- **Cook count:** the recipe surface shows a gentle, non-scoreboard count — **"Cooked
-  N times"** (and, where it reads naturally, "last cooked …"). This is heritage
-  ("this dish has been made 12 times"), framed warmly — never a competitive metric.
-  `RecipeResponse` already carries `cook_count`/`owner_cook_count`/`last_cooked_at`;
-  surface them.
+| Old (cookbook) | New (garden) |
+|---|---|
+| "Join the table" (signup CTA) | **"Plant your first seed"** |
+| "Setting your table…" (signup loading) | **"Planting…"** |
+| "Your Kitchen" (page title + nav label) | **"Your Garden"** |
+| "A garden of everything you've kept." (subtitle) | keep — already garden voice |
+| Any "the table" / "at the table" phrasing | garden equivalent ("your garden") |
+| Bottom-nav "Kitchen" label | **"Garden"** |
 
-**Backend:** `POST /recipes/{id}/cook` returns the created cook-event id; a new
-**`DELETE /recipes/{id}/cook/{event_id}`** removes it, restricted to the event's own
-author (a user can only undo their own cook). Re-derive growth on the affected
-recipe as usual. This is the one backend change in R1 (nullable/additive — no schema
-migration; `cook_events` already exists).
+**Constraints:**
+- The **login kanji callout** (一世 · issei) and the wordmark are heritage identity,
+  **not** cookbook metaphor — leave them.
+- "Cook"/"cooked"/"recipe" are the *domain* (this is still a recipe app) — those
+  stay; only the **table/kitchen hospitality metaphor** is retired.
+- The bottom-nav visual redesign is **R4**; R1 only changes the *label text*
+  ("Kitchen" → "Garden") within the existing nav, not its design.
+- Route paths (e.g. `/my-recipes`) are unaffected — this is user-facing copy only.
+
+This is a copy/label sweep — cheap, foundational, and unblocks R2's garden language.
 
 ---
 
@@ -179,18 +192,20 @@ already stores `origin_attribution`/source and `author_full_name`.
 
 ## 7. Testing
 
-- **Backend:** unit/integration for the new `DELETE /recipes/{id}/cook/{event_id}` —
-  author-only (non-author → 404/403), removes exactly one event, recomputes growth,
-  and undoing the *first* cook reverts a Sprout→Seed stage change. Existing cook/growth
-  tests stay green.
-- **Frontend:** Login clears fields on tab switch; "I cooked this" shows undo and undo
-  reverses the count; cook count renders ("Cooked N times"); ingredient body renders
-  at the new size/weight; "from {source}" displays with the fallback. Palette: a token
-  smoke check (no removed token referenced) + build clean.
+R1 is frontend-only — no backend tests change.
+
+- **Frontend:** Login clears fields on tab switch; the signup CTA reads "Plant your
+  first seed"; "Your Kitchen"/nav "Kitchen" now read "Your Garden"/"Garden"; no
+  live/routed screen still shows "the table"/"Join the table" copy; ingredient body
+  renders at the new size/weight; "from {source}" displays with the "kept by" fallback.
+  Palette: a token smoke check (no removed token referenced) + build clean.
+- **Metaphor-sweep guard:** a test (or grep-based check) asserting the retired strings
+  ("Join the table", "Your Kitchen", "Setting your table") are absent from live/routed
+  components — so the sweep doesn't silently regress.
 - **Visual verification:** the isolated demo stack (backend :8010 + Vite :5183),
-  screenshot the login, a rich recipe (readable ingredients, "from Lola", cook count +
-  undo), and the app background/cards in the new green palette; confirm 0 console
-  errors and AA contrast on body text.
+  screenshot the login ("Plant your first seed"), the Garden page title, a rich recipe
+  (readable ingredients, "from Lola"), and the app background/cards in the new green
+  palette; confirm 0 console errors and AA contrast on body text.
 
 ---
 
@@ -204,6 +219,12 @@ already stores `origin_attribution`/source and `author_full_name`.
    convention here sets it up.)
 3. **Plant interface = feed its growth** (cook = water, add story/photo/words = feed,
    pass it on = seed); recipe lives one tap deeper. (R3.)
+9. **Cook logging = a tactile plant-tending ritual, deferred to R3** (Finch-inspired:
+   tend → the plant visibly grows). NOT a one-tap "I cooked this" button. Removed from
+   R1 so we don't build a mechanic R3 replaces.
+10. **Cookbook metaphor is retired** ("the table"/"the kitchen" → garden voice): signup
+    CTA = "Plant your first seed"; "Your Kitchen" → "Your Garden". The *domain* words
+    (cook/recipe) and heritage identity (一世, wordmark) stay.
 4. **Palette = green-forward** ("Sunlit garden"): green is the ambient lead, terra the
    action accent, cream the surface. Chosen over cookbook browns on a real mockup.
 5. **Flat SVG plant art confirmed** — clean/artistic, not 3D/pixel/gamey; and
