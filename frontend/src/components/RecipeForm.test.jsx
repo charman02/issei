@@ -27,7 +27,7 @@ describe('RecipeForm voice-notes', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<RecipeForm mode="add" onSubmit={onSubmit} />)
 
-    fireEvent.change(screen.getByPlaceholderText('Recipe name'), {
+    fireEvent.change(screen.getByPlaceholderText('Name the dish — e.g. “Adobo”'), {
       target: { value: 'Adobo' },
     })
     fireEvent.change(screen.getByPlaceholderText('Describe this step…'), {
@@ -52,7 +52,7 @@ describe('RecipeForm voice-notes', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<RecipeForm mode="add" onSubmit={onSubmit} />)
 
-    fireEvent.change(screen.getByPlaceholderText('Recipe name'), {
+    fireEvent.change(screen.getByPlaceholderText('Name the dish — e.g. “Adobo”'), {
       target: { value: 'Adobo' },
     })
     fireEvent.change(screen.getByPlaceholderText('Describe this step…'), {

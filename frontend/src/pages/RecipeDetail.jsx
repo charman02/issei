@@ -121,15 +121,17 @@ export default function RecipeDetail() {
           <Plant stage={stageForRecipe(growthRecipe)} vitality={vitalityForRecipe(growthRecipe)} size={22} className="inline-block align-middle ml-2" />
         </h1>
 
-        {recipe.author_full_name && (
+        {(sourceNameOf(recipe) || recipe.author_full_name) && (
           <div className="flex items-center gap-2 mt-2.5">
             <span className="w-[26px] h-[26px] rounded-full bg-terra text-white font-serif font-semibold text-xs flex items-center justify-center flex-shrink-0">
               {monogram}
             </span>
             <span className="font-serif italic text-[13.5px] text-ink-soft">
-              kept by
+              {sourceNameOf(recipe) ? 'from' : 'kept by'}
               {/* small gap so the italic "y" overhang doesn't collide with the upright name */}
-              <span className="not-italic font-semibold text-terra ml-1">{recipe.author_full_name}</span>
+              <span className="not-italic font-semibold text-plum ml-1">
+                {sourceNameOf(recipe) || recipe.author_full_name}
+              </span>
             </span>
           </div>
         )}

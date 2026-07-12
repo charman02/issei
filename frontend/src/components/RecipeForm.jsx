@@ -203,14 +203,16 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
         {/* Recipe details */}
         <p className="section-label mb-2.5">Recipe details</p>
         <div className="space-y-2.5">
+          {/* dish-led naming: the person is captured separately as the origin */}
           <input
             type="text"
-            placeholder="Recipe name"
+            placeholder="Name the dish — e.g. “Adobo”"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
             className="field"
           />
+          <p className="font-sans text-[11px] text-ink-soft -mt-1">You’ll say whose recipe it is next.</p>
           <input
             type="number"
             placeholder="Servings"

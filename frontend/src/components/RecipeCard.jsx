@@ -1,6 +1,7 @@
 import CoverImage from './CoverImage'
 import Plant from './Plant'
 import { stageForRecipe, vitalityForRecipe } from '../lib/growth'
+import { sourceNameOf } from '../lib/sourceName'
 
 // The signature repeated unit: a recipe as a designed "card in a recipe box."
 // - squared corners (heirloom, not app-rounded)
@@ -41,9 +42,11 @@ export default function RecipeCard({ recipe, onClick, variant = 'row' }) {
         <p className="font-serif font-bold text-[15px] leading-[1.15] text-ink">
           {recipe.name}
         </p>
-        {recipe.author_full_name && (
-          <p className="font-serif italic text-[11.5px] text-terra mt-[3px]">
-            kept by {recipe.author_full_name}
+        {(sourceNameOf(recipe) || recipe.author_full_name) && (
+          <p className="font-serif italic text-[11.5px] text-plum mt-[3px]">
+            {sourceNameOf(recipe)
+              ? `from ${sourceNameOf(recipe)}`
+              : `kept by ${recipe.author_full_name}`}
           </p>
         )}
       </div>

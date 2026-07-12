@@ -15,4 +15,15 @@ describe('RecipeCard', () => {
     const svg = screen.getByRole('img', { name: /blooming sapling/i })
     expect(Number(svg.getAttribute('width'))).toBeGreaterThanOrEqual(34)
   })
+
+  it('shows "from {source}" when there is a recorded origin', () => {
+    render(<RecipeCard recipe={{ id: 1, name: 'Adobo', author_full_name: 'Yoko M.', origin_attribution: 'Lola Remedios · Cebu', growth_stage: 'tree' }} onClick={() => {}} />)
+    expect(screen.getByText(/from Lola Remedios/i)).toBeInTheDocument()
+    expect(screen.queryByText(/kept by/i)).not.toBeInTheDocument()
+  })
+
+  it('falls back to "kept by {author}" when there is no origin', () => {
+    render(<RecipeCard recipe={{ id: 2, name: 'Fried Rice', author_full_name: 'Yoko M.', growth_stage: 'seed' }} onClick={() => {}} />)
+    expect(screen.getByText(/kept by Yoko M\./i)).toBeInTheDocument()
+  })
 })
