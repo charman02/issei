@@ -51,7 +51,7 @@ export default function InviteLanding() {
       )}
       <div className="mt-8 w-full max-w-sm">
         <Link to={`/login?tab=signup&invite=${token}`} className="btn-primary block">
-          Keep this recipe — join the table
+          Keep this recipe — start your garden
         </Link>
         <p className="font-sans text-[12px] text-ink-soft mt-3">
           Make a free account to cook it, keep it, and add the parts only you know.

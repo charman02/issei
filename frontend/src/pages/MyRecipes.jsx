@@ -39,7 +39,7 @@ export default function MyRecipes() {
 
   return (
     <div className="px-4 pt-6">
-      <h1 className="font-serif font-black text-[28px] text-ink">Your Kitchen</h1>
+      <h1 className="font-serif font-black text-[28px] text-ink">Your Garden</h1>
       <p className="font-serif italic text-sm text-ink-soft mt-0.5">A garden of everything you’ve kept.</p>
 
       <button

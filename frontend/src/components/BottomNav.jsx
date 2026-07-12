@@ -3,12 +3,12 @@ import Icon from './Icon'
 
 // Bottom nav — one line-icon family (see Icon.jsx). Active tab gets a soft terra
 // seal disc behind the glyph; Add is a raised terra ring. Labels match the
-// locked vocabulary: Home · Browse · Add · Kitchen · You.
+// locked vocabulary: Home · Browse · Add · Garden · You.
 const navItems = [
   { label: 'Home', path: '/', icon: 'home' },
   { label: 'Browse', path: '/browse', icon: 'compass' },
   { label: 'Add', path: '/add', icon: 'plus', center: true },
-  { label: 'Kitchen', path: '/my-recipes', icon: 'book' },
+  { label: 'Garden', path: '/my-recipes', icon: 'book' },
   { label: 'You', path: '/profile', icon: 'user' },
 ]
 

@@ -14,9 +14,10 @@ beforeEach(() => {
 })
 
 describe('MyRecipes', () => {
-  it('renders the kitchen header', () => {
+  it('renders the garden header (not the cookbook "Kitchen")', () => {
     render(<MemoryRouter><MyRecipes /></MemoryRouter>)
-    expect(screen.getByText('Your Kitchen')).toBeInTheDocument()
+    expect(screen.getByText('Your Garden')).toBeInTheDocument()
+    expect(screen.queryByText('Your Kitchen')).not.toBeInTheDocument()
   })
 
   it('offers a "shared with you" entry that navigates to /shared', async () => {
