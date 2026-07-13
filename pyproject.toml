@@ -1,0 +1,11 @@
+[tool.ruff]
+# Line length matches the project's established tolerance for longer lines
+# (and the team's black --line-length 100 convention). Chosen to minimize
+# churn against the existing codebase while giving a consistent standard.
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.format]
+# The codebase does not use a formatter historically; these defaults keep the
+# reformat minimal and predictable.
+quote-style = "double"
