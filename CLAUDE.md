@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Compact / Handoff Instructions
+
+This is a long, multi-sub-project build run via superpowers subagent-driven-development. Durable state lives in **`.superpowers/sdd/progress.md`** (the ledger) — read it first after any compaction or `/clear` to know exactly where things stand. Prefer **`/clear` at sub-project boundaries** over letting the session auto-compact mid-work.
+
+When compacting, preserve (in priority order):
+1. **Active sub-project + task** — which of R1–R4 (or SPn) is in flight, and which task number.
+2. **Branch state** — working branch is `lineage-mvp`; `main` is frozen at `65127f7` and auto-deploys to prod Neon (do NOT merge/push without explicit approval). 135 commits ahead, unpushed.
+3. **Key files changed** with line numbers, and current test status (backend `pytest`, frontend `vitest`).
+4. **Open decisions / next step** — what the user last approved and what comes next.
+5. **Non-obvious commands** that work (the isolated demo stack: backend :8010 via `run_backend.py`, Vite :5183 with `VITE_API_URL`; on Windows kill stale servers with `taskkill //F //PID`, not `pkill`).
+
+Drop verbatim tool output, resolved review threads, and superseded design options — the ledger and git history hold those.
+
 ## What This Is
 
 A FastAPI REST API for preserving and sharing family recipes, designed for Asian home cooks who use imprecise measurements ("a dash", "3 soup spoons"). Deployed on Render with PostgreSQL (Neon) in production, SQLite locally.
