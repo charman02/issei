@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 # Shopping list schemas
 
+
 class ShoppingListRequest(BaseModel):
     recipe_ids: list[int]
 

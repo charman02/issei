@@ -8,7 +8,9 @@ import IconField from '../components/IconField'
 export default function Login() {
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('invite')
-  const [tab, setTab] = useState(searchParams.get('tab') === 'signup' ? 'signup' : 'login')
+  const [tab, setTab] = useState(
+    searchParams.get('tab') === 'signup' ? 'signup' : 'login',
+  )
   const [email, setEmail] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -102,10 +104,13 @@ export default function Login() {
 
       {/* The meaning of the name — every newcomer meets it before signing up. */}
       <div className="w-full max-w-sm mb-8 pl-4 border-l-2 border-terra">
-        <p className="font-serif text-xs text-terra tracking-[0.2em] mb-1.5">一世 · issei</p>
+        <p className="font-serif text-xs text-terra tracking-[0.2em] mb-1.5">
+          一世 · issei
+        </p>
         <p className="font-serif italic text-sm leading-relaxed text-ink-soft">
-          The first of a family to arrive somewhere new — the ones who carry the recipes no one
-          wrote down. This is where they stay alive, passed from one generation to the next.
+          The first of a family to arrive somewhere new — the ones who carry the
+          recipes no one wrote down. This is where they stay alive, passed from
+          one generation to the next.
         </p>
       </div>
 
@@ -114,7 +119,9 @@ export default function Login() {
           <button
             onClick={() => switchTab('login')}
             className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
-              tab === 'login' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
+              tab === 'login'
+                ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]'
+                : 'text-ink-soft'
             }`}
           >
             Sign In
@@ -122,7 +129,9 @@ export default function Login() {
           <button
             onClick={() => switchTab('signup')}
             className={`flex-1 py-2.5 rounded-full font-serif font-semibold text-sm transition-colors ${
-              tab === 'signup' ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]' : 'text-ink-soft'
+              tab === 'signup'
+                ? 'bg-paper text-terra shadow-[0_2px_6px_rgba(90,60,30,0.15)]'
+                : 'text-ink-soft'
             }`}
           >
             Plant your first seed
@@ -153,7 +162,11 @@ export default function Login() {
               required
               className="field--login"
             />
-            <button type="submit" disabled={loading} className="btn-primary !mt-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary !mt-4"
+            >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
@@ -202,7 +215,11 @@ export default function Login() {
               required
               className="field--login"
             />
-            <button type="submit" disabled={loading} className="btn-primary !mt-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary !mt-4"
+            >
               {loading ? 'Planting…' : 'Plant your first seed'}
             </button>
           </form>

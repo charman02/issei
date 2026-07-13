@@ -12,12 +12,11 @@ class GhostAncestor(Base):
     """A named non-user origin for a root recipe — the person who taught it,
     captured at creation so recipe #1 is a two-generation lineage. Editable only
     by its creator until 'woken' (claimed_by_user_id set) — see the signature spec."""
+
     __tablename__ = "ghost_ancestors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    recipe_id: Mapped[int] = mapped_column(
-        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
-    )
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column()
     place: Mapped[Optional[str]] = mapped_column(nullable=True)
     year: Mapped[Optional[str]] = mapped_column(nullable=True)

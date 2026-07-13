@@ -30,7 +30,9 @@ export default function App() {
         path="/"
         element={
           <ProtectedRoute>
-            <Layout><Home /></Layout>
+            <Layout>
+              <Home />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -38,7 +40,9 @@ export default function App() {
         path="/browse"
         element={
           <ProtectedRoute>
-            <Layout><Browse /></Layout>
+            <Layout>
+              <Browse />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -46,7 +50,9 @@ export default function App() {
         path="/my-recipes"
         element={
           <ProtectedRoute>
-            <Layout><MyRecipes /></Layout>
+            <Layout>
+              <MyRecipes />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -54,7 +60,9 @@ export default function App() {
         path="/recipes/:id"
         element={
           <ProtectedRoute>
-            <Layout><RecipeDetail /></Layout>
+            <Layout>
+              <RecipeDetail />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -62,7 +70,9 @@ export default function App() {
         path="/recipes/:id/edit"
         element={
           <ProtectedRoute>
-            <Layout><EditRecipe /></Layout>
+            <Layout>
+              <EditRecipe />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -70,7 +80,9 @@ export default function App() {
         path="/shared"
         element={
           <ProtectedRoute>
-            <Layout><SharedWithMe /></Layout>
+            <Layout>
+              <SharedWithMe />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -78,7 +90,9 @@ export default function App() {
         path="/add"
         element={
           <ProtectedRoute>
-            <Layout><PlantRecipe /></Layout>
+            <Layout>
+              <PlantRecipe />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -86,7 +100,9 @@ export default function App() {
         path="/profile"
         element={
           <ProtectedRoute>
-            <Layout><Profile /></Layout>
+            <Layout>
+              <Profile />
+            </Layout>
           </ProtectedRoute>
         }
       />

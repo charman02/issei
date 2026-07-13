@@ -13,7 +13,9 @@ export default function IconField({
 }) {
   return (
     <div className={`relative ${wrapperClassName}`}>
-      <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${iconClassName}`}>
+      <span
+        className={`absolute left-3 top-1/2 -translate-y-1/2 ${iconClassName}`}
+      >
         <Icon name={icon} className="w-[17px] h-[17px]" />
       </span>
       <input className={`field field--icon ${className}`} {...props} />

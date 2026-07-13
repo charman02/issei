@@ -3,8 +3,16 @@
 // auto-touch: when passing back to the recipe's recorded source, pre-select the
 // fill-in starter (near-certain there), still fully editable.
 export const HANDOFF_STARTERS = [
-  { key: 'fill', label: '✍️ Add the part I’m missing', note: 'Add the part I’m missing — the measures, the timing, the way you know it.' },
-  { key: 'love', label: '💛 You’d love this', note: 'You’d love this — I wanted you to have it.' },
+  {
+    key: 'fill',
+    label: '✍️ Add the part I’m missing',
+    note: 'Add the part I’m missing — the measures, the timing, the way you know it.',
+  },
+  {
+    key: 'love',
+    label: '💛 You’d love this',
+    note: 'You’d love this — I wanted you to have it.',
+  },
 ]
 
 export function defaultStarterKey(sourceName) {

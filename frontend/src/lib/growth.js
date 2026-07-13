@@ -9,8 +9,9 @@ const BLOOM = 2
 const FRUIT = 12
 
 function soulCount(r) {
-  return [r.story, r.cover_photo_url, r.origin_attribution, r.notes]
-    .filter(Boolean).length
+  return [r.story, r.cover_photo_url, r.origin_attribution, r.notes].filter(
+    Boolean,
+  ).length
 }
 
 export function stageForRecipe(recipe) {

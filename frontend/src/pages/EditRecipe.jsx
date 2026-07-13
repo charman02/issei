@@ -38,7 +38,10 @@ export default function EditRecipe() {
         // steps, so dropping it here would null a persisted field on save.
         const flatSteps = [...recipe.steps]
           .sort((a, b) => a.position - b.position)
-          .map((s) => ({ content: s.content, section_header: s.section_header ?? null }))
+          .map((s) => ({
+            content: s.content,
+            section_header: s.section_header ?? null,
+          }))
 
         setInitialValues({
           name: recipe.name,
@@ -63,7 +66,10 @@ export default function EditRecipe() {
     return (
       <div className="p-6 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <button onClick={() => navigate('/my-recipes')} className="text-terra text-sm">
+        <button
+          onClick={() => navigate('/my-recipes')}
+          className="text-terra text-sm"
+        >
           Back to your garden
         </button>
       </div>
@@ -74,5 +80,11 @@ export default function EditRecipe() {
     return <div className="p-6 text-center text-ink-soft">Loading…</div>
   }
 
-  return <RecipeForm mode="edit" initialValues={initialValues} onSubmit={handleSave} />
+  return (
+    <RecipeForm
+      mode="edit"
+      initialValues={initialValues}
+      onSubmit={handleSave}
+    />
+  )
 }

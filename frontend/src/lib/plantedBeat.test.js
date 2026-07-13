@@ -15,7 +15,7 @@ describe('plantedBeatCopy', () => {
   it('a recipe planted with soul is born a sprout', () => {
     const copy = plantedBeatCopy(
       { name: 'Lola’s Adobo', growth_stage: 'sprout' },
-      'Lola'
+      'Lola',
     )
     expect(copy.stage).toBe('sprout')
     expect(copy.eyebrow).toBe('First sprout')
@@ -24,7 +24,10 @@ describe('plantedBeatCopy', () => {
   })
 
   it('names the three growth-loop acts (cook, story, pass on)', () => {
-    const copy = plantedBeatCopy({ name: 'Sinigang', growth_stage: 'seed' }, null)
+    const copy = plantedBeatCopy(
+      { name: 'Sinigang', growth_stage: 'seed' },
+      null,
+    )
     expect(copy.body).toContain('Cook it')
     expect(copy.body).toContain('pass it on')
   })

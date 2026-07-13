@@ -16,24 +16,25 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
     hashed = hash_password(user_in.password)
     new_user = User(
         email=user_in.email,
         hashed_password=hashed,
         first_name=user_in.first_name,
-        last_name=user_in.last_name
+        last_name=user_in.last_name,
     )
     db.add(new_user)
     db.commit()
     # re-read from db to populate server-generated fields (id, created_at)
     db.refresh(new_user)
     # Auto-accept any pending recipe invites addressed to this email (sharing spec §4.2).
-    pending = db.query(Handoff).filter(
-        Handoff.to_email == new_user.email, Handoff.state == "pending"
-    ).all()
+    pending = (
+        db.query(Handoff)
+        .filter(Handoff.to_email == new_user.email, Handoff.state == "pending")
+        .all()
+    )
     for h in pending:
         h.to_user_id = new_user.id
         h.state = "accepted"
@@ -41,6 +42,7 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_user)
     return new_user
+
 
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -59,9 +61,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             "id": user.id,
             "email": user.email,
             "first_name": user.first_name,
-            "last_name": user.last_name
-        }
+            "last_name": user.last_name,
+        },
     }
+
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):

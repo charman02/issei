@@ -8,11 +8,11 @@ def make_breakdown(value: Optional[float], unit: Optional[str], recipe_name: Opt
         if unit:
             return f"{value} {unit} ({recipe_name})"
         return f"{value} ({recipe_name})"
-    return f"? ({recipe_name})"            
+    return f"? ({recipe_name})"
 
 
 def consolidate_ingredients(recipes_with_names: list[dict]) -> list[ShoppingListItem]:
-    
+
     # key: normalized ingredient name, value: ShoppingListItem being built
     groups: dict[str, ShoppingListItem] = {}
 
@@ -30,7 +30,7 @@ def consolidate_ingredients(recipes_with_names: list[dict]) -> list[ShoppingList
                 quantity_value=ingredient.quantity_value,
                 unit=ingredient.unit,
                 quantity_type=ingredient.quantity_type,
-                breakdown=ing_breakdown
+                breakdown=ing_breakdown,
             )
         else:
             # ingredient already seen - try to consolidate
@@ -42,13 +42,14 @@ def consolidate_ingredients(recipes_with_names: list[dict]) -> list[ShoppingList
                 if ingredient.unit is None and existing.unit is None:
                     # both are countable - sum directly
                     existing.quantity_value = existing.quantity_value + ingredient.quantity_value
-                    existing.quantity_text = str(int(existing.quantity_value)) if existing.quantity_value == int(existing.quantity_value) else str(existing.quantity_value)
+                    existing.quantity_text = (
+                        str(int(existing.quantity_value))
+                        if existing.quantity_value == int(existing.quantity_value)
+                        else str(existing.quantity_value)
+                    )
                 else:
                     converted = convert(
-                        ingredient.quantity_value,
-                        ingredient.unit,
-                        existing.unit,
-                        ing_name
+                        ingredient.quantity_value, ingredient.unit, existing.unit, ing_name
                     )
                     if converted is not None:
                         # conversion succeeded - sum the values

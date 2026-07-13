@@ -9,14 +9,14 @@ security = HTTPBasic()
 BASIC_AUTH_USERNAME = "issei"
 BASIC_AUTH_PASSWORD = "recipes"
 
+
 def verify_basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
     if credentials.username != BASIC_AUTH_USERNAME or credentials.password != BASIC_AUTH_PASSWORD:
         raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"}
+            status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Basic"}
         )
     return credentials
+
 
 @router.get("/mom-form", response_class=HTMLResponse)
 def get_mom_form(credentials: HTTPBasicCredentials = Depends(verify_basic_auth)):

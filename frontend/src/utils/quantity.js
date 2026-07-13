@@ -10,12 +10,24 @@
 // model in app/services/scaling.py.
 
 const UNICODE_FRACTIONS = {
-  '½': '1/2', '⅓': '1/3', '⅔': '2/3', '¼': '1/4', '¾': '3/4',
-  '⅕': '1/5', '⅖': '2/5', '⅗': '3/5', '⅘': '4/5',
-  '⅙': '1/6', '⅛': '1/8', '⅜': '3/8', '⅝': '5/8', '⅞': '7/8',
+  '½': '1/2',
+  '⅓': '1/3',
+  '⅔': '2/3',
+  '¼': '1/4',
+  '¾': '3/4',
+  '⅕': '1/5',
+  '⅖': '2/5',
+  '⅗': '3/5',
+  '⅘': '4/5',
+  '⅙': '1/6',
+  '⅛': '1/8',
+  '⅜': '3/8',
+  '⅝': '5/8',
+  '⅞': '7/8',
 }
 
-const IMPRECISE_MARKERS = /(~|\babout\b|\bapprox\b|\bapproximately\b|\broughly\b|\baround\b)/i
+const IMPRECISE_MARKERS =
+  /(~|\babout\b|\bapprox\b|\bapproximately\b|\broughly\b|\baround\b)/i
 
 // Pulls a leading number off a string, supporting "1 1/2" (mixed),
 // "1/2" (fraction), and "1.5"/"2" (decimal/whole). Returns [value, rest].
@@ -35,7 +47,12 @@ function parseLeadingNumber(str) {
 export function parseQuantity(raw) {
   const text = (raw || '').trim()
   if (!text) {
-    return { quantity_text: null, quantity_value: null, unit: null, quantity_type: 'unmeasured' }
+    return {
+      quantity_text: null,
+      quantity_value: null,
+      unit: null,
+      quantity_type: 'unmeasured',
+    }
   }
 
   // Normalize unicode fractions: "1½" -> "1 1/2", standalone "½" -> "1/2".

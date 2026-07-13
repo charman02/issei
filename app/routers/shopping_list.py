@@ -16,16 +16,21 @@ router = APIRouter(prefix="/shopping-list", tags=["shopping-list"])
 def create_shopping_list(
     request: ShoppingListRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):  
-    recipes = db.query(Recipe).filter(
-        Recipe.id.in_(request.recipe_ids),
-        Recipe.user_id == current_user.id,
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients)
-    ).all()
+    db: Session = Depends(get_db),
+):
+    recipes = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id.in_(request.recipe_ids),
+            Recipe.user_id == current_user.id,
+            Recipe.deleted_at == None,
+        )
+        .options(
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+        )
+        .all()
+    )
 
     if len(recipes) != len(request.recipe_ids):
         raise HTTPException(status_code=404, detail="One or more recipes not found")
@@ -34,9 +39,9 @@ def create_shopping_list(
     for recipe in recipes:
         for section in recipe.ingredient_sections:
             for ing in section.ingredients:
-                recipes_with_names.append({"recipe_name" : recipe.name, "ingredient" : ing})
+                recipes_with_names.append({"recipe_name": recipe.name, "ingredient": ing})
         for ing in recipe.ingredients:
-            recipes_with_names.append({"recipe_name" : recipe.name, "ingredient" : ing})
+            recipes_with_names.append({"recipe_name": recipe.name, "ingredient": ing})
 
     shopping_list = consolidate_ingredients(recipes_with_names)
     return ShoppingListResponse(items=shopping_list)

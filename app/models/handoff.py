@@ -11,12 +11,11 @@ from app.database import Base
 class Handoff(Base):
     """Passing a recipe to a named person (in-app user or an email invite).
     state: 'pending' | 'accepted'. The optional growth act — never a gate."""
+
     __tablename__ = "handoffs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    recipe_id: Mapped[int] = mapped_column(
-        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
-    )
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), index=True)
     from_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )

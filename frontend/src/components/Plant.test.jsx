@@ -15,7 +15,9 @@ describe('Plant', () => {
   })
   it('a fruiting tree renders fruit accents', () => {
     const { container } = render(<Plant stage="tree" vitality="fruiting" />)
-    expect(container.querySelectorAll('[data-accent="fruit"]').length).toBeGreaterThan(0)
+    expect(
+      container.querySelectorAll('[data-accent="fruit"]').length,
+    ).toBeGreaterThan(0)
   })
   it('seed ignores vitality (no accents even if fruiting passed)', () => {
     const { container } = render(<Plant stage="seed" vitality="fruiting" />)

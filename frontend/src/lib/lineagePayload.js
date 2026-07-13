@@ -4,7 +4,12 @@ const clean = (v) => (v && String(v).trim() ? String(v).trim() : null)
 
 export function buildOriginPayload({ name, place, year, memory }) {
   if (!name || !name.trim()) return null // self-authored root: no origin
-  return { name: name.trim(), place: clean(place), year: clean(year), memory: clean(memory) }
+  return {
+    name: name.trim(),
+    place: clean(place),
+    year: clean(year),
+    memory: clean(memory),
+  }
 }
 
 export function buildRemixInitialValues(parent) {
@@ -29,8 +34,8 @@ export function buildRemixInitialValues(parent) {
     servings: parent.servings ?? '',
     cuisine: parent.cuisine || '',
     source: parent.source || '',
-    notes: parent.notes || '',   // pre-filled, editable
-    story: '',                   // remixer writes their own
+    notes: parent.notes || '', // pre-filled, editable
+    story: '', // remixer writes their own
     ingredients: flatIngredients,
     steps: flatSteps,
   }

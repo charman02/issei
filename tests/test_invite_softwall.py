@@ -1,16 +1,32 @@
 def _payload(name="Adobo", **extra):
-    return {"name": name,
-            "ingredients": [{"name": "secret-ingredient", "quantity_text": "2 lbs",
-                             "quantity_type": "precise", "position": 1}],
-            "steps": [{"content": "secret-step", "position": 1}], **extra}
+    return {
+        "name": name,
+        "ingredients": [
+            {
+                "name": "secret-ingredient",
+                "quantity_text": "2 lbs",
+                "quantity_type": "precise",
+                "position": 1,
+            }
+        ],
+        "steps": [{"content": "secret-step", "position": 1}],
+        **extra,
+    }
 
 
 def _handoff(client, owner_headers, email="mom@example.com", **extra):
-    root = client.post("/recipes", json=_payload(story="Lola made this every Sunday.",
-                       origin={"name": "Lola Remedios", "place": "Cebu"}, **extra),
-                       headers=owner_headers).json()
-    r = client.post(f"/recipes/{root['id']}/handoff",
-                    json={"to_email": email}, headers=owner_headers)
+    root = client.post(
+        "/recipes",
+        json=_payload(
+            story="Lola made this every Sunday.",
+            origin={"name": "Lola Remedios", "place": "Cebu"},
+            **extra,
+        ),
+        headers=owner_headers,
+    ).json()
+    r = client.post(
+        f"/recipes/{root['id']}/handoff", json={"to_email": email}, headers=owner_headers
+    )
     return root, r.json()["token"]
 
 
@@ -43,6 +59,7 @@ def test_preview_unknown_token_404(client, make_user):
 def test_claim_grants_view_even_on_email_mismatch(client, make_user, db_session):
     from app.services.lineage import can_view
     from app.models.recipe import Recipe
+
     owner, oheaders = make_user()
     # invite addressed to one email…
     root, token = _handoff(client, oheaders, email="aunt@example.com")

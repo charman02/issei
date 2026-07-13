@@ -6,8 +6,8 @@ def test_seed_is_nothing_done():
 
 
 def test_sprout_from_one_dimension():
-    assert growth_stage(soul=1, cook_count=0) == "sprout"   # a memory/photo
-    assert growth_stage(soul=0, cook_count=1) == "sprout"   # or first cook
+    assert growth_stage(soul=1, cook_count=0) == "sprout"  # a memory/photo
+    assert growth_stage(soul=0, cook_count=1) == "sprout"  # or first cook
 
 
 def test_sapling_from_soul_breadth():
@@ -36,25 +36,38 @@ def test_vitality_states():
 
 def test_recipe_response_has_growth_fields(client, make_user):
     _, headers = make_user()
-    payload = {"name": "Adobo",
-               "story": "Lola made it every Sunday",
-               "ingredients": [{"name": "chicken", "quantity_text": "2 lbs",
-                                "quantity_type": "precise", "position": 1}],
-               "steps": [{"content": "Cook", "position": 1}]}
+    payload = {
+        "name": "Adobo",
+        "story": "Lola made it every Sunday",
+        "ingredients": [
+            {"name": "chicken", "quantity_text": "2 lbs", "quantity_type": "precise", "position": 1}
+        ],
+        "steps": [{"content": "Cook", "position": 1}],
+    }
     r = client.post("/recipes", json=payload, headers=headers)
     body = r.json()
-    assert body["growth_stage"] == "sprout"   # 1 soul dimension (story), 0 cooks
+    assert body["growth_stage"] == "sprout"  # 1 soul dimension (story), 0 cooks
     assert body["growth_vitality"] == "bare"
     assert body["soul_count"] == 1
 
 
 def test_cook_note_is_persisted(client, make_user, db_session):
     from app.models.cook_event import CookEvent
+
     _, headers = make_user()
-    root = client.post("/recipes", json={"name": "Adobo",
-        "ingredients": [{"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}],
-        "steps": []}, headers=headers).json()
-    client.post(f"/recipes/{root['id']}/cook",
-                json={"note": "I used coconut milk instead"}, headers=headers)
+    root = client.post(
+        "/recipes",
+        json={
+            "name": "Adobo",
+            "ingredients": [
+                {"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}
+            ],
+            "steps": [],
+        },
+        headers=headers,
+    ).json()
+    client.post(
+        f"/recipes/{root['id']}/cook", json={"note": "I used coconut milk instead"}, headers=headers
+    )
     ev = db_session.query(CookEvent).filter_by(recipe_id=root["id"]).one()
     assert ev.note == "I used coconut milk instead"

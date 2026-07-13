@@ -8,17 +8,19 @@ Two axes:
 """
 
 # tunable thresholds
-_SAPLING_SOUL = 3      # soul dimensions to reach sapling by breadth
-_TREE_SOUL = 3         # soul dimensions required for tree (use can't substitute)
-_HEAVY_USE = 5         # cooks that count as "genuinely used" → grows up to sapling
-_BLOOM_COOKS = 2       # activity to start blooming
-_FRUIT_COOKS = 12      # activity to fruit (then caps)
+_SAPLING_SOUL = 3  # soul dimensions to reach sapling by breadth
+_TREE_SOUL = 3  # soul dimensions required for tree (use can't substitute)
+_HEAVY_USE = 5  # cooks that count as "genuinely used" → grows up to sapling
+_BLOOM_COOKS = 2  # activity to start blooming
+_FRUIT_COOKS = 12  # activity to fruit (then caps)
 
 
 def soul_count(recipe) -> int:
     """How many soul dimensions are present (0-4)."""
-    return sum(bool(getattr(recipe, f, None)) for f in
-               ("story", "cover_photo_url", "origin_attribution", "notes"))
+    return sum(
+        bool(getattr(recipe, f, None))
+        for f in ("story", "cover_photo_url", "origin_attribution", "notes")
+    )
 
 
 def growth_stage(soul: int, cook_count: int) -> str:

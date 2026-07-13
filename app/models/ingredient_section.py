@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from app.models.recipe import Recipe
     from app.models.ingredient import Ingredient
 
+
 class IngredientSection(Base):
     __tablename__ = "ingredient_sections"
 

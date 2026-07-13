@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 if TYPE_CHECKING:
     from app.models.recipe import Recipe
 
+
 class Step(Base):
     __tablename__ = "steps"
 

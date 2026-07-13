@@ -31,7 +31,11 @@ export default function BottomNav() {
                 className="flex flex-col items-center -mt-[22px]"
               >
                 <span className="flex items-center justify-center w-12 h-12 rounded-full bg-terra text-white border-[3px] border-paper shadow-[0_6px_16px_rgba(189,90,44,0.4)]">
-                  <Icon name={item.icon} className="w-[22px] h-[22px]" strokeWidth={2} />
+                  <Icon
+                    name={item.icon}
+                    className="w-[22px] h-[22px]"
+                    strokeWidth={2}
+                  />
                 </span>
                 <span className="text-[9px] font-sans font-semibold tracking-[0.04em] text-terra mt-0.5">
                   {item.label}
@@ -48,7 +52,9 @@ export default function BottomNav() {
               className={`flex flex-col items-center gap-0.5 ${active ? 'text-terra' : 'text-[#A8926F]'}`}
             >
               {/* active tab gets a soft terra seal disc behind the icon */}
-              <span className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${active ? 'bg-terra/[0.14]' : ''}`}>
+              <span
+                className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${active ? 'bg-terra/[0.14]' : ''}`}
+              >
                 <Icon name={item.icon} className="w-5 h-5" />
               </span>
               <span className="text-[9px] font-sans font-medium tracking-[0.03em]">

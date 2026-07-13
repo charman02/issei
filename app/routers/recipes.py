@@ -13,9 +13,27 @@ from app.models.step import Step
 from app.models.ghost_ancestor import GhostAncestor
 from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeUpdate, IngredientResponse, StepResponse, RemixIn, CookIn, HandoffIn, HandoffResponse, InvitePreview, LineageView
+from app.schemas.recipe import (
+    RecipeCreate,
+    RecipeResponse,
+    RecipeUpdate,
+    IngredientResponse,
+    StepResponse,
+    RemixIn,
+    CookIn,
+    HandoffIn,
+    HandoffResponse,
+    InvitePreview,
+    LineageView,
+)
 from app.services.scaling import scale_ingredient
-from app.services.lineage import diff_recipes, build_lineage_view, effective_visibility, root_of, can_view
+from app.services.lineage import (
+    diff_recipes,
+    build_lineage_view,
+    effective_visibility,
+    root_of,
+    can_view,
+)
 from app.services.growth import soul_count, growth_stage, growth_vitality
 
 from datetime import datetime, timezone
@@ -29,16 +47,25 @@ def _attach_growth_fields(recipe, db):
     recipe.cook_count = len(cooks)
     recipe.owner_cook_count = sum(1 for c in cooks if c.user_id == recipe.user_id)
     recipe.last_cooked_at = max((c.cooked_at for c in cooks), default=None)
-    child_ids = [r.id for r in db.query(Recipe.id).filter(
-        Recipe.parent_recipe_id == recipe.id, Recipe.deleted_at == None
-    ).all()]
+    child_ids = [
+        r.id
+        for r in db.query(Recipe.id)
+        .filter(Recipe.parent_recipe_id == recipe.id, Recipe.deleted_at == None)
+        .all()
+    ]
     recipe.child_count = len(child_ids)
-    recipe.has_grandchildren = bool(child_ids) and db.query(Recipe.id).filter(
-        Recipe.parent_recipe_id.in_(child_ids), Recipe.deleted_at == None
-    ).first() is not None
-    recipe.shared_with_count = db.query(Handoff).filter(
-        Handoff.recipe_id == recipe.id, Handoff.state == "accepted"
-    ).count()
+    recipe.has_grandchildren = (
+        bool(child_ids)
+        and db.query(Recipe.id)
+        .filter(Recipe.parent_recipe_id.in_(child_ids), Recipe.deleted_at == None)
+        .first()
+        is not None
+    )
+    recipe.shared_with_count = (
+        db.query(Handoff)
+        .filter(Handoff.recipe_id == recipe.id, Handoff.state == "accepted")
+        .count()
+    )
     soul = soul_count(recipe)
     recipe.soul_count = soul
     recipe.growth_stage = growth_stage(soul, recipe.cook_count)
@@ -50,7 +77,7 @@ def _attach_growth_fields(recipe, db):
 def create_recipe(
     recipe_in: RecipeCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     new_recipe = Recipe(
         user_id=current_user.id,
@@ -74,10 +101,15 @@ def create_recipe(
     # Plant the origin: a ghost ancestor makes recipe #1 a two-generation lineage.
     if recipe_in.origin is not None:
         o = recipe_in.origin
-        db.add(GhostAncestor(
-            recipe_id=new_recipe.id,
-            name=o.name, place=o.place, year=o.year, memory=o.memory,
-        ))
+        db.add(
+            GhostAncestor(
+                recipe_id=new_recipe.id,
+                name=o.name,
+                place=o.place,
+                year=o.year,
+                memory=o.memory,
+            )
+        )
         parts = [o.name] + [p for p in (o.place, o.year) if p]
         new_recipe.origin_attribution = " · ".join(parts)
 
@@ -91,9 +123,25 @@ def create_recipe(
         db.flush()
 
         for ing_in in section_in.ingredients:
-            db.add(Ingredient(
+            db.add(
+                Ingredient(
+                    recipe_id=new_recipe.id,
+                    section_id=new_section.id,
+                    name=ing_in.name,
+                    quantity_text=ing_in.quantity_text,
+                    quantity_value=ing_in.quantity_value,
+                    unit=ing_in.unit,
+                    quantity_type=ing_in.quantity_type,
+                    notes=ing_in.notes,
+                    position=ing_in.position,
+                )
+            )
+
+    for ing_in in recipe_in.ingredients:
+        db.add(
+            Ingredient(
                 recipe_id=new_recipe.id,
-                section_id=new_section.id,
+                section_id=None,
                 name=ing_in.name,
                 quantity_text=ing_in.quantity_text,
                 quantity_value=ing_in.quantity_value,
@@ -101,56 +149,48 @@ def create_recipe(
                 quantity_type=ing_in.quantity_type,
                 notes=ing_in.notes,
                 position=ing_in.position,
-            ))
-    
-    for ing_in in recipe_in.ingredients:
-        db.add(Ingredient(
-            recipe_id=new_recipe.id,
-            section_id=None,
-            name=ing_in.name,
-            quantity_text=ing_in.quantity_text,
-            quantity_value=ing_in.quantity_value,
-            unit=ing_in.unit,
-            quantity_type=ing_in.quantity_type,
-            notes=ing_in.notes,
-            position=ing_in.position,
-        ))
+            )
+        )
 
     for step_in in recipe_in.steps:
-        db.add(Step(
-            recipe_id=new_recipe.id,
-            position=step_in.position,
-            content=step_in.content,
-            section_header=step_in.section_header,
-            voice_note=step_in.voice_note,
-        ))
+        db.add(
+            Step(
+                recipe_id=new_recipe.id,
+                position=step_in.position,
+                content=step_in.content,
+                section_header=step_in.section_header,
+                voice_note=step_in.voice_note,
+            )
+        )
 
     db.commit()
     db.refresh(new_recipe)
     _attach_growth_fields(new_recipe, db)
     return new_recipe
 
-@router.post("/{recipe_id}/remix", response_model=RecipeResponse,
-             status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/{recipe_id}/remix", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED
+)
 def remix_recipe(
     recipe_id: int,
     remix_in: RemixIn,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    parent = db.query(Recipe).filter(
-        Recipe.id == recipe_id, Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredients), selectinload(Recipe.steps)
-    ).first()
+    parent = (
+        db.query(Recipe)
+        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
+        .options(selectinload(Recipe.ingredients), selectinload(Recipe.steps))
+        .first()
+    )
     if not parent:
         raise HTTPException(status_code=404, detail="Recipe not found")
     if not can_view(parent, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     # Only a change branches; describe it to pre-fill the prompt.
-    diff = diff_recipes(parent.ingredients, parent.steps,
-                        remix_in.ingredients, remix_in.steps)
+    diff = diff_recipes(parent.ingredients, parent.steps, remix_in.ingredients, remix_in.steps)
 
     # Edited scalars override the inherited parent value; omitted ones inherit.
     def _inherit(edited, parent_value):
@@ -177,37 +217,53 @@ def remix_recipe(
     db.flush()
 
     for ing_in in remix_in.ingredients:
-        db.add(Ingredient(
-            recipe_id=child.id, section_id=None,
-            name=ing_in.name, quantity_text=ing_in.quantity_text,
-            quantity_value=ing_in.quantity_value, unit=ing_in.unit,
-            quantity_type=ing_in.quantity_type, notes=ing_in.notes,
-            position=ing_in.position,
-        ))
+        db.add(
+            Ingredient(
+                recipe_id=child.id,
+                section_id=None,
+                name=ing_in.name,
+                quantity_text=ing_in.quantity_text,
+                quantity_value=ing_in.quantity_value,
+                unit=ing_in.unit,
+                quantity_type=ing_in.quantity_type,
+                notes=ing_in.notes,
+                position=ing_in.position,
+            )
+        )
     for step_in in remix_in.steps:
-        db.add(Step(
-            recipe_id=child.id, position=step_in.position,
-            content=step_in.content, section_header=step_in.section_header,
-            voice_note=step_in.voice_note,
-        ))
+        db.add(
+            Step(
+                recipe_id=child.id,
+                position=step_in.position,
+                content=step_in.content,
+                section_header=step_in.section_header,
+                voice_note=step_in.voice_note,
+            )
+        )
 
     db.commit()
     db.refresh(child)
     return child
 
-@router.post("/{recipe_id}/handoff", response_model=HandoffResponse,
-             status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/{recipe_id}/handoff", response_model=HandoffResponse, status_code=status.HTTP_201_CREATED
+)
 def handoff_recipe(
     recipe_id: int,
     handoff_in: HandoffIn,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id,
-        Recipe.user_id == current_user.id,
-        Recipe.deleted_at == None,
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id == recipe_id,
+            Recipe.user_id == current_user.id,
+            Recipe.deleted_at == None,
+        )
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
@@ -250,6 +306,7 @@ def handoff_recipe(
     db.refresh(handoff)
     return handoff
 
+
 @router.post("/{recipe_id}/cook")
 def cook_recipe(
     recipe_id: int,
@@ -257,51 +314,57 @@ def cook_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id, Recipe.deleted_at == None
-    ).first()
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id, Recipe.deleted_at == None).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    db.add(CookEvent(
-        recipe_id=recipe_id, user_id=current_user.id,
-        photo_url=(cook_in.photo_url if cook_in else None),
-        note=(cook_in.note if cook_in else None),
-    ))
+    db.add(
+        CookEvent(
+            recipe_id=recipe_id,
+            user_id=current_user.id,
+            photo_url=(cook_in.photo_url if cook_in else None),
+            note=(cook_in.note if cook_in else None),
+        )
+    )
     db.commit()
     count = db.query(CookEvent).filter(CookEvent.recipe_id == recipe_id).count()
     return {"cook_count": count}
 
+
 @router.get("", response_model=list[RecipeResponse])
-def list_recipes(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    recipes = db.query(Recipe).filter(
-        Recipe.user_id == current_user.id,
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).all()
+def list_recipes(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    recipes = (
+        db.query(Recipe)
+        .filter(Recipe.user_id == current_user.id, Recipe.deleted_at == None)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .all()
+    )
     for r in recipes:
         _attach_growth_fields(r, db)
     return recipes
 
+
 @router.get("/browse", response_model=list[RecipeResponse])
 def browse_recipes(db: Session = Depends(get_db)):
-    recipes = db.query(Recipe).filter(
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).order_by(Recipe.created_at.desc()).all()
+    recipes = (
+        db.query(Recipe)
+        .filter(Recipe.deleted_at == None)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .order_by(Recipe.created_at.desc())
+        .all()
+    )
     recipes = [r for r in recipes if effective_visibility(r, db) == "public"]
     for r in recipes:
         _attach_growth_fields(r, db)
@@ -312,6 +375,7 @@ def browse_recipes(db: Session = Depends(get_db)):
         r.shared_with_count = 0
     return recipes
 
+
 @router.get("/shared", response_model=list[RecipeResponse])
 def shared_with_me(
     current_user: User = Depends(get_current_user),
@@ -320,22 +384,28 @@ def shared_with_me(
     # Declared BEFORE get_recipe so the literal "/shared" path is matched first;
     # otherwise GET /recipes/{recipe_id} would capture recipe_id="shared".
     root_ids = [
-        h.recipe_id for h in db.query(Handoff).filter(
-            Handoff.to_user_id == current_user.id, Handoff.state == "accepted"
-        ).all()
+        h.recipe_id
+        for h in db.query(Handoff)
+        .filter(Handoff.to_user_id == current_user.id, Handoff.state == "accepted")
+        .all()
     ]
     if not root_ids:
         return []
-    recipes = db.query(Recipe).filter(
-        Recipe.id.in_(root_ids),
-        Recipe.user_id != current_user.id,
-        Recipe.deleted_at == None,
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user),
-    ).all()
+    recipes = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id.in_(root_ids),
+            Recipe.user_id != current_user.id,
+            Recipe.deleted_at == None,
+        )
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .all()
+    )
     for r in recipes:
         _attach_growth_fields(r, db)
     return recipes
@@ -370,15 +440,20 @@ def preview_invite(token: str, db: Session = Depends(get_db)):
     h = db.query(Handoff).filter(Handoff.token == token).first()
     if h is None:
         raise HTTPException(status_code=404, detail="Invite not found")
-    recipe = db.query(Recipe).filter(
-        Recipe.id == h.recipe_id, Recipe.deleted_at == None
-    ).options(selectinload(Recipe.user)).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(Recipe.id == h.recipe_id, Recipe.deleted_at == None)
+        .options(selectinload(Recipe.user))
+        .first()
+    )
     if recipe is None:
         raise HTTPException(status_code=404, detail="Invite not found")
     _attach_growth_fields(recipe, db)
     from_name = None
     if recipe.user is not None:
-        from_name = " ".join(p for p in [recipe.user.first_name, recipe.user.last_name] if p) or None
+        from_name = (
+            " ".join(p for p in [recipe.user.first_name, recipe.user.last_name] if p) or None
+        )
     return InvitePreview(
         recipe_id=recipe.id,
         name=recipe.name,
@@ -413,22 +488,22 @@ def claim_invite(
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(
-    recipe_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    recipe_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     # Viewable by the owner, by anyone if the recipe's effective visibility
     # (its root's visibility) is public, or by an accepted grantee on the root;
     # otherwise 404. Editing/deleting remains owner-only — see patch_recipe.
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id,
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     if not can_view(recipe, current_user, db):
@@ -436,20 +511,25 @@ def get_recipe(
     _attach_growth_fields(recipe, db)
     return recipe
 
+
 @router.get("/{recipe_id}/lineage", response_model=LineageView)
 def get_lineage(
     recipe_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id, Recipe.deleted_at == None
-    ).options(selectinload(Recipe.user)).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
+        .options(selectinload(Recipe.user))
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     if not can_view(recipe, current_user, db):
         raise HTTPException(status_code=404, detail="Recipe not found")
     return build_lineage_view(recipe, db)
+
 
 @router.get("/{recipe_id}/scale", response_model=RecipeResponse)
 def get_scaled_recipe(
@@ -459,15 +539,17 @@ def get_scaled_recipe(
     db: Session = Depends(get_db),
 ):
     # Gated like get_recipe: owner, public root, or accepted grantee only.
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id,
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     if not can_view(recipe, current_user, db):
@@ -475,10 +557,9 @@ def get_scaled_recipe(
 
     if recipe.servings is None:
         raise HTTPException(
-            status_code=400,
-            detail="Recipe does not have servings set - cannot scale"
+            status_code=400, detail="Recipe does not have servings set - cannot scale"
         )
-    
+
     multiplier = servings / recipe.servings
 
     # scale ingredients within sections
@@ -488,18 +569,20 @@ def get_scaled_recipe(
             IngredientResponse.model_validate(scale_ingredient(ing, multiplier))
             for ing in section.ingredients
         ]
-        scaled_sections.append({
-            "id": section.id,
-            "name": section.name,
-            "position": section.position,
-            "ingredients": scaled_section_ings
-        })
+        scaled_sections.append(
+            {
+                "id": section.id,
+                "name": section.name,
+                "position": section.position,
+                "ingredients": scaled_section_ings,
+            }
+        )
 
     scaled_ingredients = [
         IngredientResponse.model_validate(scale_ingredient(ing, multiplier))
         for ing in recipe.ingredients
     ]
-    
+
     response_dict = {
         "id": recipe.id,
         "user_id": recipe.user_id,
@@ -519,28 +602,32 @@ def get_scaled_recipe(
         "deleted_at": recipe.deleted_at,
         "ingredient_sections": scaled_sections,
         "ingredients": scaled_ingredients,
-        "steps": [StepResponse.model_validate(s) for s in recipe.steps]
+        "steps": [StepResponse.model_validate(s) for s in recipe.steps],
     }
 
     return RecipeResponse.model_validate(response_dict)
+
 
 @router.patch("/{recipe_id}", response_model=RecipeResponse)
 def patch_recipe(
     recipe_in: RecipeUpdate,
     recipe_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id,
-        Recipe.user_id == current_user.id,
-        Recipe.deleted_at == None
-    ).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id == recipe_id, Recipe.user_id == current_user.id, Recipe.deleted_at == None
+        )
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
@@ -567,7 +654,8 @@ def patch_recipe(
 
     # Apply scalar fields only (skip the child collections handled below).
     scalar_fields = {
-        k: v for k, v in sent_fields.items()
+        k: v
+        for k, v in sent_fields.items()
         if k not in ("ingredient_sections", "ingredients", "steps")
     }
     for field, value in scalar_fields.items():
@@ -581,15 +669,15 @@ def patch_recipe(
     recipe_id_val = recipe.id
 
     if sections_sent or ingredients_sent:
-        db.query(Ingredient).filter(
-            Ingredient.recipe_id == recipe_id_val
-        ).delete(synchronize_session=False)
-        db.query(IngredientSection).filter(
-            IngredientSection.recipe_id == recipe_id_val
-        ).delete(synchronize_session=False)
+        db.query(Ingredient).filter(Ingredient.recipe_id == recipe_id_val).delete(
+            synchronize_session=False
+        )
+        db.query(IngredientSection).filter(IngredientSection.recipe_id == recipe_id_val).delete(
+            synchronize_session=False
+        )
         db.flush()
 
-        for section_in in (new_sections or []):
+        for section_in in new_sections or []:
             new_section = IngredientSection(
                 recipe_id=recipe_id_val,
                 name=section_in.name,
@@ -598,9 +686,25 @@ def patch_recipe(
             db.add(new_section)
             db.flush()
             for ing_in in section_in.ingredients:
-                db.add(Ingredient(
+                db.add(
+                    Ingredient(
+                        recipe_id=recipe_id_val,
+                        section_id=new_section.id,
+                        name=ing_in.name,
+                        quantity_text=ing_in.quantity_text,
+                        quantity_value=ing_in.quantity_value,
+                        unit=ing_in.unit,
+                        quantity_type=ing_in.quantity_type,
+                        notes=ing_in.notes,
+                        position=ing_in.position,
+                    )
+                )
+
+        for ing_in in new_ingredients or []:
+            db.add(
+                Ingredient(
                     recipe_id=recipe_id_val,
-                    section_id=new_section.id,
+                    section_id=None,
                     name=ing_in.name,
                     quantity_text=ing_in.quantity_text,
                     quantity_value=ing_in.quantity_value,
@@ -608,62 +712,56 @@ def patch_recipe(
                     quantity_type=ing_in.quantity_type,
                     notes=ing_in.notes,
                     position=ing_in.position,
-                ))
-
-        for ing_in in (new_ingredients or []):
-            db.add(Ingredient(
-                recipe_id=recipe_id_val,
-                section_id=None,
-                name=ing_in.name,
-                quantity_text=ing_in.quantity_text,
-                quantity_value=ing_in.quantity_value,
-                unit=ing_in.unit,
-                quantity_type=ing_in.quantity_type,
-                notes=ing_in.notes,
-                position=ing_in.position,
-            ))
+                )
+            )
 
     if steps_sent:
-        db.query(Step).filter(
-            Step.recipe_id == recipe_id_val
-        ).delete(synchronize_session=False)
+        db.query(Step).filter(Step.recipe_id == recipe_id_val).delete(synchronize_session=False)
         db.flush()
         for step_in in new_steps:
-            db.add(Step(
-                recipe_id=recipe_id_val,
-                position=step_in.position,
-                content=step_in.content,
-                section_header=step_in.section_header,
-                voice_note=step_in.voice_note,
-            ))
+            db.add(
+                Step(
+                    recipe_id=recipe_id_val,
+                    position=step_in.position,
+                    content=step_in.content,
+                    section_header=step_in.section_header,
+                    voice_note=step_in.voice_note,
+                )
+            )
 
     db.commit()
 
     # Re-fetch a clean instance with children eagerly loaded (don't refresh the
     # working instance, whose relationship collections may hold deleted rows).
     db.expire_all()
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id_val).options(
-        selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
-        selectinload(Recipe.ingredients),
-        selectinload(Recipe.steps),
-        selectinload(Recipe.user)
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(Recipe.id == recipe_id_val)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .first()
+    )
     return recipe
+
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_recipe(
-    recipe_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    recipe_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    recipe = db.query(Recipe).filter(
-        Recipe.id == recipe_id,
-        Recipe.user_id == current_user.id,
-        Recipe.deleted_at == None
-    ).first()
+    recipe = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id == recipe_id, Recipe.user_id == current_user.id, Recipe.deleted_at == None
+        )
+        .first()
+    )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
+
     recipe.deleted_at = datetime.now(timezone.utc)
 
     db.add(recipe)

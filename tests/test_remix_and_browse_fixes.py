@@ -10,8 +10,9 @@ def _make_root(client, headers, name="Grandma's Adobo"):
         "notes": "cane vinegar",
         "cuisine": "Filipino",
         "visibility": "public",
-        "ingredients": [{"name": "chicken", "quantity_text": "2 lbs",
-                         "quantity_type": "precise", "position": 1}],
+        "ingredients": [
+            {"name": "chicken", "quantity_text": "2 lbs", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Brown the chicken", "position": 1}],
     }
     return client.post("/recipes", json=payload, headers=headers).json()
@@ -22,17 +23,18 @@ def test_remix_uses_edited_scalars_when_provided(client, make_user):
     root = _make_root(client, owner)
     _, remixer = make_user()
     body = {
-        "name": "My Adobo",          # edited
-        "notes": "less salt",        # edited
-        "ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
-                         "quantity_type": "precise", "position": 1}],
+        "name": "My Adobo",  # edited
+        "notes": "less salt",  # edited
+        "ingredients": [
+            {"name": "lard", "quantity_text": "2 tbsp", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Brown the chicken", "position": 1}],
         "prompt_answer": "Mom used lard",
     }
     r = client.post(f"/recipes/{root['id']}/remix", json=body, headers=remixer)
     assert r.status_code == 201
     child = r.json()
-    assert child["name"] == "My Adobo"          # edited value used
+    assert child["name"] == "My Adobo"  # edited value used
     assert child["notes"] == "less salt"
     assert child["parent_recipe_id"] == root["id"]
 
@@ -42,13 +44,14 @@ def test_remix_inherits_scalars_when_omitted(client, make_user):
     root = _make_root(client, owner)
     _, remixer = make_user()
     body = {  # no name/notes → inherit from parent
-        "ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
-                         "quantity_type": "precise", "position": 1}],
+        "ingredients": [
+            {"name": "lard", "quantity_text": "2 tbsp", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Brown the chicken", "position": 1}],
     }
     child = client.post(f"/recipes/{root['id']}/remix", json=body, headers=remixer).json()
-    assert child["name"] == "Grandma's Adobo"   # inherited
-    assert child["notes"] == "cane vinegar"     # inherited
+    assert child["name"] == "Grandma's Adobo"  # inherited
+    assert child["notes"] == "cane vinegar"  # inherited
 
 
 def test_browse_does_not_leak_owner_activity(client, make_user, db_session):

@@ -12,6 +12,7 @@ class OriginIn(BaseModel):
 
 # Step schemas
 
+
 class StepCreate(BaseModel):
     position: int
     content: str
@@ -30,6 +31,7 @@ class StepResponse(BaseModel):
 
 
 # Ingredient schemas
+
 
 class IngredientCreate(BaseModel):
     name: str
@@ -56,6 +58,7 @@ class IngredientResponse(BaseModel):
 
 # IngredientSection schemas
 
+
 class IngredientSectionCreate(BaseModel):
     name: str
     position: int
@@ -68,11 +71,11 @@ class IngredientSectionResponse(BaseModel):
     position: int
     ingredients: list[IngredientResponse] = []
 
-
     model_config = ConfigDict(from_attributes=True)
 
 
 # Recipe schemas
+
 
 class RecipeCreate(BaseModel):
     name: str
@@ -209,6 +212,7 @@ class RecipeUpdate(BaseModel):
 
 
 # Lineage view schemas
+
 
 class NodeSummary(BaseModel):
     id: int

@@ -18,7 +18,9 @@ import { sourceNameOf } from '../lib/sourceName'
 function RuleHeader({ children }) {
   return (
     <div className="flex items-center gap-2.5 mt-[19px] mb-2.5">
-      <span className="font-serif font-bold text-base text-ink">{children}</span>
+      <span className="font-serif font-bold text-base text-ink">
+        {children}
+      </span>
       <span className="h-px flex-1 bg-line" />
     </div>
   )
@@ -39,8 +41,12 @@ export default function RecipeDetail() {
     try {
       const { data } = await cookRecipe(id, {})
       setCookCount(data.cook_count)
-      setCookBeat(`That's ${data.cook_count} ${data.cook_count === 1 ? 'time' : 'times'} you've kept this alive.`)
-    } catch { /* non-fatal; leave UI as-is */ }
+      setCookBeat(
+        `That's ${data.cook_count} ${data.cook_count === 1 ? 'time' : 'times'} you've kept this alive.`,
+      )
+    } catch {
+      /* non-fatal; leave UI as-is */
+    }
   }
 
   useEffect(() => {
@@ -54,7 +60,10 @@ export default function RecipeDetail() {
     return (
       <div className="p-6 text-center">
         <p className="text-red-600 mb-4">{error}</p>
-        <button onClick={() => navigate('/my-recipes')} className="text-terra text-sm">
+        <button
+          onClick={() => navigate('/my-recipes')}
+          className="text-terra text-sm"
+        >
           Back to your garden
         </button>
       </div>
@@ -69,16 +78,20 @@ export default function RecipeDetail() {
   const allIngredients = [
     ...recipe.ingredients,
     ...recipe.ingredient_sections.flatMap((s) =>
-      s.ingredients.map((ing) => ({ ...ing, sectionName: s.name }))
+      s.ingredients.map((ing) => ({ ...ing, sectionName: s.name })),
     ),
   ].sort((a, b) => a.position - b.position)
 
   const sortedSteps = [...recipe.steps].sort((a, b) => a.position - b.position)
-  const monogram = (recipe.author_full_name || '?').trim().charAt(0).toUpperCase()
+  const monogram = (recipe.author_full_name || '?')
+    .trim()
+    .charAt(0)
+    .toUpperCase()
 
   // After an "I cooked this" tap, reflect the fresh count in the growth mark
   // without waiting for a refetch.
-  const growthRecipe = cookCount == null ? recipe : { ...recipe, cook_count: cookCount }
+  const growthRecipe =
+    cookCount == null ? recipe : { ...recipe, cook_count: cookCount }
 
   // Round-circle button overlaid on the hero (cream ground, brown glyph).
   const HeroButton = ({ icon, onClick, label, className }) => (
@@ -97,14 +110,23 @@ export default function RecipeDetail() {
           cuisine stamp. Matched cream circle buttons: back left, edit right. */}
       <div className="relative h-[180px] overflow-hidden">
         {recipe.cover_photo_url ? (
-          <img src={recipe.cover_photo_url} alt="" className="w-full h-full object-cover" />
+          <img
+            src={recipe.cover_photo_url}
+            alt=""
+            className="w-full h-full object-cover"
+          />
         ) : (
           <div className="w-full h-full bg-paper flex items-center justify-center">
             <Wordmark muted className="text-6xl" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-[rgba(58,42,28,0.22)] to-transparent to-[26%]" />
-        <HeroButton icon="back" label="Back" onClick={() => navigate(-1)} className="left-3" />
+        <HeroButton
+          icon="back"
+          label="Back"
+          onClick={() => navigate(-1)}
+          className="left-3"
+        />
         {isOwner && (
           <HeroButton
             icon="edit"
@@ -118,7 +140,12 @@ export default function RecipeDetail() {
       <div className="px-[18px] pt-4 pb-6">
         <h1 className="font-serif font-black text-[28px] leading-[1.02] tracking-[-0.01em] text-ink">
           {recipe.name}
-          <Plant stage={stageForRecipe(growthRecipe)} vitality={vitalityForRecipe(growthRecipe)} size={22} className="inline-block align-middle ml-2" />
+          <Plant
+            stage={stageForRecipe(growthRecipe)}
+            vitality={vitalityForRecipe(growthRecipe)}
+            size={22}
+            className="inline-block align-middle ml-2"
+          />
         </h1>
 
         {(sourceNameOf(recipe) || recipe.author_full_name) && (
@@ -174,15 +201,30 @@ export default function RecipeDetail() {
         )}
 
         <div className="flex flex-wrap gap-2 mt-4">
-          <button onClick={handleCook} className="btn-primary !w-auto px-5">I cooked this</button>
+          <button onClick={handleCook} className="btn-primary !w-auto px-5">
+            I cooked this
+          </button>
           {isOwner && (
-            <button onClick={() => setShowHandoff(true)} className="px-5 py-3 rounded-[10px] border border-line text-ink-soft font-serif text-sm">Pass it on</button>
+            <button
+              onClick={() => setShowHandoff(true)}
+              className="px-5 py-3 rounded-[10px] border border-line text-ink-soft font-serif text-sm"
+            >
+              Pass it on
+            </button>
           )}
         </div>
-        {cookBeat && <p className="font-serif italic text-herb text-sm mt-3">{cookBeat}</p>}
+        {cookBeat && (
+          <p className="font-serif italic text-herb text-sm mt-3">{cookBeat}</p>
+        )}
         {showHandoff && (
           <div className="mt-4 border-t border-line pt-4">
-            <HandoffInvite recipeId={recipe.id} recipeVisibility={recipe.visibility} sourceName={sourceNameOf(recipe)} onSent={() => setShowHandoff(false)} onSkip={() => setShowHandoff(false)} />
+            <HandoffInvite
+              recipeId={recipe.id}
+              recipeVisibility={recipe.visibility}
+              sourceName={sourceNameOf(recipe)}
+              onSent={() => setShowHandoff(false)}
+              onSkip={() => setShowHandoff(false)}
+            />
           </div>
         )}
 
@@ -226,9 +268,7 @@ export default function RecipeDetail() {
         <div>
           {allIngredients.map((ing) => (
             <div key={ing.id} className="ingredient-row">
-              <span className="ingredient-amount">
-                {ing.quantity_text}
-              </span>
+              <span className="ingredient-amount">{ing.quantity_text}</span>
               <span className="text-ink">
                 {ing.name}
                 {isImprecise(ing) && (
@@ -236,7 +276,9 @@ export default function RecipeDetail() {
                     {impreciseLabel()}
                   </span>
                 )}
-                {ing.notes && <span className="text-ink-soft italic"> — {ing.notes}</span>}
+                {ing.notes && (
+                  <span className="text-ink-soft italic"> — {ing.notes}</span>
+                )}
               </span>
             </div>
           ))}

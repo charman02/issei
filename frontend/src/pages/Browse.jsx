@@ -17,29 +17,39 @@ const DIET_FILTERS = [
 // Section definitions. Each has a predicate selecting matching recipes from the
 // full list, plus an optional sort. Cuisine sections match case-insensitively.
 const CUISINES = [
-  'Japanese', 'Korean', 'Chinese', 'Filipino', 'Vietnamese', 'Thai', 'Indian',
-  'Middle Eastern', 'Mexican', 'Italian', 'West African', 'Caribbean',
+  'Japanese',
+  'Korean',
+  'Chinese',
+  'Filipino',
+  'Vietnamese',
+  'Thai',
+  'Indian',
+  'Middle Eastern',
+  'Mexican',
+  'Italian',
+  'West African',
+  'Caribbean',
 ]
 
 function buildSections(recipes) {
   const sections = CUISINES.map((cuisine) => ({
     title: cuisine,
     recipes: recipes.filter(
-      (r) => (r.cuisine || '').toLowerCase() === cuisine.toLowerCase()
+      (r) => (r.cuisine || '').toLowerCase() === cuisine.toLowerCase(),
     ),
   }))
 
   sections.push({
     title: 'Quick & Easy',
     recipes: recipes.filter(
-      (r) => r.prep_time_minutes != null && r.prep_time_minutes <= 30
+      (r) => r.prep_time_minutes != null && r.prep_time_minutes <= 30,
     ),
   })
 
   sections.push({
     title: 'Recently Added',
     recipes: [...recipes].sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+      (a, b) => new Date(b.created_at) - new Date(a.created_at),
     ),
   })
 
@@ -61,7 +71,7 @@ export default function Browse() {
 
   function toggleDiet(diet) {
     setActiveDiets((prev) =>
-      prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet]
+      prev.includes(diet) ? prev.filter((d) => d !== diet) : [...prev, diet],
     )
   }
 
@@ -81,13 +91,13 @@ export default function Browse() {
     const matchesDiet =
       activeDiets.length === 0 ||
       activeDiets.every((diet) =>
-        (r.diet || '').toLowerCase().includes(diet.toLowerCase())
+        (r.diet || '').toLowerCase().includes(diet.toLowerCase()),
       )
     return matchesSearch && matchesDiet
   })
 
   const sections = buildSections(filteredRecipes).filter(
-    (section) => section.recipes.length > 0
+    (section) => section.recipes.length > 0,
   )
 
   return (
@@ -132,7 +142,9 @@ export default function Browse() {
           {sections.map((section) => (
             <section key={section.title}>
               <div className="px-4">
-                <SectionHeader seal={false} className="mt-5">{section.title}</SectionHeader>
+                <SectionHeader seal={false} className="mt-5">
+                  {section.title}
+                </SectionHeader>
               </div>
               <div className="flex gap-3.5 overflow-x-auto px-4 pb-1 scrollbar-hide">
                 {section.recipes.map((recipe) => (

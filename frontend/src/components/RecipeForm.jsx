@@ -24,28 +24,42 @@ function hasAcceptedExtension(filename) {
   return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
-export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit, submitLabel, beforeSubmitSlot = null, intro = null }) {
+export default function RecipeForm({
+  mode = 'add',
+  initialValues = {},
+  onSubmit,
+  submitLabel,
+  beforeSubmitSlot = null,
+  intro = null,
+}) {
   const [name, setName] = useState(initialValues.name || '')
   const [servings, setServings] = useState(
-    initialValues.servings != null ? String(initialValues.servings) : ''
+    initialValues.servings != null ? String(initialValues.servings) : '',
   )
   const [cuisine, setCuisine] = useState(initialValues.cuisine || '')
-  const [description, setDescription] = useState(initialValues.description || '')
+  const [description, setDescription] = useState(
+    initialValues.description || '',
+  )
   const [story, setStory] = useState(initialValues.story || '')
   const [ingredients, setIngredients] = useState(
-    initialValues.ingredients?.length ? initialValues.ingredients : [emptyIngredient()]
+    initialValues.ingredients?.length
+      ? initialValues.ingredients
+      : [emptyIngredient()],
   )
   const [steps, setSteps] = useState(
-    initialValues.steps?.length ? initialValues.steps : [emptyStep()]
+    initialValues.steps?.length ? initialValues.steps : [emptyStep()],
   )
-  const [coverPhotoUrl, setCoverPhotoUrl] = useState(initialValues.coverPhotoUrl || '')
+  const [coverPhotoUrl, setCoverPhotoUrl] = useState(
+    initialValues.coverPhotoUrl || '',
+  )
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const heading = mode === 'edit' ? 'Edit recipe' : 'Keep a recipe'
-  const defaultSubmitLabel = mode === 'edit' ? 'Save changes' : 'Keep this recipe'
+  const defaultSubmitLabel =
+    mode === 'edit' ? 'Save changes' : 'Keep this recipe'
   const submitText = submitLabel || defaultSubmitLabel
   const loadingLabel = mode === 'edit' ? 'Saving…' : 'Keeping…'
 
@@ -79,7 +93,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
       })
       setCoverPhotoUrl(data.url)
     } catch (err) {
-      setPhotoError(err.response?.data?.detail || 'Photo upload failed. Please try again.')
+      setPhotoError(
+        err.response?.data?.detail || 'Photo upload failed. Please try again.',
+      )
     } finally {
       setUploading(false)
       e.target.value = '' // reset so re-selecting the same file fires onChange
@@ -93,7 +109,7 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
 
   function updateIngredient(index, field, value) {
     setIngredients((prev) =>
-      prev.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing))
+      prev.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing)),
     )
   }
 
@@ -103,7 +119,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
 
   function updateStep(index, field, value) {
     // Spread to preserve any non-edited fields (e.g. section_header on edit).
-    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)))
+    setSteps((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)),
+    )
   }
 
   function removeStep(index) {
@@ -149,14 +167,18 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
       await onSubmit(payload)
       // On success the parent navigates away and this unmounts — don't touch state.
     } catch (err) {
-      setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
+      setError(
+        err.response?.data?.detail || 'Something went wrong. Please try again.',
+      )
       setLoading(false)
     }
   }
 
   return (
     <div className="px-[18px] pt-6 pb-8">
-      <h1 className="font-serif font-black text-[26px] text-ink mb-4">{heading}</h1>
+      <h1 className="font-serif font-black text-[26px] text-ink mb-4">
+        {heading}
+      </h1>
 
       {intro}
 
@@ -166,7 +188,11 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
         {/* Cover photo */}
         {coverPhotoUrl ? (
           <div className="relative w-full h-[120px] rounded-xl overflow-hidden mb-1.5">
-            <img src={coverPhotoUrl} alt="Recipe cover" className="w-full h-full object-cover" />
+            <img
+              src={coverPhotoUrl}
+              alt="Recipe cover"
+              className="w-full h-full object-cover"
+            />
             <button
               type="button"
               onClick={removePhoto}
@@ -189,7 +215,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
             ) : (
               <>
                 <Icon name="camera" className="w-[30px] h-[30px] mb-1.5" />
-                <span className="font-sans text-[13px]">Add a photo to bring this recipe to life</span>
+                <span className="font-sans text-[13px]">
+                  Add a photo to bring this recipe to life
+                </span>
               </>
             )}
           </label>
@@ -197,7 +225,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
         {photoError ? (
           <p className="text-red-600 text-xs mb-4">{photoError}</p>
         ) : (
-          <p className="font-sans text-[11px] text-ink-soft mb-4">JPEG, PNG, or WebP · max 10 MB</p>
+          <p className="font-sans text-[11px] text-ink-soft mb-4">
+            JPEG, PNG, or WebP · max 10 MB
+          </p>
         )}
 
         {/* Recipe details */}
@@ -212,7 +242,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
             required
             className="field"
           />
-          <p className="font-sans text-[11px] text-ink-soft -mt-1">You’ll say whose recipe it is next.</p>
+          <p className="font-sans text-[11px] text-ink-soft -mt-1">
+            You’ll say whose recipe it is next.
+          </p>
           <input
             type="number"
             placeholder="Servings"
@@ -256,9 +288,14 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
         </p>
         <div className="space-y-2.5">
           {ingredients.map((ing, idx) => (
-            <div key={idx} className="border border-line bg-card rounded-[9px] p-2.5">
+            <div
+              key={idx}
+              className="border border-line bg-card rounded-[9px] p-2.5"
+            >
               <div className="flex items-center justify-between mb-1.5">
-                <span className="font-sans text-[11px] text-ink-soft">#{idx + 1}</span>
+                <span className="font-sans text-[11px] text-ink-soft">
+                  #{idx + 1}
+                </span>
                 {ingredients.length > 1 && (
                   <button
                     type="button"
@@ -281,7 +318,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
                 type="text"
                 placeholder="Quantity — e.g. 1 1/2 cups, a dash"
                 value={ing.quantity}
-                onChange={(e) => updateIngredient(idx, 'quantity', e.target.value)}
+                onChange={(e) =>
+                  updateIngredient(idx, 'quantity', e.target.value)
+                }
                 className="w-full font-sans text-[12.5px] text-ink bg-card border border-line rounded-[7px] px-2.5 py-2 placeholder:text-ink-soft/70 focus:outline-none focus:border-terra"
               />
             </div>
@@ -301,7 +340,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
           {steps.map((step, idx) => (
             <div key={idx}>
               <div className="flex items-center justify-between mb-1">
-                <span className="font-sans text-[11px] text-ink-soft">Step {idx + 1}</span>
+                <span className="font-sans text-[11px] text-ink-soft">
+                  Step {idx + 1}
+                </span>
                 {steps.length > 1 && (
                   <button
                     type="button"
@@ -322,7 +363,9 @@ export default function RecipeForm({ mode = 'add', initialValues = {}, onSubmit,
               />
               <input
                 type="text"
-                placeholder={'Their words for this step (optional) — "don\'t rush the onions"'}
+                placeholder={
+                  'Their words for this step (optional) — "don\'t rush the onions"'
+                }
                 value={step.voice_note || ''}
                 onChange={(e) => updateStep(idx, 'voice_note', e.target.value)}
                 className="field mt-1.5"

@@ -13,11 +13,15 @@ export default function RemixRecipe() {
   const [promptAnswer, setPromptAnswer] = useState('')
 
   useEffect(() => {
-    client.get(`/recipes/${id}`).then((res) => setParent(res.data)).catch(() => setError('Recipe not found'))
+    client
+      .get(`/recipes/${id}`)
+      .then((res) => setParent(res.data))
+      .catch(() => setError('Recipe not found'))
   }, [id])
 
   if (error) return <div className="p-6 text-center text-red-600">{error}</div>
-  if (!parent) return <div className="p-6 text-center text-ink-soft">Loading…</div>
+  if (!parent)
+    return <div className="p-6 text-center text-ink-soft">Loading…</div>
 
   async function handleSubmit(formPayload) {
     // Send the edited scalars too, so a remixer's name/notes/etc. edits aren't

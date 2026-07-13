@@ -44,9 +44,7 @@ const paths = {
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
     </>
   ),
-  plus: (
-    <path d="M12 5v14M5 12h14" />
-  ),
+  plus: <path d="M12 5v14M5 12h14" />,
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

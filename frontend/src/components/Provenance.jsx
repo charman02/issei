@@ -12,7 +12,9 @@ export default function Provenance({ recipe }) {
     <p className="font-sans text-[11px] text-ink-soft flex items-center gap-1.5">
       <span aria-hidden="true">🌱</span>
       {origin && keeper ? (
-        <span>{origin} <span className="text-growth">→</span> {keeper}</span>
+        <span>
+          {origin} <span className="text-growth">→</span> {keeper}
+        </span>
       ) : (
         <span>{origin || keeper}</span>
       )}

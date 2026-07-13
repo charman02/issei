@@ -11,7 +11,10 @@ export default function Profile() {
   }
 
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ')
-  const monogram = (fullName || user.email || '?').trim().charAt(0).toUpperCase()
+  const monogram = (fullName || user.email || '?')
+    .trim()
+    .charAt(0)
+    .toUpperCase()
 
   return (
     <div className="px-4 pt-6">
@@ -22,10 +25,14 @@ export default function Profile() {
           {monogram}
         </div>
         {fullName && (
-          <p className="font-serif font-semibold text-[19px] text-ink">{fullName}</p>
+          <p className="font-serif font-semibold text-[19px] text-ink">
+            {fullName}
+          </p>
         )}
         <p className="section-label mt-3">Email</p>
-        <p className="font-sans text-[13.5px] text-ink mt-0.5">{user.email || 'Unknown'}</p>
+        <p className="font-sans text-[13.5px] text-ink mt-0.5">
+          {user.email || 'Unknown'}
+        </p>
       </div>
 
       <button

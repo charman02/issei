@@ -5,10 +5,15 @@ def test_plant_recipe_with_origin_creates_ghost(client, make_user, db_session):
     _, headers = make_user()
     payload = {
         "name": "Grandma's Congee",
-        "origin": {"name": "Nonna Lucia", "place": "Abruzzo", "year": "1940s",
-                   "memory": "She made it every winter"},
-        "ingredients": [{"name": "rice", "quantity_text": "1 cup",
-                         "quantity_type": "precise", "position": 1}],
+        "origin": {
+            "name": "Nonna Lucia",
+            "place": "Abruzzo",
+            "year": "1940s",
+            "memory": "She made it every winter",
+        },
+        "ingredients": [
+            {"name": "rice", "quantity_text": "1 cup", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Simmer", "position": 1}],
     }
     r = client.post("/recipes", json=payload, headers=headers)
@@ -23,8 +28,9 @@ def test_plant_recipe_with_origin_creates_ghost(client, make_user, db_session):
 def _make_root(client, headers):
     payload = {
         "name": "Adobo",
-        "ingredients": [{"name": "butter", "quantity_text": "2 tbsp",
-                         "quantity_type": "precise", "position": 1}],
+        "ingredients": [
+            {"name": "butter", "quantity_text": "2 tbsp", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Brown the meat", "position": 1}],
     }
     return client.post("/recipes", json=payload, headers=headers).json()
@@ -38,8 +44,9 @@ def test_remix_creates_child_with_diff_prompt(client, make_user):
     root = _make_root(client, owner)
 
     remix_payload = {
-        "ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
-                         "quantity_type": "precise", "position": 1}],
+        "ingredients": [
+            {"name": "lard", "quantity_text": "2 tbsp", "quantity_type": "precise", "position": 1}
+        ],
         "steps": [{"content": "Brown the meat", "position": 1}],
         "prompt_answer": "Mom always used lard",
     }
@@ -63,10 +70,8 @@ def test_cook_increments_count_no_node(client, make_user):
     # A second, different cook must be able to view the recipe first (cook is
     # now read-gated). Share the private root with them via an accepted grant.
     cook2_user, cook2 = make_user()
-    client.post(f"/recipes/{root['id']}/handoff",
-                json={"to_user_id": cook2_user.id}, headers=owner)
-    r2 = client.post(f"/recipes/{root['id']}/cook",
-                     json={"note": "yum"}, headers=cook2)
+    client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": cook2_user.id}, headers=owner)
+    r2 = client.post(f"/recipes/{root['id']}/cook", json={"note": "yum"}, headers=cook2)
     assert r2.json()["cook_count"] == 2
 
     # No new recipe nodes were created by cooking.
@@ -77,13 +82,16 @@ def test_cook_increments_count_no_node(client, make_user):
 def test_handoff_creates_pending(client, make_user):
     _, owner = make_user()
     root = _make_root(client, owner)
-    r = client.post(f"/recipes/{root['id']}/handoff",
-                    json={"to_email": "mom@example.com", "note": "your adobo"},
-                    headers=owner)
+    r = client.post(
+        f"/recipes/{root['id']}/handoff",
+        json={"to_email": "mom@example.com", "note": "your adobo"},
+        headers=owner,
+    )
     assert r.status_code == 201
     body = r.json()
     assert body["state"] == "pending"
     assert body["to_email"] == "mom@example.com"
+
 
 def test_handoff_requires_a_recipient(client, make_user):
     _, owner = make_user()
@@ -95,11 +103,21 @@ def test_handoff_requires_a_recipient(client, make_user):
 def test_lineage_endpoint_returns_spine(client, make_user):
     _, owner = make_user()
     root = _make_root(client, owner)
-    remix = client.post(f"/recipes/{root['id']}/remix",
-                        json={"ingredients": [{"name": "lard", "quantity_text": "1 tbsp",
-                              "quantity_type": "precise", "position": 1}],
-                              "steps": [{"content": "Brown the meat", "position": 1}]},
-                        headers=owner).json()
+    remix = client.post(
+        f"/recipes/{root['id']}/remix",
+        json={
+            "ingredients": [
+                {
+                    "name": "lard",
+                    "quantity_text": "1 tbsp",
+                    "quantity_type": "precise",
+                    "position": 1,
+                }
+            ],
+            "steps": [{"content": "Brown the meat", "position": 1}],
+        },
+        headers=owner,
+    ).json()
     r = client.get(f"/recipes/{remix['id']}/lineage", headers=owner)
     assert r.status_code == 200
     view = r.json()
@@ -124,7 +142,7 @@ def test_browse_only_shows_public(client, make_user):
 
 def test_lineage_hidden_from_non_owner(client, make_user):
     _, owner = make_user()
-    root = _make_root(client, owner)   # private by default
+    root = _make_root(client, owner)  # private by default
     _, other = make_user()
     assert client.get(f"/recipes/{root['id']}/lineage", headers=other).status_code == 404
     assert client.get(f"/recipes/{root['id']}/lineage", headers=owner).status_code == 200
@@ -132,19 +150,28 @@ def test_lineage_hidden_from_non_owner(client, make_user):
 
 def test_remix_missing_parent_404(client, make_user):
     _, headers = make_user()
-    r = client.post("/recipes/999999/remix",
-                    json={"ingredients": [], "steps": []}, headers=headers)
+    r = client.post("/recipes/999999/remix", json={"ingredients": [], "steps": []}, headers=headers)
     assert r.status_code == 404
 
 
 def test_remix_child_persists_ingredients(client, make_user):
     _, owner = make_user()
     root = _make_root(client, owner)
-    remix = client.post(f"/recipes/{root['id']}/remix",
-        json={"ingredients": [{"name": "lard", "quantity_text": "2 tbsp",
-              "quantity_type": "precise", "position": 1}],
-              "steps": [{"content": "Brown the meat", "position": 1}]},
-        headers=owner).json()
+    remix = client.post(
+        f"/recipes/{root['id']}/remix",
+        json={
+            "ingredients": [
+                {
+                    "name": "lard",
+                    "quantity_text": "2 tbsp",
+                    "quantity_type": "precise",
+                    "position": 1,
+                }
+            ],
+            "steps": [{"content": "Brown the meat", "position": 1}],
+        },
+        headers=owner,
+    ).json()
     got = client.get(f"/recipes/{remix['id']}", headers=owner).json()
     assert any(i["name"] == "lard" for i in got["ingredients"])
 
@@ -153,6 +180,7 @@ def test_handoff_non_owner_404(client, make_user):
     _, owner = make_user()
     root = _make_root(client, owner)
     _, other = make_user()
-    r = client.post(f"/recipes/{root['id']}/handoff",
-                    json={"to_email": "x@example.com"}, headers=other)
+    r = client.post(
+        f"/recipes/{root['id']}/handoff", json={"to_email": "x@example.com"}, headers=other
+    )
     assert r.status_code == 404

@@ -20,8 +20,14 @@ export default function Home() {
   const user = JSON.parse(localStorage.getItem('issei_user') || '{}')
 
   useEffect(() => {
-    client.get('/recipes').then((res) => setMine(res.data)).catch(() => setMine([]))
-    client.get('/recipes/browse').then((res) => setCommunity(res.data)).catch(() => setCommunity([]))
+    client
+      .get('/recipes')
+      .then((res) => setMine(res.data))
+      .catch(() => setMine([]))
+    client
+      .get('/recipes/browse')
+      .then((res) => setCommunity(res.data))
+      .catch(() => setCommunity([]))
   }, [])
 
   if (mine === null) {
@@ -45,9 +51,13 @@ export default function Home() {
             Every family has a dish that means home.
           </h1>
           <p className="text-sm text-ink-soft mb-8 max-w-xs leading-relaxed">
-            Start with the one you'd miss most — the taste you'd want to keep forever.
+            Start with the one you'd miss most — the taste you'd want to keep
+            forever.
           </p>
-          <button onClick={() => navigate('/add')} className="btn-primary !w-auto px-6">
+          <button
+            onClick={() => navigate('/add')}
+            className="btn-primary !w-auto px-6"
+          >
             Keep your first recipe
           </button>
         </div>
@@ -72,7 +82,9 @@ export default function Home() {
 
       {passedDown.length > 0 && (
         <>
-          <div className="px-4"><SectionHeader className="mt-5">Passed down lately</SectionHeader></div>
+          <div className="px-4">
+            <SectionHeader className="mt-5">Passed down lately</SectionHeader>
+          </div>
           <div className="flex gap-3.5 overflow-x-auto pb-1 px-4 scrollbar-hide">
             {passedDown.map((recipe) => (
               <RecipeCard
@@ -85,7 +97,9 @@ export default function Home() {
         </>
       )}
 
-      <div className="px-4"><SectionHeader className="mt-5">From your garden</SectionHeader></div>
+      <div className="px-4">
+        <SectionHeader className="mt-5">From your garden</SectionHeader>
+      </div>
       <div className="flex gap-3.5 overflow-x-auto pb-1 px-4 scrollbar-hide">
         {mine.slice(0, 12).map((recipe) => (
           <RecipeCard

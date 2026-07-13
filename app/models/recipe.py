@@ -40,12 +40,8 @@ class Recipe(Base):
     visibility: Mapped[str] = mapped_column(server_default="private")
     prompt_key: Mapped[Optional[str]] = mapped_column(nullable=True)
     prompt_answer: Mapped[Optional[str]] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     ingredient_sections: Mapped[list["IngredientSection"]] = relationship(
         "IngredientSection", back_populates="recipe", cascade="all, delete-orphan"
     )
@@ -53,7 +49,7 @@ class Recipe(Base):
         "Ingredient",
         primaryjoin="and_(Ingredient.recipe_id==Recipe.id, Ingredient.section_id==None)",
         cascade="all, delete-orphan",
-        foreign_keys="[Ingredient.recipe_id]"
+        foreign_keys="[Ingredient.recipe_id]",
     )
     steps: Mapped[list["Step"]] = relationship(
         "Step", back_populates="recipe", cascade="all, delete-orphan"
@@ -63,7 +59,8 @@ class Recipe(Base):
         "Recipe", remote_side="Recipe.id", back_populates="children"
     )
     children: Mapped[list["Recipe"]] = relationship(
-        "Recipe", back_populates="parent",
+        "Recipe",
+        back_populates="parent",
         primaryjoin="Recipe.id==Recipe.parent_recipe_id",
     )
 

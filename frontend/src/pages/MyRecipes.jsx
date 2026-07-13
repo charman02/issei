@@ -11,12 +11,15 @@ export default function MyRecipes() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    client.get('/recipes').then((res) => setRecipes(res.data)).catch(() => {})
+    client
+      .get('/recipes')
+      .then((res) => setRecipes(res.data))
+      .catch(() => {})
   }, [])
 
   const searching = search.trim().length > 0
   const filtered = recipes.filter((r) =>
-    r.name.toLowerCase().includes(search.toLowerCase())
+    r.name.toLowerCase().includes(search.toLowerCase()),
   )
   // While searching, show a flat grid of matches (grouping a filtered subset would
   // create confusing single-item bands). Otherwise, show the garden by band.
@@ -39,8 +42,12 @@ export default function MyRecipes() {
 
   return (
     <div className="px-4 pt-6">
-      <h1 className="font-serif font-black text-[28px] text-ink">Your Garden</h1>
-      <p className="font-serif italic text-sm text-ink-soft mt-0.5">A garden of everything you’ve kept.</p>
+      <h1 className="font-serif font-black text-[28px] text-ink">
+        Your Garden
+      </h1>
+      <p className="font-serif italic text-sm text-ink-soft mt-0.5">
+        A garden of everything you’ve kept.
+      </p>
 
       <button
         onClick={() => navigate('/shared')}
@@ -59,20 +66,24 @@ export default function MyRecipes() {
         wrapperClassName="mt-3.5 mb-4"
       />
 
-      {searching ? (
-        grid(filtered)
-      ) : (
-        bands.map((band) => (
-          <section key={band.key} className="mb-6">
-            <h2 className="font-serif font-bold text-[17px] text-ink">{band.title}</h2>
-            <p className="font-serif italic text-[12.5px] text-ink-soft mb-2.5">{band.blurb}</p>
-            {grid(band.recipes)}
-          </section>
-        ))
-      )}
+      {searching
+        ? grid(filtered)
+        : bands.map((band) => (
+            <section key={band.key} className="mb-6">
+              <h2 className="font-serif font-bold text-[17px] text-ink">
+                {band.title}
+              </h2>
+              <p className="font-serif italic text-[12.5px] text-ink-soft mb-2.5">
+                {band.blurb}
+              </p>
+              {grid(band.recipes)}
+            </section>
+          ))}
 
       {searching && filtered.length === 0 && (
-        <p className="text-center text-ink-soft text-sm mt-8">No recipes found.</p>
+        <p className="text-center text-ink-soft text-sm mt-8">
+          No recipes found.
+        </p>
       )}
       {!searching && recipes.length === 0 && (
         <p className="text-center text-ink-soft text-sm mt-8">
