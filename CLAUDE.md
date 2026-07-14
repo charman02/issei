@@ -17,7 +17,7 @@ Drop verbatim tool output, resolved review threads, and superseded design option
 
 ## What This Is
 
-A FastAPI REST API for preserving and sharing family recipes, designed for Asian home cooks who use imprecise measurements ("a dash", "3 soup spoons"). Deployed on Render with PostgreSQL (Neon) in production, SQLite locally.
+A deployed full-stack app (FastAPI backend + React frontend) for preserving the family recipes immigrant elders carry but never wrote down — *issei* (一世) = "first generation." The core is the **living recipe**: a recipe as a vessel for a *person* (their voice/story woven in; imprecise measurements like "a dash" or "3 soup spoons" preserved verbatim as fidelity, never normalized), which **grows from a seed into a tree** as it's cooked, enriched, and **handed down** to the next generation. Lineage/growth + the handoff are the signature; the fuzzy-quantity model is a supporting layer. Backend on Render, frontend on Vercel, PostgreSQL (Neon) in production, SQLite locally.
 
 ## Commands
 

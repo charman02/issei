@@ -1,6 +1,11 @@
 # Architecture
 
-A practical map of how this codebase is organized and what each piece does.
+Issei is a full-stack app for preserving the family recipes immigrant elders
+carry but never wrote down (*issei* = "first generation"). Its core is the
+**living recipe** — a recipe as a vessel for a person, which grows from a seed
+into a tree as it's cooked, enriched, and handed down. This file is a practical
+map of how that codebase is organized and what each piece does.
+
 For *why* the backend is built the way it is (tech choices, design trade-offs),
 see `README.md`. For planned features, see `FUTURE.md`. This file is the
 "where does X live and what does it do" reference.
@@ -133,7 +138,7 @@ frontend/
 |---|---|
 | `ProtectedRoute.jsx` | A gate. If there's no token in localStorage, it redirects to `/login`. Wraps every authenticated route. |
 | `BottomNav.jsx` | The fixed bottom navigation bar (Home, Browse, Add, Kitchen, You). |
-| `CoverImage.jsx` | Renders a recipe's cover photo, or a styled cream placeholder with the 一世 mark when there's no photo. Shared by every screen that shows a recipe. |
+| `CoverImage.jsx` | Renders a recipe's cover photo, or a styled cream placeholder with the handwritten `issei` `<Wordmark />` when there's no photo. Shared by every screen that shows a recipe. |
 | `Plant.jsx` | The seed→sprout→sapling→tree plant SVG (4 distinct stage shapes × bare/blooming/fruiting vitality). Props `stage`/`vitality`/`size`; reads growth from the recipe via `lib/growth.js`. Replaced the old `GrowthMark`. |
 | `HandoffInvite.jsx` | Pass-it-on invite form (hand a recipe to a person / email). Copy adapts to the recipe's visibility — access-granting for a private recipe, a nudge for a public one. |
 | `RecipeForm.jsx` | Shared create/edit/remix form body, reused by PlantRecipe, EditRecipe, and RemixRecipe. |

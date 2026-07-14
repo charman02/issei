@@ -1,5 +1,17 @@
+# issei
+
+**Live app:** https://issei-delta.vercel.app · **API + interactive docs:** https://family-recipe-library.onrender.com/docs · **Source:** https://github.com/charman02/issei
+
+> Both are on free tiers — allow up to ~1 minute for the API to cold-start on the first request, then it's responsive.
+
 ## What It Is
-A full-stack app (FastAPI backend + React frontend) for preserving and sharing family recipes, built for the Asian immigrant community to keep cultural cooking traditions alive across generations. Designed around how Asian home cooks actually share recipes — with imprecise measurements like "a dash" or "a soup spoon" — rather than forcing Western precision. Features include fuzzy quantity modeling, unit conversion, recipe scaling, shopping-list consolidation, and a **recipe lineage tree** — recipes grow from a seed as they're cooked, remixed, and handed off across generations.
+A deployed full-stack web app for preserving the family recipes that were never written down — the cooking knowledge immigrant elders carry in memory, one generation from being lost. *Issei* (一世) means "first generation": the first of a family to arrive somewhere new. The tagline says it — **recipes that live in memory, not cookbooks.**
+
+Instead of treating a recipe as a static list of grams and steps, issei treats it as a **living vessel for a person**: the cook's own voice and story are woven in, their imprecise measurements ("a dash," "three soup spoons," "until it smells right") are preserved verbatim and celebrated as fidelity rather than normalized away, and each recipe **grows from a seed into a tree** as it's cooked, enriched, and handed down to the next generation. Passing a recipe to a relative — the *handoff* — is both how the knowledge spreads and how families are invited in to fill in what one person can't remember alone.
+
+Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling, shopping-list consolidation, photo upload, and a lineage/growth system with private → shared → public visibility.
+
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (Render) → PostgreSQL (Neon). JWT auth, 21 endpoints, 8 data models, ~156 automated tests (pytest + Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -24,7 +36,7 @@ A full-stack app (FastAPI backend + React frontend) for preserving and sharing f
 
 **React + Vite + Tailwind CSS** - the frontend single-page app (`frontend/`), with **axios** for API calls and **React Router** for client-side routing. Mobile-first, talks to the backend over HTTP.
 
-**Render** - deployment platform with GitHub integration. Every push to main auto-deploys to production.
+**Render + Vercel** - the two deployment platforms, both wired to GitHub: the FastAPI backend auto-deploys to **Render** and the React SPA auto-deploys to **Vercel** on every push to `main`. The frontend reaches the backend via a build-time `VITE_API_URL` env var, and the backend's allowed CORS origins are env-driven — so hosts can change without a code edit.
 
 ## Key Engineering Decisions
 **Fuzzy quantity modeling:** Ingredients store both `quantity_text` (always preserved verbatim) and optional `quantity_value` and `unit` fields, with a `quantity_type` of "precise", "imprecise", or "unmeasured". The alternative was storing only exact measurements, but Asian home cooking rarely uses precise quantities — "a dash of fish sauce" and "3 soup spoons" are how recipes are actually passed down. The three-type model lets the scaling service handle each case appropriately: precise quantities scale mathematically, imprecise quantities scale approximately, unmeasured quantities don't scale at all.
@@ -51,7 +63,7 @@ A full-stack app (FastAPI backend + React frontend) for preserving and sharing f
 | DELETE | /recipes/{recipe_id} | Yes | Deletes the queried recipe. |
 | POST | /recipes/{recipe_id}/remix | Yes | Creates a child recipe branched from this one. |
 | POST | /recipes/{recipe_id}/cook | Yes | Logs a cook event; returns updated cook_count. |
-| POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a person (in-app user or email invite). On a **private** recipe this grants the recipient access (view + cook + remix); the grant attaches to the lineage root. |
+| POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a person (in-app user or email invite). On a **private** recipe this grants the recipient access (view + cook); the grant attaches to the lineage root. |
 | GET | /recipes/{recipe_id}/lineage | Yes | Returns the walkable lineage spine + tree counts. |
 | GET | /recipes/shared | Yes | Returns recipes shared *with* the current user (accepted grants; excludes their own). |
 | POST | /recipes/handoffs/{handoff_id}/accept | Yes | Claims a pending invite for the current user (backend-only; the two auto-accept paths cover the in-app cases, so there is no MVP UI for this). |
@@ -118,5 +130,9 @@ npm test
 See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, iOS mobile app, translation support, and richer photo/video support.
 
 ## Live Demo
-API: https://family-recipe-library.onrender.com/docs
-Note: hosted on Render's free tier — allow 1 minute for cold start on first load.
+- **App (React frontend):** https://issei-delta.vercel.app — sign up and it works end to end: create a recipe, watch it grow, scale it, build a shopping list.
+- **API (FastAPI, interactive Swagger docs):** https://family-recipe-library.onrender.com/docs — every endpoint is callable in-browser.
+
+**Deployment:** the frontend is hosted on **Vercel** (static SPA build, auto-deploys on push to `main`); the backend is hosted on **Render** (auto-deploys on push to `main`) and talks to a **Neon** PostgreSQL database. CORS origins are env-driven so the frontend host can change without a code edit.
+
+Note: both run on free tiers — the API may take ~1 minute to cold-start on first load, then it's responsive.
