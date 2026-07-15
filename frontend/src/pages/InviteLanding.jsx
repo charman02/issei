@@ -32,7 +32,7 @@ export default function InviteLanding() {
       <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6 text-center">
         <p className="font-serif italic text-ink-soft">{error}</p>
         <Link to="/login" className="btn-primary mt-5 inline-block">
-          Go to issei
+          Go to Issei
         </Link>
       </div>
     )
