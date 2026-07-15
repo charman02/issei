@@ -19,7 +19,6 @@ from app.schemas.recipe import (
     RecipeUpdate,
     IngredientResponse,
     StepResponse,
-    RemixIn,
     CookIn,
     HandoffIn,
     HandoffResponse,
@@ -28,7 +27,6 @@ from app.schemas.recipe import (
 )
 from app.services.scaling import scale_ingredient
 from app.services.lineage import (
-    diff_recipes,
     build_lineage_view,
     effective_visibility,
     root_of,
@@ -167,83 +165,6 @@ def create_recipe(
     db.refresh(new_recipe)
     _attach_growth_fields(new_recipe, db)
     return new_recipe
-
-
-@router.post(
-    "/{recipe_id}/remix", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED
-)
-def remix_recipe(
-    recipe_id: int,
-    remix_in: RemixIn,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    parent = (
-        db.query(Recipe)
-        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
-        .options(selectinload(Recipe.ingredients), selectinload(Recipe.steps))
-        .first()
-    )
-    if not parent:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-    if not can_view(parent, current_user, db):
-        raise HTTPException(status_code=404, detail="Recipe not found")
-
-    # Only a change branches; describe it to pre-fill the prompt.
-    diff = diff_recipes(parent.ingredients, parent.steps, remix_in.ingredients, remix_in.steps)
-
-    # Edited scalars override the inherited parent value; omitted ones inherit.
-    def _inherit(edited, parent_value):
-        return edited if edited is not None else parent_value
-
-    child = Recipe(
-        user_id=current_user.id,
-        name=_inherit(remix_in.name, parent.name),
-        cover_photo_url=parent.cover_photo_url,
-        description=_inherit(remix_in.description, parent.description),
-        notes=_inherit(remix_in.notes, parent.notes),
-        servings=_inherit(remix_in.servings, parent.servings),
-        prep_time_minutes=parent.prep_time_minutes,
-        cuisine=_inherit(remix_in.cuisine, parent.cuisine),
-        diet=parent.diet,
-        source=parent.source,  # source carried from parent; story NOT carried
-        language=parent.language,
-        parent_recipe_id=parent.id,
-        lineage_relation="remixed",
-        prompt_key=diff["prompt_key"],
-        prompt_answer=remix_in.prompt_answer,
-    )
-    db.add(child)
-    db.flush()
-
-    for ing_in in remix_in.ingredients:
-        db.add(
-            Ingredient(
-                recipe_id=child.id,
-                section_id=None,
-                name=ing_in.name,
-                quantity_text=ing_in.quantity_text,
-                quantity_value=ing_in.quantity_value,
-                unit=ing_in.unit,
-                quantity_type=ing_in.quantity_type,
-                notes=ing_in.notes,
-                position=ing_in.position,
-            )
-        )
-    for step_in in remix_in.steps:
-        db.add(
-            Step(
-                recipe_id=child.id,
-                position=step_in.position,
-                content=step_in.content,
-                section_header=step_in.section_header,
-                voice_note=step_in.voice_note,
-            )
-        )
-
-    db.commit()
-    db.refresh(child)
-    return child
 
 
 @router.post(

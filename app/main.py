@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth, recipes, shopping_list, mom_form, upload
+from app.routers import auth, recipes, shopping_list, upload
 
 app = FastAPI()
 
@@ -16,7 +16,6 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(recipes.router)
 app.include_router(shopping_list.router)
-app.include_router(mom_form.router)
 app.include_router(upload.router)
 
 

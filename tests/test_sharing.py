@@ -9,6 +9,21 @@ def _payload(name="Adobo", **extra):
     }
 
 
+def _make_child(db_session, user_id, parent_id, name="Child"):
+    """Build a lineage child directly via the ORM. The parent-child edge has no
+    dedicated write endpoint anymore (remix was cut), so tests that exercise the
+    root-binds sharing/visibility substrate construct descendants at the data layer."""
+    from app.models.recipe import Recipe
+
+    child = Recipe(
+        user_id=user_id, name=name, parent_recipe_id=parent_id, lineage_relation="remixed"
+    )
+    db_session.add(child)
+    db_session.commit()
+    db_session.refresh(child)
+    return child
+
+
 def test_root_of_walks_to_root(db_session, make_user):
     from app.models.recipe import Recipe
     from app.services.lineage import root_of
@@ -77,25 +92,14 @@ def test_handoff_normalizes_branch_to_root(client, make_user, db_session):
     owner, oheaders = make_user()
     grantee, _ = make_user()
     root = client.post("/recipes", json=_payload(), headers=oheaders).json()
-    child = client.post(
-        f"/recipes/{root['id']}/remix",
-        json={
-            "ingredients": [
-                {"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}
-            ],
-            "steps": [],
-        },
-        headers=oheaders,
-    ).json()
+    child = _make_child(db_session, owner.id, root["id"])
     # owner passes the CHILD → grant must attach to the ROOT
-    client.post(
-        f"/recipes/{child['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders
-    )
+    client.post(f"/recipes/{child.id}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
     assert (
         db_session.query(Handoff).filter_by(recipe_id=root["id"], to_user_id=grantee.id).count()
         == 1
     )
-    assert db_session.query(Handoff).filter_by(recipe_id=child["id"]).count() == 0
+    assert db_session.query(Handoff).filter_by(recipe_id=child.id).count() == 0
 
 
 def test_handoff_email_is_pending(client, make_user, db_session):
@@ -124,27 +128,18 @@ def test_handoff_idempotent_per_grantee(client, make_user, db_session):
     )
 
 
-def test_grantee_can_view_shared_root_and_descendant(client, make_user):
+def test_grantee_can_view_shared_root_and_descendant(client, make_user, db_session):
     owner, oheaders = make_user()
     grantee, gheaders = make_user()
     root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
-    child = client.post(
-        f"/recipes/{root['id']}/remix",
-        json={
-            "ingredients": [
-                {"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}
-            ],
-            "steps": [],
-        },
-        headers=oheaders,
-    ).json()
+    child = _make_child(db_session, owner.id, root["id"])
     # before sharing: grantee 404 on both
     assert client.get(f"/recipes/{root['id']}", headers=gheaders).status_code == 404
     # share the root with the grantee
     client.post(f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders)
     # now grantee sees the root AND the descendant (root-binds)
     assert client.get(f"/recipes/{root['id']}", headers=gheaders).status_code == 200
-    assert client.get(f"/recipes/{child['id']}", headers=gheaders).status_code == 200
+    assert client.get(f"/recipes/{child.id}", headers=gheaders).status_code == 200
     assert client.get(f"/recipes/{root['id']}/lineage", headers=gheaders).status_code == 200
 
 
@@ -237,29 +232,11 @@ def test_recipe_response_has_shared_with_count(client, make_user):
 # --- Final-review security fixes: read-authorization holes ---
 
 
-def _remix_body():
-    return {
-        "ingredients": [
-            {"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}
-        ],
-        "steps": [],
-    }
-
-
-def test_stranger_cannot_forge_grant_via_remix_handoff(client, make_user):
-    # Fix 3 entry point: a stranger cannot even remix a private root they can't view.
-    owner, oheaders = make_user()
-    stranger, sheaders = make_user()
-    root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
-    r = client.post(f"/recipes/{root['id']}/remix", json=_remix_body(), headers=sheaders)
-    assert r.status_code == 404
-
-
 def test_handoff_requires_root_ownership(client, make_user, db_session):
-    # Fix 1 in isolation (data-layer construction, in case remix policy ever changes):
-    # S owns a child whose parent is A's private root; S cannot hand off → normalize
-    # a grant onto A's root.
-    from app.models.recipe import Recipe
+    # A stranger who owns a child branching off A's private root cannot hand that
+    # child off → that would normalize a forged grant onto A's root. This is the
+    # grant-forgery guard (the parent-child edge is built at the data layer since
+    # there is no remix endpoint).
     from app.models.handoff import Handoff
 
     owner, oheaders = make_user()
@@ -267,15 +244,7 @@ def test_handoff_requires_root_ownership(client, make_user, db_session):
     target, _ = make_user()
     root = client.post("/recipes", json=_payload(), headers=oheaders).json()
 
-    child = Recipe(
-        user_id=stranger.id,
-        name="Forged child",
-        parent_recipe_id=root["id"],
-        lineage_relation="remixed",
-    )
-    db_session.add(child)
-    db_session.commit()
-    db_session.refresh(child)
+    child = _make_child(db_session, stranger.id, root["id"], name="Forged child")
 
     r = client.post(
         f"/recipes/{child.id}/handoff", json={"to_user_id": target.id}, headers=sheaders
@@ -306,20 +275,15 @@ def test_cook_gated_by_can_view(client, make_user):
     assert client.post(f"/recipes/{root['id']}/cook", headers=sheaders).status_code == 404
 
 
-def test_grantee_can_still_remix_and_cook_shared(client, make_user):
-    # Guard against over-blocking: accepted grantees retain cook + remix rights.
+def test_grantee_can_still_cook_shared(client, make_user):
+    # Guard against over-blocking: an accepted grantee retains cook rights on a
+    # recipe shared with them.
     owner, oheaders = make_user()
     grantee, gheaders = make_user()
     root = client.post("/recipes", json=_payload(), headers=oheaders).json()  # private
     client.post(
         f"/recipes/{root['id']}/handoff", json={"to_user_id": grantee.id}, headers=oheaders
     )  # accepted
-    assert (
-        client.post(
-            f"/recipes/{root['id']}/remix", json=_remix_body(), headers=gheaders
-        ).status_code
-        == 201
-    )
     assert client.post(f"/recipes/{root['id']}/cook", headers=gheaders).status_code == 200
 
 

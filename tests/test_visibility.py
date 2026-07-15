@@ -9,6 +9,21 @@ def _payload(name="Adobo", **extra):
     }
 
 
+def _make_child(db_session, user_id, parent_id, name="Child"):
+    """Build a lineage child directly via the ORM. There is no remix endpoint
+    anymore, so tests that exercise root-binds visibility construct descendants
+    at the data layer. A child's own row is private-by-default."""
+    from app.models.recipe import Recipe
+
+    child = Recipe(
+        user_id=user_id, name=name, parent_recipe_id=parent_id, lineage_relation="remixed"
+    )
+    db_session.add(child)
+    db_session.commit()
+    db_session.refresh(child)
+    return child
+
+
 def test_create_defaults_private(client, make_user):
     _, headers = make_user()
     r = client.post("/recipes", json=_payload(), headers=headers)
@@ -40,25 +55,11 @@ def test_patch_root_toggles_visibility(client, make_user):
     assert r2.json()["visibility"] == "private"
 
 
-def test_patch_visibility_on_branch_is_rejected(client, make_user):
-    _, owner = make_user()
+def test_patch_visibility_on_branch_is_rejected(client, make_user, db_session):
+    user, owner = make_user()
     root = client.post("/recipes", json=_payload(), headers=owner).json()
-    child = client.post(
-        f"/recipes/{root['id']}/remix",
-        json={
-            "ingredients": [
-                {
-                    "name": "lard",
-                    "quantity_text": "1 tbsp",
-                    "quantity_type": "precise",
-                    "position": 1,
-                }
-            ],
-            "steps": [],
-        },
-        headers=owner,
-    ).json()
-    r = client.patch(f"/recipes/{child['id']}", json={"visibility": "public"}, headers=owner)
+    child = _make_child(db_session, user.id, root["id"])
+    r = client.patch(f"/recipes/{child.id}", json={"visibility": "public"}, headers=owner)
     assert r.status_code == 400
 
 
@@ -87,45 +88,22 @@ def test_private_root_hidden_from_non_owner_and_browse(client, make_user):
     assert all(r["id"] != root["id"] for r in client.get("/recipes/browse").json())
 
 
-def test_branch_of_private_root_stays_hidden(client, make_user):
-    _, owner = make_user()
+def test_branch_of_private_root_stays_hidden(client, make_user, db_session):
+    user, owner = make_user()
     root = client.post("/recipes", json=_payload(), headers=owner).json()  # private
-    child = client.post(
-        f"/recipes/{root['id']}/remix",
-        json={
-            "ingredients": [
-                {"name": "x", "quantity_text": "1", "quantity_type": "precise", "position": 1}
-            ],
-            "steps": [],
-        },
-        headers=owner,
-    ).json()
+    child = _make_child(db_session, user.id, root["id"])
     _, other = make_user()
     # child inherits private root → not publicly visible even though child row default is private
-    assert client.get(f"/recipes/{child['id']}", headers=other).status_code == 404
+    assert client.get(f"/recipes/{child.id}", headers=other).status_code == 404
 
 
-def test_branch_of_public_root_is_visible_to_non_owner(client, make_user):
-    # A remix child's OWN row is private-by-default, but its PUBLIC root must make it
+def test_branch_of_public_root_is_visible_to_non_owner(client, make_user, db_session):
+    # A child's OWN row is private-by-default, but its PUBLIC root must make it
     # visible to a non-owner via effective_visibility (root-binds). This fails if the
     # root-walk is dropped and the child's own (private) visibility is used.
-    _, owner = make_user()
+    user, owner = make_user()
     root = client.post("/recipes", json=_payload(visibility="public"), headers=owner).json()
-    child = client.post(
-        f"/recipes/{root['id']}/remix",
-        json={
-            "ingredients": [
-                {
-                    "name": "lard",
-                    "quantity_text": "1 tbsp",
-                    "quantity_type": "precise",
-                    "position": 1,
-                }
-            ],
-            "steps": [],
-        },
-        headers=owner,
-    ).json()
+    child = _make_child(db_session, user.id, root["id"])
     _, other = make_user()
     # child inherits the PUBLIC root → visible to a non-owner even though its own row is private
-    assert client.get(f"/recipes/{child['id']}", headers=other).status_code == 200
+    assert client.get(f"/recipes/{child.id}", headers=other).status_code == 200

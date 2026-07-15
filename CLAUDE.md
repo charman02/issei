@@ -66,15 +66,15 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 
 ## Architecture
 
-**App entry:** `app/main.py` — mounts five routers (auth, recipes, shopping_list, mom_form, upload) and a `/health` endpoint.
+**App entry:** `app/main.py` — mounts four routers (auth, recipes, shopping_list, upload) and a `/health` endpoint.
 
-**Routers** (`app/routers/`) — endpoint definitions. Each router handles one domain: auth (signup/login/me), recipes (CRUD + scaling), shopping_list (consolidation), mom_form (HTML form served with HTTP Basic Auth), upload (Cloudinary photos). Recipes now also has lineage actions: `POST /{id}/remix`, `POST /{id}/cook`, `POST /{id}/handoff`, `GET /{id}/lineage`, plus the public `GET /recipes/browse`.
+**Routers** (`app/routers/`) — endpoint definitions. Each router handles one domain: auth (signup/login/me), recipes (CRUD + scaling), shopping_list (consolidation), upload (Cloudinary photos). Recipes also has lineage/sharing actions: `POST /{id}/cook`, `POST /{id}/handoff`, `GET /{id}/lineage`, `GET /recipes/shared`, `POST /recipes/handoffs/{id}/accept`, the soft-wall invite flow (`GET /recipes/invite/{token}`, `POST /recipes/invite/{token}/claim`), plus the public `GET /recipes/browse`.
 
 **Models** (`app/models/`) — SQLAlchemy ORM models. Key relationship: Recipe → IngredientSection → Ingredient, but ingredients also have a direct `recipe_id` FK (deliberate denormalization for query simplicity). Lineage adds `parent_recipe_id` (self-FK) + `lineage_relation`/`visibility`/`origin_attribution`/`prompt_*` columns on Recipe, and new tables `ghost_ancestor`, `cook_event`, `handoff`.
 
 **Schemas** (`app/schemas/`) — Pydantic models for request/response validation. Separate from ORM models to control what's exposed at the API boundary.
 
-**Services** (`app/services/`) — business logic decoupled from HTTP layer. `scaling.py` handles the three-type quantity model (precise/imprecise/unmeasured), `shopping_list.py` consolidates ingredients, `units.py` handles unit conversion, `lineage.py` handles remix diff → remix prompt, effective visibility, and the lineage-view builder.
+**Services** (`app/services/`) — business logic decoupled from HTTP layer. `scaling.py` handles the three-type quantity model (precise/imprecise/unmeasured), `shopping_list.py` consolidates ingredients, `units.py` handles unit conversion, `growth.py` computes the seed→tree growth stage/vitality, `lineage.py` handles root-bound effective visibility, the `can_view` read-authorization rule, and the lineage-view builder.
 
 **Auth** (`app/auth.py`) — JWT-based stateless auth. `get_current_user` is the dependency injected into protected endpoints.
 
@@ -91,7 +91,7 @@ Production uses PostgreSQL via `DATABASE_URL` pointing to Neon. The database lay
 
 Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + Axios.
 
-**Design system** (garden palette — R1, `docs/superpowers/specs/2026-07-11-r1-readable-garden-foundation-design.md`; palette is the source of truth in `frontend/tailwind.config.js`. Supersedes the earlier "Heirloom" browns from `2026-07-10-visual-identity-design.md`):
+**Design system** (garden palette; the palette source of truth is `frontend/tailwind.config.js`):
 - Garden palette (green is the ambient lead; terra is the action accent): paper `#F3EAD6` · card `#FCF8EE` · ink `#2E3A24` (deep leaf) · ink-soft `#4A5540` · line `#E3D9C4` · growth `#5C7A3F` (lead green, = herb) · growth-bright `#7FA05A` · terra `#B5502A` · saffron `#D99A2B` · plum `#8A3D5A` · soil `#C9A277`
 - **Color roles:** `growth`/green = ambient + grow (the world, plants, garden, eyebrows); `action` (= terra) = interactive intent (buttons, links, active); `plum` = the person / heritage byline ("from Lola"); `saffron` = vitality sparks. "Green for the world, warm for what you do."
 - **Type:** Cormorant Garamond (`font-serif`) — display/titles; Nunito Sans (`font-sans`) — body/UI (body/ingredients at 14.5px, bold amounts — the R1 readability baseline; see `.ingredient-row`/`.ingredient-amount`); Caveat (`font-hand`) — the handwritten `issei` wordmark + special moments only.
@@ -112,4 +112,4 @@ Located in `frontend/` directory. React + Vite + Tailwind CSS + React Router + A
 - No UI libraries (no shadcn, no MUI) — custom Tailwind only
 - Don't git commit without my approval
 
-**MVP screens:** Login/Signup, Home (empty + populated states), Recipe List, Recipe Detail, plus PlantRecipe (`/add`, stepped flow — a seed becoming a tree), RemixRecipe (`/recipes/:id/remix`), EditRecipe (`/recipes/:id/edit`), and growth marks / lineage on RecipeCard + RecipeDetail.
+**MVP screens:** Login/Signup, Home (empty + populated states), Recipe List, Recipe Detail, plus PlantRecipe (`/add`, stepped flow — a seed becoming a tree), EditRecipe (`/recipes/:id/edit`), SharedWithMe (`/shared`), InviteLanding (`/invite/:token` soft wall), and the growth plant / provenance on RecipeCard + RecipeDetail.

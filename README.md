@@ -11,7 +11,7 @@ Instead of treating a recipe as a static list of grams and steps, issei treats i
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling, shopping-list consolidation, photo upload, and a lineage/growth system with private → shared → public visibility.
 
-**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (Render) → PostgreSQL (Neon). JWT auth, 21 endpoints, 8 data models, ~156 automated tests (pytest + Vitest).
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (Render) → PostgreSQL (Neon). JWT auth, 19 endpoints, 8 data models, ~140 automated tests (pytest + Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -30,7 +30,7 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 
 **pytest** - automated tests for the scaling service, auth endpoints, and unit conversion logic.
 
-**Vitest + React Testing Library** - frontend unit/component tests (growth-state logic, remix/plant payloads, form and page components). Run with `npm test` in `frontend/`.
+**Vitest + React Testing Library** - frontend unit/component tests (growth-state logic, lineage payload builders, form and page components). Run with `npm test` in `frontend/`.
 
 **Cloudinary** - hosts recipe photos uploaded through the `/upload` endpoint.
 
@@ -61,15 +61,16 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 | GET | /recipes/{recipe_id}/scale?servings={n} | Yes | Returns the recipe scaled to the target serving size. |
 | PATCH | /recipes/{recipe_id} | Yes | Modifies the queried recipe. |
 | DELETE | /recipes/{recipe_id} | Yes | Deletes the queried recipe. |
-| POST | /recipes/{recipe_id}/remix | Yes | Creates a child recipe branched from this one. |
 | POST | /recipes/{recipe_id}/cook | Yes | Logs a cook event; returns updated cook_count. |
 | POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe to a person (in-app user or email invite). On a **private** recipe this grants the recipient access (view + cook); the grant attaches to the lineage root. |
 | GET | /recipes/{recipe_id}/lineage | Yes | Returns the walkable lineage spine + tree counts. |
 | GET | /recipes/shared | Yes | Returns recipes shared *with* the current user (accepted grants; excludes their own). |
 | POST | /recipes/handoffs/{handoff_id}/accept | Yes | Claims a pending invite for the current user (backend-only; the two auto-accept paths cover the in-app cases, so there is no MVP UI for this). |
+| GET | /recipes/invite/{token} | No | Unauthenticated soft-wall preview of a handed-off recipe (name, who it's from, story, plant — never the body). |
+| POST | /recipes/invite/{token}/claim | Yes | Claims an invite by its token, granting the current user access (resolves the mismatched-email case). |
 | GET | /recipes/browse | No | Public discovery feed (root-visibility gated). |
 | POST | /shopping-list | Yes | Creates a shopping list. |
-| POST | /upload | Yes | Uploads a photo to Cloudinary. |
+| POST | /upload/recipe-photo | Yes | Uploads a photo to Cloudinary. |
 
 **Three visibility tiers — Private → Shared → Public.** A recipe is viewable by a user when: the root recipe's visibility is `public`, **or** they own it, **or** they hold an accepted handoff (grant) on its root. "Shared" is not a stored enum value — `visibility` stays `private | public`; a private recipe with ≥1 accepted grant *is* shared with those people. In-app grants are accepted instantly; email invites are pending until the invitee signs up with the matching email, at which point they auto-accept. `GET /recipes/{recipe_id}` and `/lineage` apply this same `can_view` rule.
 

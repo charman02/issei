@@ -54,9 +54,9 @@ its own default `visibility="private"` or become an orphan root.
 **Why it exists:** Deletion semantics were left permissive pending the
 account-deletion / tombstone model.
 
-**Risk if ignored:** Currently unreachable — there is no account-deletion path
-and remix children default to private, so no leak today. Becomes a real
-orphan/visibility-leak risk the moment hard-delete is enabled.
+**Risk if ignored:** Currently unreachable — there is no account-deletion path,
+so no leak today. Becomes a real orphan/visibility-leak risk the moment
+hard-delete is enabled.
 
 **To resolve:** Build the account-deletion + tombstone model (per the 2026-07-06
 spec) before enabling deletion; prefer `RESTRICT` or an explicit
@@ -218,11 +218,10 @@ applied** (all live/routed screens are on the new look; the only laggard,
 `surface` — only the dead, unrouted `AddRecipe.jsx` did).
 
 Cleared in the sub-project-2 final-review fix (`461f028`): **(b) Remix dropped
-edited name/notes** (`RemixIn` now carries `name`/`servings`/`cuisine`/
-`description`/`notes`, applied edited-else-inherit in `remix_recipe`); **(c)
-Unauthenticated browse exposed owner activity** (`browse_recipes` now zeroes
-`owner_cook_count` and nulls `last_cooked_at` on the public feed); **(d) Unused
-`func` import** (removed).
+edited name/notes** — *later moot: the remix feature (endpoint, schema, and UI)
+was removed entirely as a v1 product cut*; **(c) Unauthenticated browse exposed
+owner activity** (`browse_recipes` now zeroes `owner_cook_count` and nulls
+`last_cooked_at` on the public feed); **(d) Unused `func` import** (removed).
 
 Cleared by the **recipe-visibility feature** (`daac1d9`..`6ec098a`): recipes had
 **no way to be made public** — `RecipeCreate`/`RecipeUpdate` never accepted

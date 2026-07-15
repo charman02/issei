@@ -1,8 +1,6 @@
 import client from './client'
 
 export const plantRecipe = (payload) => client.post('/recipes', payload)
-export const remixRecipe = (id, body) =>
-  client.post(`/recipes/${id}/remix`, body)
 export const cookRecipe = (id, body = {}) =>
   client.post(`/recipes/${id}/cook`, body)
 export const handoffRecipe = (id, body) =>
