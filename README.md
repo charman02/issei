@@ -1,4 +1,4 @@
-# issei
+# Issei
 
 **Live app:** https://issei-delta.vercel.app · **API + interactive docs:** https://family-recipe-library.onrender.com/docs · **Source:** https://github.com/charman02/issei
 
@@ -7,7 +7,7 @@
 ## What It Is
 A deployed full-stack web app for preserving the family recipes that were never written down — the cooking knowledge immigrant elders carry in memory, one generation from being lost. *Issei* (一世) means "first generation": the first of a family to arrive somewhere new. The tagline says it — **recipes that live in memory, not cookbooks.**
 
-Instead of treating a recipe as a static list of grams and steps, issei treats it as a **living vessel for a person**: the cook's own voice and story are woven in, their imprecise measurements ("a dash," "three soup spoons," "until it smells right") are preserved verbatim and celebrated as fidelity rather than normalized away, and each recipe **grows from a seed into a tree** as it's cooked, enriched, and handed down to the next generation. Passing a recipe to a relative — the *handoff* — is both how the knowledge spreads and how families are invited in to fill in what one person can't remember alone.
+Instead of treating a recipe as a static list of grams and steps, Issei treats it as a **living vessel for a person**: the cook's own voice and story are woven in, their imprecise measurements ("a dash," "three soup spoons," "until it smells right") are preserved verbatim and celebrated as fidelity rather than normalized away, and each recipe **grows from a seed into a tree** as it's cooked, enriched, and handed down to the next generation. Passing a recipe to a relative — the *handoff* — is both how the knowledge spreads and how families are invited in to fill in what one person can't remember alone.
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling, shopping-list consolidation, photo upload, and a lineage/growth system with private → shared → public visibility.
 
