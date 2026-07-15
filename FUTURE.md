@@ -20,7 +20,7 @@ This document outlines planned features and improvements for Issei — a full-st
 
 ## Web Frontend — shipped
 
-**Web frontend — shipped.** React + Vite + Tailwind SPA in `frontend/`, mobile-first, for inputting, browsing, scaling, and sharing recipes from any device — the interface that makes the product usable by non-technical users (the parents and grandparents who are the primary recipe contributors), not just the `/docs` page. Remaining polish is tracked in TECHDEBT.md.
+**Web frontend — shipped.** React + Vite + Tailwind SPA in `frontend/`, mobile-first, for inputting, browsing, scaling, and sharing recipes from any device — the interface that makes the product usable by non-technical users (the parents and grandparents who are the primary recipe contributors), not just the `/docs` page.
 
 ---
 
@@ -76,7 +76,7 @@ This document outlines planned features and improvements for Issei — a full-st
 
 In order of priority:
 
-1. **Anonymity / account-deletion / tombstone model** — the highest-priority *next* step now that the web frontend and lineage tree have shipped. The 2026-07-06 lineage spec calls for `is_anonymous` / `is_tombstone` columns and an account-deletion / anonymize flow so a contributor can leave without orphaning or leaking their descendants' recipes. It's specced but not built, and recipe deletion stays disabled until it lands (see TECHDEBT items (a) and (h)). This is a near-term correctness/privacy dependency, not an exploratory addition.
+1. **Anonymity / account-deletion / tombstone model** — the highest-priority *next* step now that the web frontend and lineage system have shipped. An `is_anonymous` / `is_tombstone` model plus an account-deletion / anonymize flow would let a contributor leave without orphaning or leaking their descendants' recipes. Until it lands, hard-deletion of recipes stays disabled (soft-delete only) to avoid orphaning lineage children. This is a near-term correctness/privacy dependency, not an exploratory addition.
 2. **Multi-user family sharing** — without this, the product can't fully fulfill its actual purpose. A recipe my mom adds should be visible to me and my siblings without needing separate accounts and manual copying. Lineage's per-recipe `visibility` + handoffs now provide a lightweight sharing path, but a proper families model is still closer to a missing core feature than an enhancement, so it ranks above the more exploratory additions below.
 3. **iOS mobile app** — now that the web frontend is live, a native mobile experience makes sense given that the real use case (checking a recipe while cooking, contributing a recipe from a phone) is fundamentally mobile-first.
 4. **Translation** — highest priority among the "deeper feature" additions, since it directly addresses the core audience: families where the cooking generation and the reading generation may not share a primary language.

@@ -13,5 +13,9 @@ frontend/dist/
 # Local visual/screenshot scratch drivers (Playwright) — not part of the suite
 frontend/tests/visual/
 
+# Claude Code tooling + instructions (kept on disk, not in the public repo)
+CLAUDE.md
+.claude/
+
 # Brainstorming visual companion + agentic scratch
 .superpowers/

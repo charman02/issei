@@ -182,7 +182,7 @@ frontend/
 |---|---|
 | `quantity.js` | Parses a free-text quantity ("1 1/2 cups", "a dash") into the structured fields the backend needs (value, unit, type). Keeps messy parsing logic out of the form component. |
 
-### Conventions to follow (from `CLAUDE.md`)
+### Conventions to follow
 
 - **Auth storage:** JWT in `localStorage` under `issei_token`; the user object
   under `issei_user`.
@@ -216,11 +216,8 @@ React app                FastAPI app          Postgres (Neon)
 
 ---
 
-## Working with Claude Code in this repo
+## Development notes
 
-- **CLAUDE.md** holds standing instructions and conventions Claude follows
-  automatically. If you establish a new convention, putting it there makes it
-  stick across sessions.
 - **Backend changes that touch the database** (new/changed model fields) need an
   Alembic migration *and* application to the production database — these aren't
   automatic. Watch for them when reviewing changes.
