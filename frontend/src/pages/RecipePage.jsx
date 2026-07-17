@@ -192,8 +192,19 @@ export default function RecipePage() {
   const source = sourceNameOf(recipe)
   const place = placeOf(recipe)
 
-  // True counts, resting at 0 until the plant has soul (matches v6).
-  const memories = hasSoul ? recipe.memory_count ?? recipe.cook_count ?? 0 : 0
+  // True counts, resting at 0 until the plant has soul (matches v6). Memories are
+  // derived from the recipe's soul — every non-empty step voice_note, plus the
+  // story when present (and not already one of those voice_notes). This mirrors
+  // SoulSheet's blossom-panel count exactly so the hero row and sheet agree; there
+  // is no memory_count field, and cook_count is a different quantity (the "cooked"
+  // stat), so it is deliberately NOT a fallback here.
+  const story = recipe.story && recipe.story.trim()
+  const voiceNotes = (recipe.steps || [])
+    .filter((s) => s.voice_note && s.voice_note.trim())
+    .map((s) => s.voice_note.trim())
+  const memories = hasSoul
+    ? voiceNotes.length + (story && !voiceNotes.includes(story) ? 1 : 0)
+    : 0
   const cooked = hasSoul ? recipe.cook_count ?? 0 : 0
   const shared = hasSoul ? recipe.shared_with_count ?? 0 : 0
 
