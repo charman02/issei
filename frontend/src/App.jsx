@@ -5,7 +5,7 @@ import Login from './pages/Login'
 import Home from './pages/Home'
 import Browse from './pages/Browse'
 import MyRecipes from './pages/MyRecipes'
-import RecipeDetail from './pages/RecipeDetail'
+import RecipePage from './pages/RecipePage'
 import PlantRecipe from './pages/PlantRecipe'
 import EditRecipe from './pages/EditRecipe'
 import SharedWithMe from './pages/SharedWithMe'
@@ -61,7 +61,7 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout>
-              <RecipeDetail />
+              <RecipePage />
             </Layout>
           </ProtectedRoute>
         }

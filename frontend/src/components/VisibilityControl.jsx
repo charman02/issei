@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { setVisibility } from '../api/lineage'
 
-// Placement-C visibility control (spec §3). Owner-only surface on RecipeDetail.
+// Placement-C visibility control (spec §3). Owner-only surface on the recipe page.
 // Root: status pill + publish/un-publish toggle (descendants-aware confirm).
 // Branch: read-only inherited status.
 export default function VisibilityControl({ recipe, onChange }) {
