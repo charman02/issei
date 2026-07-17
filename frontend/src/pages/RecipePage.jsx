@@ -212,7 +212,7 @@ export default function RecipePage() {
     <div className="relative min-h-screen">
       {/* HEADER — circular back button, then a centered title + metadata row. */}
       <header className="px-6 pt-4 pb-1.5 relative z-[3]">
-        <div className="flex items-center mb-2.5">
+        <div className="flex items-center justify-between mb-2.5">
           <button
             onClick={() => navigate(-1)}
             aria-label="Back"
@@ -220,6 +220,18 @@ export default function RecipePage() {
           >
             <Icon name="back" className="w-5 h-5" />
           </button>
+          {/* Owner-only edit affordance — mirrors the back button on the right so
+              an owner can always edit, even once the recipe has a story (before
+              R2 this lived on the old RecipeDetail hero). */}
+          {isOwner && (
+            <button
+              onClick={() => navigate(`/recipes/${recipe.id}/edit`)}
+              aria-label="Edit recipe"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-line bg-card/70 text-terra shadow-[0_1px_0_rgba(255,255,255,.55)_inset,0_4px_12px_-8px_rgba(46,58,36,.4)] active:scale-95 transition"
+            >
+              <Icon name="edit" className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <div className="text-center">

@@ -18,9 +18,9 @@ const base = {
 }
 
 describe('RecipeBody', () => {
-  it('tags imprecise amounts "her way" but not precise ones', () => {
+  it('tags imprecise amounts "their way" but not precise ones', () => {
     const { getAllByText, getByText } = render(<RecipeBody recipe={base} />)
-    expect(getAllByText(/her way/i).length).toBe(1) // only the imprecise vinegar
+    expect(getAllByText(/their way/i).length).toBe(1) // only the imprecise vinegar
     expect(getByText('2 lbs')).toBeTruthy()
   })
   it('renders all steps in order', () => {

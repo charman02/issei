@@ -1,4 +1,4 @@
-import { isImprecise } from '../lib/measures'
+import { isImprecise, impreciseLabel } from '../lib/measures'
 import Wordmark from './Wordmark'
 
 // The recipe "body" — the part that is always readable, whether the plant is a
@@ -7,8 +7,8 @@ import Wordmark from './Wordmark'
 //
 // Renders: cover photo (or a cream <Wordmark> fallback when there's no photo),
 // the story in Caveat if present, an Ingredients section (amounts in bold
-// Cormorant serif; imprecise/unmeasured amounts get a small plum "her way" pill
-// — imprecise measures are TRUTH, celebrated, never normalized), and a Steps
+// Cormorant serif; imprecise/unmeasured amounts get a small plum "their way"
+// pill — imprecise measures are TRUTH, celebrated, never normalized), and a Steps
 // section with clean green Cormorant serif numerals (CSS counter, option F:
 // no circle, no period — see .r2-steps in index.css).
 
@@ -94,7 +94,7 @@ export default function RecipeBody({ recipe }) {
               {ing.quantity_text}
               {isImprecise(ing) && (
                 <span className="font-sans font-bold text-[10.5px] tracking-[0.4px] lowercase text-plum bg-plum/10 border border-plum/[0.28] rounded-full px-2 py-0.5 leading-tight whitespace-nowrap">
-                  her way
+                  {impreciseLabel(ing)}
                 </span>
               )}
             </span>
