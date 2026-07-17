@@ -1,0 +1,198 @@
+/* plant.css — living-plant animation stylesheet.
+   Transcribed VERBATIM from the locked prototype .superpowers/r2-living-plant-v6.html
+   (its <style> block). These rules drive the four-stage plant SVG: stage
+   visibility, soul-accent visibility, the idle sway, the "C · Branch Cascade"
+   growth beat, the bloom brighten, the discoverability glows, and the
+   reduced-motion fallback. The LivingPlant component toggles the classes below
+   (.cascading, .brighten, .on, .justBloomed, .reBloom, .glow, .hintable,
+   .tapGlow) and the --gT/--tx/--ty vars by these exact names — do not rename. */
+
+/* idle ambient sway — applied to the whole above-soil pivot (CHANGE 8: unchanged) */
+.sway{ transform-box:fill-box; transform-origin:50% 100%; animation:sway 6.6s ease-in-out infinite; }
+@keyframes sway{
+  0%,100%{ transform:rotate(-1deg); }
+  50%{ transform:rotate(1deg); }
+}
+
+/* Every stage form group: smooth organic ease between distinct silhouettes. */
+.form{
+  transform-box:fill-box;
+  transform-origin:50% 100%;
+  transition:
+    transform 620ms cubic-bezier(.22,1,.36,1),
+    opacity 420ms ease;
+}
+/* transform-box:fill-box is ESSENTIAL — without it, transform-origin resolves
+   against the SVG viewport (0,0), so an off-state scale(.001) collapses the part
+   toward the TOP-LEFT CORNER instead of its own center (that was the stray-fruit bug). */
+.blossom{ transform-box:view-box; transform-origin:0 0; }
+.fruit{ transform-box:view-box; transform-origin:0 0; }
+
+/* ===== STAGE VISIBILITY =====
+   Four genuinely different forms live in the SVG at once; the active stage
+   shows exactly one form (plus its allowed soul accents). Forms that aren't
+   active collapse to 0 opacity + scale so nothing lingers or escapes. */
+.form{ opacity:0; transform:scale(.6); pointer-events:none; }
+.plant[data-stage="seed"]    #formSeed,
+.plant[data-stage="sprout"]  #formSprout,
+.plant[data-stage="sapling"] #formSapling,
+.plant[data-stage="tree"]    #formTree{
+  opacity:1; transform:scale(1); pointer-events:auto;
+}
+
+/* soul accents: none on seed/sprout; a few on sapling; full on tree.
+   Individual visibility is driven per-node by the .on class (JS-managed).
+   Position lives ONLY in --tx/--ty CSS vars and is composed with scale here,
+   so a CSS transform:scale() can NEVER clobber the translate (the corner bug). */
+.blossom, .fruit{
+  opacity:0; transform:translate(var(--tx,0),var(--ty,0)) scale(.001); pointer-events:none;
+  transition:transform 520ms cubic-bezier(.22,1,.36,1), opacity 400ms ease;
+}
+.plant[data-stage="sapling"] .soulSapling.on,
+.plant[data-stage="tree"] .soulTree.on{
+  opacity:1; transform:translate(var(--tx,0),var(--ty,0)) scale(1); pointer-events:auto;
+}
+
+/* staggered unfurl so accents read organic, not synchronized */
+.d1{ transition-delay:60ms; } .d2{ transition-delay:120ms; }
+.d3{ transition-delay:180ms; } .d4{ transition-delay:240ms; }
+.d5{ transition-delay:300ms; } .d6{ transition-delay:360ms; }
+.d7{ transition-delay:420ms; } .d8{ transition-delay:480ms; }
+
+/* a freshly-tended blossom: unfurl + soft glow pulse */
+.justBloomed{ animation:bloomIn 720ms cubic-bezier(.22,1,.36,1); }
+@keyframes bloomIn{
+  0%{ transform:translate(var(--tx,0),var(--ty,0)) scale(.001) rotate(-30deg); opacity:0; }
+  55%{ transform:translate(var(--tx,0),var(--ty,0)) scale(1.2) rotate(6deg); opacity:1; }
+  100%{ transform:translate(var(--tx,0),var(--ty,0)) scale(1) rotate(0deg); opacity:1; }
+}
+/* re-bloom: an EXISTING blossom pulses when we're already at the lush cap
+   (see CHANGE 6 — we never append past the cap). Keeps position via vars. */
+.reBloom{ animation:reBloom 820ms cubic-bezier(.22,1,.36,1); }
+@keyframes reBloom{
+  0%{ transform:translate(var(--tx,0),var(--ty,0)) scale(1); }
+  45%{ transform:translate(var(--tx,0),var(--ty,0)) scale(1.32) rotate(8deg); }
+  100%{ transform:translate(var(--tx,0),var(--ty,0)) scale(1) rotate(0deg); }
+}
+.glow{ filter:url(#softGlow); }
+
+/* ============================================================
+   CHANGE (v5) — tend animation reworked. v4's tend fired a saffron circle
+   that scaled 0.4→2.1 behind the plant — it read as a fast diagonal "sun
+   sweep," not as blooming or growing. v5 replaces it with two clear beats,
+   chosen by whether the memory crosses a stage threshold:
+
+     BLOOM (no stage change): the plant BRIGHTENS briefly (a gentle whole-
+     plant glow-up) AND a new blossom/fruit unfurls. Subtle but noticeable.
+
+     GROWTH (stage advances): the plant visibly fast-forwards — the new
+     stage's form surges up from small, as if growing in fast motion.
+   ============================================================ */
+
+/* BLOOM: a soft, contained brighten of the whole above-soil plant (no sweep) */
+.sway.brighten{ animation:sway 6.6s ease-in-out infinite, brightenPulse 1100ms ease-out; }
+@keyframes brightenPulse{
+  0%{ filter:none; }
+  35%{ filter:brightness(1.14) drop-shadow(0 0 10px rgba(217,154,43,.55)); }
+  100%{ filter:none; }
+}
+
+/* ============================================================
+   GROWTH (v6) — "C · Branch Cascade" (chosen from the gallery). Each PART
+   grows from its OWN base in sequence — trunk rises, branches reach out, then
+   the canopy fills — so it reads as a real plant growing in time-lapse, not a
+   finished shape scaling or being revealed. Medium ~5.2s (chosen).
+
+   During a growth beat JS adds .cascading to the active .form, snapping it to
+   full opacity/scale with no page-transition, and each tagged part
+   (.gTrunk/.gBranchL/.gBranchR/.gCanopy) runs its one-shot keyframe. Parts
+   grow from their own base via transform-box:fill-box + per-part origin. */
+.form.cascading{ transition:none !important; opacity:1 !important; transform:scale(1) !important; }
+.gPart{ transform-box:fill-box; }
+
+/* the growth cadence (percentages of --gT): trunk 0–32%, branchL 30–46%,
+   branchR 36–52%, canopy 50–74%, then a hold. Matches the gallery's "C". */
+.cascading .gTrunk{ transform-origin:50% 100%; animation:gTrunk var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gTrunk{ 0%{transform:scaleY(0)} 32%{transform:scaleY(1)} 100%{transform:scaleY(1)} }
+
+.cascading .gBranchL{ transform-origin:100% 100%; animation:gBranchL var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gBranchL{ 0%,30%{transform:scaleX(0);opacity:0} 33%{opacity:1} 46%,100%{transform:scaleX(1);opacity:1} }
+
+.cascading .gBranchR{ transform-origin:0% 100%; animation:gBranchR var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gBranchR{ 0%,36%{transform:scaleX(0);opacity:0} 39%{opacity:1} 52%,100%{transform:scaleX(1);opacity:1} }
+
+.cascading .gCanopy{ transform-origin:50% 100%; animation:gCanopy var(--gT,5200ms) cubic-bezier(.34,.1,.3,1) both; }
+@keyframes gCanopy{ 0%,50%{transform:scale(0);opacity:0} 53%{opacity:1} 74%,100%{transform:scale(1);opacity:1} }
+
+/* sprout uses stem→leaves; seed uses mound→kernel→tip — same cascade idea,
+   mapped onto each form's own parts. */
+.cascading .gStem{ transform-origin:50% 100%; animation:gTrunk var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+.cascading .gLeafL{ transform-origin:100% 100%; animation:gLeaf var(--gT,5200ms) cubic-bezier(.34,.1,.3,1) both; }
+.cascading .gLeafR{ transform-origin:0% 100%; animation:gLeafR var(--gT,5200ms) cubic-bezier(.34,.1,.3,1) both; }
+@keyframes gLeaf{ 0%,40%{transform:scale(0);opacity:0} 43%{opacity:1} 64%,100%{transform:scale(1);opacity:1} }
+@keyframes gLeafR{ 0%,48%{transform:scale(0);opacity:0} 51%{opacity:1} 72%,100%{transform:scale(1);opacity:1} }
+.cascading .gMound{ transform-origin:50% 100%; animation:gMound var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gMound{ 0%{transform:scaleY(0)} 14%,100%{transform:scaleY(1)} }
+.cascading .gKernel{ transform-origin:50% 50%; animation:gKernel var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gKernel{ 0%,8%{transform:scale(0);opacity:0} 11%{opacity:1} 22%,100%{transform:scale(1);opacity:1} }
+.cascading .gTip{ transform-origin:50% 100%; animation:gTip var(--gT,5200ms) cubic-bezier(.4,.06,.4,1) both; }
+@keyframes gTip{ 0%,22%{transform:scaleY(0);opacity:0} 25%{opacity:1} 52%,100%{transform:scaleY(1);opacity:1} }
+
+/* ---- DISCOVERABILITY: tappable parts advertise themselves ---- */
+.tapPart{ cursor:pointer; }
+/* the hanging parts (blossom/fruit) advertise with a subtle SOFT GLOW
+   (drop-shadow), matching the refined feel of the pot outline. */
+.halo{ display:none; }
+.blossom, .fruit{ transition:filter 300ms ease, transform 520ms cubic-bezier(.22,1,.36,1), opacity 400ms ease; }
+/* gentle looping glow once soul is present (hint mode) */
+.hintable .blossom.on{ animation:softGlow 3.2s ease-in-out infinite; }
+.hintable .fruit.on{ animation:softGlow 3.2s ease-in-out infinite; animation-delay:1.1s; }
+@keyframes softGlow{
+  0%,100%{ filter:drop-shadow(0 0 0 rgba(217,154,43,0)); }
+  50%{ filter:drop-shadow(0 0 5px rgba(217,154,43,.6)); }
+}
+.blossom:hover, .blossom:focus-visible,
+.fruit:hover, .fruit:focus-visible{ filter:drop-shadow(0 0 6px rgba(217,154,43,.85)) !important; animation:none !important; }
+.tapPart:focus{ outline:none; }
+.tapPart:focus-visible{ outline:none; }
+
+/* base part: the pot's own OUTLINE is the affordance (no floating ring).
+   CHANGE 5 — the outline is the LAST child of #basePart so it paints ON TOP
+   of the pot fills, and #basePart has an invisible hit-rect covering the whole
+   pot so hover/focus/tap all reliably reach it. Subtle by default; breathes as
+   the hint; brightens on hover/focus/active (tap). */
+.potOutline{
+  opacity:0;
+  transition:opacity 260ms ease, stroke-width 260ms ease;
+  pointer-events:none; /* let the hit-rect below take the pointer */
+}
+.hintable #basePart .potOutline{ animation:potBreathe 3.6s ease-in-out infinite; animation-delay:2s; }
+@keyframes potBreathe{
+  0%,100%{ opacity:0; }
+  50%{ opacity:.5; }
+}
+#basePart:hover .potOutline,
+#basePart:focus-visible .potOutline,
+#basePart:active .potOutline,
+#basePart.tapGlow .potOutline{
+  opacity:1 !important; animation:none !important;
+  stroke-width:3; filter:drop-shadow(0 0 5px rgba(217,154,43,.75));
+}
+/* the transparent hit target that guarantees the whole pot is tappable */
+.potHit{ fill:transparent; }
+
+/* tap ping ring */
+.ping{ transform-box:fill-box; transform-origin:50% 50%; animation:ping 640ms ease-out; }
+@keyframes ping{
+  0%{ opacity:.55; transform:scale(.5); }
+  100%{ opacity:0; transform:scale(2.4); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation:none !important; }
+  .form, .blossom, .fruit, .knob, .sheet, .scrim, .soulRow .stat, .hintLine, .blurb{ transition:none !important; }
+  .sway{ animation:none !important; }
+  /* no motion: give tappable parts a faint STATIC affordance instead of a pulse */
+  .hintable .blossom.on, .hintable .fruit.on{ filter:drop-shadow(0 0 3px rgba(217,154,43,.45)); }
+  .hintable #basePart .potOutline{ opacity:.4; }
+}
