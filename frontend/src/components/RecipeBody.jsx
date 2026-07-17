@@ -58,6 +58,14 @@ export default function RecipeBody({ recipe }) {
     (a, b) => a.position - b.position,
   )
 
+  // Byline: the recorded origin person, else the recipe's own author/keeper.
+  const originName = (recipe.origin_attribution || '').split('·')[0].trim()
+  const byline = originName
+    ? `from ${originName}`
+    : recipe.author_full_name
+      ? `kept by ${recipe.author_full_name}`
+      : null
+
   return (
     <div className="mt-1.5">
       {/* Cover photo (or the cream Wordmark fallback when there's no photo). */}
@@ -75,9 +83,28 @@ export default function RecipeBody({ recipe }) {
         )}
       </div>
 
+      {/* Byline + cuisine — whose recipe this is, and what kind. */}
+      {(byline || recipe.cuisine) && (
+        <div className="flex items-center justify-center gap-[9px] flex-wrap mt-3 mb-1">
+          {byline && (
+            <span className="font-sans text-[12.5px] font-bold tracking-[0.2px] text-plum">
+              {byline}
+            </span>
+          )}
+          {byline && recipe.cuisine && (
+            <span className="w-px h-[13px] bg-line inline-block" />
+          )}
+          {recipe.cuisine && (
+            <span className="text-[11.5px] font-semibold tracking-[0.55px] uppercase text-ink-soft">
+              {recipe.cuisine}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Her words — the story, in Caveat, set apart just under the photo. */}
       {recipe.story && (
-        <p className="font-hand text-[23px] leading-[1.2] text-plum text-center mx-1 mt-3.5 mb-3 whitespace-pre-line">
+        <p className="font-hand text-[23px] leading-[1.2] text-plum text-center mx-1 mt-3 mb-3 whitespace-pre-line">
           {recipe.story}
         </p>
       )}
@@ -110,6 +137,13 @@ export default function RecipeBody({ recipe }) {
             className="relative text-[14.5px] text-ink leading-[1.5] py-2.5 pl-9 border-b border-dashed border-line last:border-b-0"
           >
             {step.content}
+            {/* The person's words for this step, woven in as a Caveat quote —
+                their voice, celebrated (living-recipe spec). */}
+            {step.voice_note && step.voice_note.trim() && (
+              <span className="block font-hand text-[19px] leading-[1.25] text-plum mt-1.5">
+                &ldquo;{step.voice_note.trim()}&rdquo;
+              </span>
+            )}
           </li>
         ))}
       </ol>

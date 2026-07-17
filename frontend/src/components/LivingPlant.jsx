@@ -159,9 +159,14 @@ export default function LivingPlant({
           }, BRIGHTEN_MS),
         )
       }
-      // Pulse one tree blossom: re-bloom if it's already shown, else just-bloom.
+      // Pulse ONE blossom of the CURRENT stage's soul set (never a hidden
+      // tree blossom while a sapling is showing — that blossom is positioned for
+      // the taller tree canopy and would flash above the smaller plant). Only
+      // consider blossoms that are actually shown (.on) for this stage.
       if (!svg) return
-      const blossoms = svg.querySelectorAll('.soulTree.blossom')
+      const soulClass = soulClassFor(stage) // 'soulSapling' | 'soulTree' | null
+      if (!soulClass) return
+      const blossoms = svg.querySelectorAll('.' + soulClass + '.blossom.on')
       if (!blossoms.length) return
       const g = blossoms[Math.floor(Math.random() * blossoms.length)]
       const isOn = g.classList.contains('on')

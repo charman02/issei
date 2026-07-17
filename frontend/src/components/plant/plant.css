@@ -7,6 +7,18 @@
    (.cascading, .brighten, .on, .justBloomed, .reBloom, .glow, .hintable,
    .tapGlow) and the --gT/--tx/--ty vars by these exact names — do not rename. */
 
+/* The plant SVG's fills reference these palette custom properties (v6 defined
+   them in :root). Scoped to .plant so they don't leak into the rest of the app.
+   Without these, var(--blossom)/var(--saffron) etc. resolve to nothing and the
+   accents render black. Values are the garden palette. */
+.plant{
+  --paper:#F3EAD6;      --card:#FCF8EE;        --ink:#2E3A24;      --ink-soft:#4A5540;
+  --line:#E3D9C4;       --green:#5C7A3F;       --green-bright:#7FA05A; --green-deep:#415A2C;
+  --terra:#B5502A;      --saffron:#D99A2B;     --plum:#8A3D5A;
+  --fruit:#E8973A;      --blossom:#FBF7EE;     --pot:#C9773E;      --pot-deep:#B5652F;
+  --air:#F8F2E6;
+}
+
 /* idle ambient sway — applied to the whole above-soil pivot (CHANGE 8: unchanged) */
 .sway{ transform-box:fill-box; transform-origin:50% 100%; animation:sway 6.6s ease-in-out infinite; }
 @keyframes sway{

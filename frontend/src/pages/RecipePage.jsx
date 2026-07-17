@@ -190,6 +190,14 @@ export default function RecipePage() {
   const hasSoul = STAGES_WITH_SOUL.has(stage)
   const caption = CAPTIONS[stage] || CAPTIONS.seed
   const source = sourceNameOf(recipe)
+  // Byline: prefer the recorded origin person ("from Lola"); otherwise fall back
+  // to the recipe's own author/keeper ("kept by You") so the header always shows
+  // whose recipe this is — even your own. Mirrors the R1 RecipeCard byline rule.
+  const byline = source
+    ? { verb: 'from', name: source }
+    : recipe.author_full_name
+      ? { verb: 'kept by', name: recipe.author_full_name }
+      : null
   const place = placeOf(recipe)
 
   // True counts, resting at 0 until the plant has soul (matches v6). Memories are
@@ -238,9 +246,9 @@ export default function RecipePage() {
           <h1 className="font-serif font-semibold text-[34px] leading-[1.02] tracking-[0.2px] text-ink m-0">
             {recipe.name}
           </h1>
-          {(source || place || recipe.cuisine) && (
+          {(byline || place || recipe.cuisine) && (
             <div className="flex items-center justify-center gap-[9px] flex-wrap mt-2">
-              {source && (
+              {byline && (
                 <span className="inline-flex items-center gap-[5px] font-sans text-[12.5px] font-bold tracking-[0.2px] text-plum">
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[13px] h-[13px]">
                     <path
@@ -248,10 +256,10 @@ export default function RecipePage() {
                       fill="#8A3D5A"
                     />
                   </svg>
-                  from {source}
+                  {byline.verb} {byline.name}
                 </span>
               )}
-              {source && (place || recipe.cuisine) && (
+              {byline && (place || recipe.cuisine) && (
                 <span className="w-px h-[13px] bg-line inline-block" />
               )}
               {(place || recipe.cuisine) && (
@@ -392,17 +400,6 @@ export default function RecipePage() {
                 onSkip={() => setShowHandoff(false)}
               />
             </div>
-          )}
-
-          {!recipe.story && (
-            <button
-              onClick={() => navigate(`/recipes/${recipe.id}/edit`)}
-              className="mt-3 w-full text-left rounded-xl border border-dashed border-line bg-card/60 px-[15px] py-3"
-            >
-              <span className="font-serif italic text-[13px] text-terra">
-                Whose hands does this come from? Add a memory ↦
-              </span>
-            </button>
           )}
         </div>
       )}
