@@ -50,3 +50,27 @@
     @apply w-24 flex-shrink-0 font-sans font-bold text-ink;
   }
 }
+
+/* R2 recipe body — Steps numbering. A CSS counter (not Tailwind alone) drives
+   the numerals: clean green Cormorant serif, bold, ~21px, no circle, no period
+   (the chosen "option F"). Green token = growth (#5C7A3F). */
+.r2-steps {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: st;
+}
+.r2-steps > li {
+  counter-increment: st;
+}
+.r2-steps > li::before {
+  content: counter(st);
+  position: absolute;
+  left: 0;
+  top: 7px;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1;
+  color: #5c7a3f;
+}

@@ -1,0 +1,118 @@
+import { isImprecise } from '../lib/measures'
+import Wordmark from './Wordmark'
+
+// The recipe "body" — the part that is always readable, whether the plant is a
+// seed or in full fruit (R2 living-plant spec; editorial layout from v6's
+// recipePanel()). Growth is the *soul* accruing; the body is here from day one.
+//
+// Renders: cover photo (or a cream <Wordmark> fallback when there's no photo),
+// the story in Caveat if present, an Ingredients section (amounts in bold
+// Cormorant serif; imprecise/unmeasured amounts get a small plum "her way" pill
+// — imprecise measures are TRUTH, celebrated, never normalized), and a Steps
+// section with clean green Cormorant serif numerals (CSS counter, option F:
+// no circle, no period — see .r2-steps in index.css).
+
+// A small botanical leaf marker for the section headers.
+function LeafMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="w-4 h-4 flex-shrink-0"
+    >
+      <path d="M20 4C10 5 5 10 4 20c10-1 15-6 16-16Z" fill="#5C7A3F" />
+      <path
+        d="M6 18C9 13 13 9 18 6"
+        stroke="#3B5228"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+// Cormorant section header with a leaf marker and a growth-green rule fading out.
+function SecHead({ children }) {
+  return (
+    <div className="flex items-center gap-2.5 mt-5 mb-2.5">
+      <LeafMark />
+      <h4 className="font-serif font-semibold text-[20px] text-ink m-0 tracking-[0.2px] whitespace-nowrap">
+        {children}
+      </h4>
+      <span className="flex-1 h-0.5 rounded-[2px] bg-gradient-to-r from-growth to-growth/[0.18]" />
+    </div>
+  )
+}
+
+export default function RecipeBody({ recipe }) {
+  // Direct-FK ingredients + sectioned ingredients, merged and ordered by position.
+  const allIngredients = [
+    ...(recipe.ingredients || []),
+    ...(recipe.ingredient_sections || []).flatMap((s) =>
+      s.ingredients.map((ing) => ({ ...ing, sectionName: s.name })),
+    ),
+  ].sort((a, b) => a.position - b.position)
+
+  const sortedSteps = [...(recipe.steps || [])].sort(
+    (a, b) => a.position - b.position,
+  )
+
+  return (
+    <div className="mt-1.5">
+      {/* Cover photo (or the cream Wordmark fallback when there's no photo). */}
+      <div className="relative w-full h-[168px] rounded-2xl overflow-hidden border border-line mb-1.5 mt-0.5 bg-paper shadow-[0_8px_18px_-12px_rgba(46,58,36,.5)]">
+        {recipe.cover_photo_url ? (
+          <img
+            src={recipe.cover_photo_url}
+            alt=""
+            className="w-full h-full object-cover block"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Wordmark muted className="text-6xl" />
+          </div>
+        )}
+      </div>
+
+      {/* Her words — the story, in Caveat, set apart just under the photo. */}
+      {recipe.story && (
+        <p className="font-hand text-[23px] leading-[1.2] text-plum text-center mx-1 mt-3.5 mb-3 whitespace-pre-line">
+          {recipe.story}
+        </p>
+      )}
+
+      <SecHead>Ingredients</SecHead>
+      <ul className="list-none m-0 p-0">
+        {allIngredients.map((ing, idx) => (
+          <li
+            key={ing.id ?? idx}
+            className="flex items-baseline justify-between gap-2 py-2 text-[14.5px] text-ink border-b border-dashed border-line last:border-b-0"
+          >
+            <span className="text-ink">{ing.name}</span>
+            <span className="flex items-baseline flex-wrap justify-end gap-1.5 text-right flex-shrink-0 font-serif font-bold text-base text-ink">
+              {ing.quantity_text}
+              {isImprecise(ing) && (
+                <span className="font-sans font-bold text-[10.5px] tracking-[0.4px] lowercase text-plum bg-plum/10 border border-plum/[0.28] rounded-full px-2 py-0.5 leading-tight whitespace-nowrap">
+                  her way
+                </span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <SecHead>Steps</SecHead>
+      <ol className="r2-steps">
+        {sortedSteps.map((step, idx) => (
+          <li
+            key={step.id ?? idx}
+            className="relative text-[14.5px] text-ink leading-[1.5] py-2.5 pl-9 border-b border-dashed border-line last:border-b-0"
+          >
+            {step.content}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
