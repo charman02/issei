@@ -126,7 +126,7 @@ export default function RecipePage() {
     if (!pendingAnim) return
     const handle = growRef.current
     if (handle) {
-      if (pendingAnim.beat === 'grow') handle.grow(pendingAnim.stage)
+      if (pendingAnim.beat === 'grow') handle.grow()
       else handle.bloom()
     }
     setPendingAnim(null)

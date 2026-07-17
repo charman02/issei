@@ -27,11 +27,14 @@ function soulClassFor(stage) {
   return null
 }
 
-// The visible-accent rule (brief §Interfaces): none on seed/sprout; sapling
-// shows .soulSapling when vitality!=='bare'; tree shows .soulTree when
-// vitality!=='bare'. A "bare" plant shows no accents even at sapling/tree.
-function soulVisible(stage, vitality) {
-  return soulClassFor(stage) !== null && vitality !== 'bare'
+// The visible-accent rule: none on seed/sprout; sapling shows .soulSapling and
+// tree shows .soulTree — on ANY sapling/tree regardless of vitality. This gates
+// on stage only (matching the locked v6 prototype's SOUL_BY_STAGE, which has no
+// vitality axis) so the plant's tappable accents agree with RecipePage's
+// stage-only hint line + soul row. `vitality` is retained for the data-vitality
+// attribute (future use) but does NOT gate accent visibility.
+function soulVisible(stage) {
+  return soulClassFor(stage) !== null
 }
 
 // Toggle the .on class on the accent nodes for the active soul set (mirrors the
@@ -65,7 +68,7 @@ export default function LivingPlant({
   // where props change (a non-imperative render). grow()/bloom() below override
   // this transiently, then settle back to the same rule.
   useLayoutEffect(() => {
-    applySoul(svgRef.current, stage, soulVisible(stage, vitality))
+    applySoul(svgRef.current, stage, soulVisible(stage))
   }, [stage, vitality])
 
   // Find the active .form element (the one plant.css shows for this stage).
@@ -109,7 +112,7 @@ export default function LivingPlant({
       const svg = svgRef.current
       if (reduceMotion) {
         // No animation: jump straight to the final resting state for this stage.
-        applySoul(svg, stage, soulVisible(stage, vitality))
+        applySoul(svg, stage, soulVisible(stage))
         return
       }
       clearTimers()
@@ -117,7 +120,7 @@ export default function LivingPlant({
       applySoul(svg, stage, false)
       const form = activeForm()
       if (!form) {
-        applySoul(svg, stage, soulVisible(stage, vitality))
+        applySoul(svg, stage, soulVisible(stage))
         return
       }
       // Restart the cascade animations cleanly (drop + re-add after a reflow).
@@ -127,7 +130,7 @@ export default function LivingPlant({
       form.classList.add('cascading')
       // Accents unfurl right after the canopy lands.
       timersRef.current.push(
-        setTimeout(() => applySoul(svgRef.current, stage, soulVisible(stage, vitality)), CANOPY_LANDED),
+        setTimeout(() => applySoul(svgRef.current, stage, soulVisible(stage)), CANOPY_LANDED),
       )
       // Rest the form back to its normal (transition-driven) state once done.
       timersRef.current.push(
@@ -142,7 +145,7 @@ export default function LivingPlant({
     function bloom() {
       const svg = svgRef.current
       // A bloom always ensures accents are shown (a memory has taken root).
-      applySoul(svg, stage, soulVisible(stage, vitality))
+      applySoul(svg, stage, soulVisible(stage))
       if (reduceMotion) return
       const sway = swayRef.current
       if (sway) {
