@@ -83,11 +83,18 @@ export default function RecipeBody({ recipe }) {
         )}
       </div>
 
-      {/* Byline + cuisine — whose recipe this is, and what kind. */}
+      {/* Byline + cuisine — whose recipe this is, and what kind. Icons match
+          the page header (plum heart for the person, bowl glyph for cuisine). */}
       {(byline || recipe.cuisine) && (
         <div className="flex items-center justify-center gap-[9px] flex-wrap mt-3 mb-1">
           {byline && (
-            <span className="font-sans text-[12.5px] font-bold tracking-[0.2px] text-plum">
+            <span className="inline-flex items-center gap-[5px] font-sans text-[12.5px] font-bold tracking-[0.2px] text-plum">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[13px] h-[13px]">
+                <path
+                  d="M12 20s-7-4.6-7-9.4A3.6 3.6 0 0 1 12 8a3.6 3.6 0 0 1 7 2.6C19 15.4 12 20 12 20Z"
+                  fill="#8A3D5A"
+                />
+              </svg>
               {byline}
             </span>
           )}
@@ -95,7 +102,11 @@ export default function RecipeBody({ recipe }) {
             <span className="w-px h-[13px] bg-line inline-block" />
           )}
           {recipe.cuisine && (
-            <span className="text-[11.5px] font-semibold tracking-[0.55px] uppercase text-ink-soft">
+            <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold tracking-[0.55px] uppercase text-ink-soft">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-3 h-3 opacity-85">
+                <path d="M4 12h16M4 12a8 8 0 0 0 16 0M3.5 12h17M6 20h12" stroke="#4A5540" strokeWidth="1.6" strokeLinecap="round" />
+                <path d="M10 4c0 1.4-1 2-1 3.2M14 4c0 1.4-1 2-1 3.2" stroke="#4A5540" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
               {recipe.cuisine}
             </span>
           )}
@@ -137,10 +148,11 @@ export default function RecipeBody({ recipe }) {
             className="relative text-[14.5px] text-ink leading-[1.5] py-2.5 pl-9 border-b border-dashed border-line last:border-b-0"
           >
             {step.content}
-            {/* The person's words for this step, woven in as a Caveat quote —
-                their voice, celebrated (living-recipe spec). */}
+            {/* The person's words for THIS step — a secondary aside, deliberately
+                distinct from the headline story: a quiet plum-bordered italic
+                serif note, not the large Caveat the story uses. */}
             {step.voice_note && step.voice_note.trim() && (
-              <span className="block font-hand text-[19px] leading-[1.25] text-plum mt-1.5">
+              <span className="block border-l-2 border-plum/40 pl-2.5 mt-2 font-serif italic text-[13.5px] leading-[1.35] text-ink-soft">
                 &ldquo;{step.voice_note.trim()}&rdquo;
               </span>
             )}

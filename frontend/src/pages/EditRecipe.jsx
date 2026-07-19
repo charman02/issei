@@ -34,13 +34,15 @@ export default function EditRecipe() {
           .sort((a, b) => a.position - b.position)
           .map((ing) => ({ name: ing.name, quantity: ing.quantity_text || '' }))
 
-        // Carry section_header through the round-trip: the PATCH replaces all
-        // steps, so dropping it here would null a persisted field on save.
+        // Carry section_header AND voice_note through the round-trip: the PATCH
+        // replaces all steps, so dropping either here would null a persisted
+        // field on save (voice_note = the person's words for that step).
         const flatSteps = [...recipe.steps]
           .sort((a, b) => a.position - b.position)
           .map((s) => ({
             content: s.content,
             section_header: s.section_header ?? null,
+            voice_note: s.voice_note ?? '',
           }))
 
         setInitialValues({
