@@ -197,3 +197,47 @@
     transition: none !important;
   }
 }
+
+/* ---- Grow panel ("how your plant grows") — the opt-in guidance surface. ---- */
+.growPath{
+  display:flex; align-items:center; justify-content:center; flex-wrap:wrap;
+  gap:2px; margin:16px 0 18px;
+}
+.growPath__seg{ display:inline-flex; align-items:center; gap:2px; }
+.growPath__stage{
+  font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:16px;
+  color:#4A5540; opacity:.5; padding:2px 6px; border-radius:8px;
+}
+.growPath__stage.is-reached{ opacity:1; }
+.growPath__stage.is-current{
+  color:#fff; background:linear-gradient(180deg,#7FA05A,#5C7A3F);
+  box-shadow:0 4px 12px -4px rgba(92,122,63,.6);
+}
+.growPath__arrow{ color:#C9A277; font-size:14px; padding:0 2px; }
+
+.growWhat{
+  font-family:'Cormorant Garamond',Georgia,serif; font-size:16px; color:#2E3A24;
+  margin:2px 0 8px; font-weight:600;
+}
+.growWhat__count{ color:#8A3D5A; font-weight:700; font-size:14px; }
+.growDims{ list-style:none; margin:0 0 14px; padding:0; }
+.growDim{
+  display:flex; align-items:center; gap:10px;
+  font-family:'Nunito Sans',system-ui,sans-serif; font-size:14.5px;
+  color:#4A5540; padding:7px 0; border-bottom:1px dashed #E3D9C4;
+}
+.growDim:last-child{ border-bottom:0; }
+.growDim__mark{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; border-radius:50%; flex:0 0 auto;
+  font-size:12px; font-weight:700;
+  color:#C9A277; border:1.5px solid #E3D9C4;
+}
+.growDim.is-filled{ color:#2E3A24; }
+.growDim.is-filled .growDim__mark{
+  color:#fff; background:#5C7A3F; border-color:#5C7A3F;
+}
+.growFoot{
+  font-family:'Cormorant Garamond',Georgia,serif; font-style:italic;
+  font-size:13.5px; line-height:1.4; color:#4A5540; opacity:.85; margin:0;
+}

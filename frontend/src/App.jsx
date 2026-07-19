@@ -8,6 +8,7 @@ import MyRecipes from './pages/MyRecipes'
 import RecipePage from './pages/RecipePage'
 import PlantRecipe from './pages/PlantRecipe'
 import EditRecipe from './pages/EditRecipe'
+import HandoffPage from './pages/HandoffPage'
 import SharedWithMe from './pages/SharedWithMe'
 import Profile from './pages/Profile'
 import InviteLanding from './pages/InviteLanding'
@@ -72,6 +73,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <EditRecipe />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/recipes/:id/handoff"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <HandoffPage />
             </Layout>
           </ProtectedRoute>
         }

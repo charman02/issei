@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import RecipeBody from './RecipeBody'
+import { growPlan } from '../lib/growth'
 import './soulSheet.css'
 
 // SoulSheet — the R2 living-plant recipe page's bottom sheet. Tapping a plant
@@ -62,7 +63,7 @@ function BlossomPanel({ recipe, quoteIndex = 0 }) {
 
   return (
     <>
-      <p className="sheetKicker person">a memory · her words</p>
+      <p className="sheetKicker person">a memory · their words</p>
       {featuredText && (
         <div className="featMem">
           <p className="quote">&ldquo;{featuredText}&rdquo;</p>
@@ -154,6 +155,73 @@ function RecipePanel({ recipe }) {
   )
 }
 
+// grow → the opt-in "How your plant grows" panel. Names what carries the person
+// (story / photo / origin / their words), showing which are present. This is the
+// detailed surface (kept OFF the plant face so it never reads as a scoreboard).
+const STAGE_STEPS = [
+  { key: 'sprout', label: 'Sprout', hint: 'the first sign of life' },
+  { key: 'sapling', label: 'Sapling', hint: 'growing, being cooked' },
+  { key: 'tree', label: 'Tree', hint: 'richly told & passed on' },
+]
+
+function GrowPanel({ recipe }) {
+  const plan = growPlan(recipe)
+  const filledCount = plan.dimensions.filter((d) => d.filled).length
+  const activeIdx = STAGE_STEPS.findIndex((s) => s.key === plan.stage)
+  return (
+    <>
+      <p className="sheetKicker">how your plant grows</p>
+      <p className="sheetTitle">Tending {recipe.name}</p>
+      <p className="sheetBody">{plan.rule}</p>
+
+      {/* the path — sprout → sapling → tree, with the current stage marked */}
+      <div className="growPath">
+        {STAGE_STEPS.map((s, i) => (
+          <span key={s.key} className="growPath__seg">
+            <span
+              className={
+                'growPath__stage' +
+                (i <= activeIdx && activeIdx >= 0 ? ' is-reached' : '') +
+                (s.key === plan.stage ? ' is-current' : '')
+              }
+            >
+              {s.label}
+            </span>
+            {i < STAGE_STEPS.length - 1 && (
+              <span className="growPath__arrow" aria-hidden="true">
+                &rarr;
+              </span>
+            )}
+          </span>
+        ))}
+      </div>
+
+      {/* the soul dimensions — what carries the person; ✓ present / ○ open */}
+      <p className="growWhat">
+        What brings {recipe.name} to life{' '}
+        <span className="growWhat__count">({filledCount} of 4)</span>
+      </p>
+      <ul className="growDims">
+        {plan.dimensions.map((d) => (
+          <li
+            key={d.key}
+            className={'growDim' + (d.filled ? ' is-filled' : '')}
+          >
+            <span className="growDim__mark" aria-hidden="true">
+              {d.filled ? '✓' : '○'}
+            </span>
+            {d.label}
+          </li>
+        ))}
+      </ul>
+      <p className="growFoot">
+        Cooking keeps it alive too — but a recipe only becomes a tree once its
+        person truly comes through.
+      </p>
+    </>
+  )
+}
+
 export default function SoulSheet({ open, panel, recipe, onClose }) {
   const kind = panel && panel.kind
 
@@ -189,6 +257,7 @@ export default function SoulSheet({ open, panel, recipe, onClose }) {
             {kind === 'fruit' && <FruitPanel recipe={recipe} />}
             {kind === 'base' && <BasePanel recipe={recipe} />}
             {kind === 'recipe' && <RecipePanel recipe={recipe} />}
+            {kind === 'grow' && <GrowPanel recipe={recipe} />}
           </div>
         )}
       </div>

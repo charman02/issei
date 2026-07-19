@@ -1,4 +1,47 @@
-from app.services.growth import growth_stage, growth_vitality
+from types import SimpleNamespace
+from app.services.growth import growth_stage, growth_vitality, soul_count
+
+
+def _recipe(**kw):
+    """A lightweight stand-in with the attrs soul_count reads."""
+    base = dict(
+        story=None, cover_photo_url=None, origin_attribution=None, notes=None, steps=[]
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _step(voice_note=None):
+    return SimpleNamespace(voice_note=voice_note)
+
+
+def test_soul_counts_person_dimensions():
+    # story + photo + origin = 3 soul dimensions
+    r = _recipe(story="s", cover_photo_url="u", origin_attribution="Lola · Cebu")
+    assert soul_count(r) == 3
+
+
+def test_soul_counts_step_words():
+    # a step with the person's words counts as a soul dimension
+    r = _recipe(steps=[_step("don't crowd the pan"), _step(None)])
+    assert soul_count(r) == 1
+    # blank/whitespace-only voice_notes do NOT count
+    assert soul_count(_recipe(steps=[_step("   "), _step("")])) == 0
+
+
+def test_generic_notes_do_not_count_as_soul():
+    # the practical recipe-level `notes` field is NOT soul (2026-07-18 decision)
+    assert soul_count(_recipe(notes="use a heavy pot")) == 0
+
+
+def test_full_soul_is_four_dimensions():
+    r = _recipe(
+        story="s",
+        cover_photo_url="u",
+        origin_attribution="Lola",
+        steps=[_step("her words")],
+    )
+    assert soul_count(r) == 4
 
 
 def test_seed_is_nothing_done():

@@ -16,11 +16,31 @@ _FRUIT_COOKS = 12  # activity to fruit (then caps)
 
 
 def soul_count(recipe) -> int:
-    """How many soul dimensions are present (0-4)."""
-    return sum(
-        bool(getattr(recipe, f, None))
-        for f in ("story", "cover_photo_url", "origin_attribution", "notes")
+    """How many soul dimensions are present (0-4).
+
+    Soul = what carries the PERSON, not generic recipe metadata:
+      • story               — the framing narrative / their words
+      • cover_photo_url      — a photo (presence)
+      • origin_attribution   — who it came from
+      • their words on steps — ≥1 step with a voice_note (the person's voice)
+
+    Deliberately NOT counted: the generic recipe-level `notes` field (practical
+    detail, not necessarily soul — 2026-07-18 growth decision), and cooking
+    (use advances only to sapling, in growth_stage).
+    """
+    dims = (
+        bool(getattr(recipe, "story", None)),
+        bool(getattr(recipe, "cover_photo_url", None)),
+        bool(getattr(recipe, "origin_attribution", None)),
+        _has_step_words(recipe),
     )
+    return sum(dims)
+
+
+def _has_step_words(recipe) -> bool:
+    """True if any step carries the person's words (a non-empty voice_note)."""
+    steps = getattr(recipe, "steps", None) or []
+    return any((getattr(s, "voice_note", None) or "").strip() for s in steps)
 
 
 def growth_stage(soul: int, cook_count: int) -> str:

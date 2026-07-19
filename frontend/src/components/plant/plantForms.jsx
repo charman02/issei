@@ -208,7 +208,7 @@ export const SOUL_ACCENTS = (
       data-quote="0"
       role="button"
       tabIndex={0}
-      aria-label="A memory in her words"
+      aria-label="A memory in their words"
       style={{ '--tx': '134px', '--ty': '146px' }}
     >
       <g className="petals">
@@ -240,7 +240,7 @@ export const SOUL_ACCENTS = (
       data-quote="1"
       role="button"
       tabIndex={0}
-      aria-label="A memory in her words"
+      aria-label="A memory in their words"
       style={{ '--tx': '150px', '--ty': '174px' }}
     >
       <g className="petals">
@@ -261,7 +261,7 @@ export const SOUL_ACCENTS = (
       data-quote="0"
       role="button"
       tabIndex={0}
-      aria-label="A memory in her words"
+      aria-label="A memory in their words"
       style={{ '--tx': '118px', '--ty': '120px' }}
     >
       <g className="petals">
@@ -293,7 +293,7 @@ export const SOUL_ACCENTS = (
       data-quote="1"
       role="button"
       tabIndex={0}
-      aria-label="A memory in her words"
+      aria-label="A memory in their words"
       style={{ '--tx': '152px', '--ty': '108px' }}
     >
       <g className="petals">
@@ -325,7 +325,7 @@ export const SOUL_ACCENTS = (
       data-quote="2"
       role="button"
       tabIndex={0}
-      aria-label="A memory in her words"
+      aria-label="A memory in their words"
       style={{ '--tx': '184px', '--ty': '172px' }}
     >
       <g className="petals">

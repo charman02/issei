@@ -4,11 +4,10 @@ import client from '../api/client'
 import { cookRecipe } from '../api/lineage'
 import LivingPlant from '../components/LivingPlant'
 import SoulSheet from '../components/SoulSheet'
-import HandoffInvite from '../components/HandoffInvite'
 import VisibilityControl from '../components/VisibilityControl'
 import Icon from '../components/Icon'
 import { decideGrowth } from '../hooks/useGrowthAnimation'
-import { stageForRecipe, vitalityForRecipe } from '../lib/growth'
+import { stageForRecipe, vitalityForRecipe, growNudge } from '../lib/growth'
 import { sourceNameOf } from '../lib/sourceName'
 
 // RecipePage — the R2 living-plant recipe hero. The recipe is a *plant*: it
@@ -98,7 +97,6 @@ export default function RecipePage() {
   const [recipe, setRecipe] = useState(null)
   const [error, setError] = useState('')
   const [sheet, setSheet] = useState({ open: false, panel: null })
-  const [showHandoff, setShowHandoff] = useState(false)
   const [tending, setTending] = useState(false)
   // A pending grow/bloom beat, played AFTER the fresh recipe (and its new stage
   // prop) has rendered — LivingPlant.grow() reads stage from its closure, so the
@@ -189,6 +187,7 @@ export default function RecipePage() {
   const vitality = vitalityForRecipe(recipe)
   const hasSoul = STAGES_WITH_SOUL.has(stage)
   const caption = CAPTIONS[stage] || CAPTIONS.seed
+  const nudge = growNudge(recipe) // gentle "next nourishing act", null at tree
   const source = sourceNameOf(recipe)
   // Byline: prefer the recorded origin person ("from Lola"); otherwise fall back
   // to the recipe's own author/keeper ("kept by You") so the header always shows
@@ -319,12 +318,30 @@ export default function RecipePage() {
         </p>
       )}
 
-      {/* STAGE CAPTION — where the plant is in its life. */}
-      <p className="text-center px-[30px] pt-1.5 pb-3 font-serif italic font-medium text-[16.5px] leading-[1.3] text-ink-soft relative z-[3]">
+      {/* STAGE CAPTION — where the plant is in its life. Tappable: opens the
+          opt-in "How your plant grows" panel (the detail lives there, not on the
+          face, so it never feels like a scoreboard). */}
+      <button
+        onClick={() => openSheet('grow')}
+        aria-label="How your plant grows"
+        className="block w-full text-center px-[30px] pt-1.5 pb-1 font-serif italic font-medium text-[16.5px] leading-[1.3] text-ink-soft relative z-[3]"
+      >
         <b className="not-italic font-semibold text-growth">{caption.lead}</b>
         {' · '}
         {caption.rest}
-      </p>
+        <span className="not-italic text-ink-soft/60 ml-1.5 text-[13px] align-middle">
+          &#9432;
+        </span>
+      </button>
+
+      {/* GENTLE GROW LINE — one soft "next nourishing act" (names one real gap).
+          No bar, no %, no count. Hidden once the plant is a tree. */}
+      {nudge && (
+        <p className="text-center px-[34px] pb-3 pt-0.5 font-serif italic text-[14px] leading-[1.35] text-growth/90 relative z-[3]">
+          {nudge}
+        </p>
+      )}
+      {!nudge && <div className="pb-3" />}
 
       {/* SOUL ROW — the true numbers; rests at 0 on seed/sprout. */}
       <div
@@ -374,8 +391,8 @@ export default function RecipePage() {
         </div>
       </div>
 
-      {/* OWNER SURFACES — visibility control, pass-it-on, and the warm
-          empty-state invitation (only when there's no story yet). */}
+      {/* OWNER SURFACES — visibility control + a prominent "Pass it on" button
+          that opens its own focused page (not a cramped inline form). */}
       {isOwner && (
         <div className="px-6 pt-2 pb-4 relative z-[3]">
           <VisibilityControl
@@ -384,23 +401,14 @@ export default function RecipePage() {
           />
 
           <button
-            onClick={() => setShowHandoff((v) => !v)}
-            className="mt-3 px-5 py-3 rounded-[10px] border border-line text-ink-soft font-serif text-sm"
+            onClick={() => navigate(`/recipes/${recipe.id}/handoff`)}
+            className="mt-3 w-full inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card border border-terra/40 rounded-[10px] px-4 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] active:translate-y-px transition hover:bg-terra/5"
           >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[18px] h-[18px]">
+              <path d="M4 12l16-7-7 16-2.5-6.5L4 12Z" stroke="#B5502A" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" />
+            </svg>
             Pass it on
           </button>
-
-          {showHandoff && (
-            <div className="mt-4 border-t border-line pt-4">
-              <HandoffInvite
-                recipeId={recipe.id}
-                recipeVisibility={recipe.visibility}
-                sourceName={source}
-                onSent={() => setShowHandoff(false)}
-                onSkip={() => setShowHandoff(false)}
-              />
-            </div>
-          )}
         </div>
       )}
 

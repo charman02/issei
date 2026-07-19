@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { isImprecise, impreciseLabel } from '../lib/measures'
 import Wordmark from './Wordmark'
 
@@ -46,6 +47,11 @@ function SecHead({ children }) {
 }
 
 export default function RecipeBody({ recipe }) {
+  // Cooking mode: default OFF (rich — story + their words woven in, the product
+  // thesis). Toggling ON strips to clean ingredients + numbered steps for a
+  // distraction-free cook. Rich-by-default honors the soul; one tap = focus.
+  const [cooking, setCooking] = useState(false)
+
   // Direct-FK ingredients + sectioned ingredients, merged and ordered by position.
   const allIngredients = [
     ...(recipe.ingredients || []),
@@ -68,7 +74,34 @@ export default function RecipeBody({ recipe }) {
 
   return (
     <div className="mt-1.5">
-      {/* Cover photo (or the cream Wordmark fallback when there's no photo). */}
+      {/* Cooking-mode toggle — a quiet segmented control. Rich by default. */}
+      <div className="flex justify-center mb-3">
+        <div className="inline-flex rounded-full border border-line bg-paper/70 p-0.5 text-[12px] font-sans font-bold">
+          <button
+            onClick={() => setCooking(false)}
+            aria-pressed={!cooking}
+            className={
+              'px-3.5 py-1.5 rounded-full transition ' +
+              (!cooking ? 'bg-card text-ink shadow-sm' : 'text-ink-soft')
+            }
+          >
+            The whole story
+          </button>
+          <button
+            onClick={() => setCooking(true)}
+            aria-pressed={cooking}
+            className={
+              'px-3.5 py-1.5 rounded-full transition ' +
+              (cooking ? 'bg-growth text-white shadow-sm' : 'text-ink-soft')
+            }
+          >
+            Cooking mode
+          </button>
+        </div>
+      </div>
+
+      {/* Cover photo (or the cream Wordmark fallback). Hidden in cooking mode. */}
+      {!cooking && (
       <div className="relative w-full h-[168px] rounded-2xl overflow-hidden border border-line mb-1.5 mt-0.5 bg-paper shadow-[0_8px_18px_-12px_rgba(46,58,36,.5)]">
         {recipe.cover_photo_url ? (
           <img
@@ -82,10 +115,12 @@ export default function RecipeBody({ recipe }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Byline + cuisine — whose recipe this is, and what kind. Icons match
-          the page header (plum heart for the person, bowl glyph for cuisine). */}
-      {(byline || recipe.cuisine) && (
+          the page header (plum heart for the person, bowl glyph for cuisine).
+          Hidden in cooking mode. */}
+      {!cooking && (byline || recipe.cuisine) && (
         <div className="flex items-center justify-center gap-[9px] flex-wrap mt-3 mb-1">
           {byline && (
             <span className="inline-flex items-center gap-[5px] font-sans text-[12.5px] font-bold tracking-[0.2px] text-plum">
@@ -113,8 +148,8 @@ export default function RecipeBody({ recipe }) {
         </div>
       )}
 
-      {/* Her words — the story, in Caveat, set apart just under the photo. */}
-      {recipe.story && (
+      {/* Their words — the story, in Caveat. Hidden in cooking mode. */}
+      {!cooking && recipe.story && (
         <p className="font-hand text-[23px] leading-[1.2] text-plum text-center mx-1 mt-3 mb-3 whitespace-pre-line">
           {recipe.story}
         </p>
@@ -150,8 +185,8 @@ export default function RecipeBody({ recipe }) {
             {step.content}
             {/* The person's words for THIS step — a secondary aside, deliberately
                 distinct from the headline story: a quiet plum-bordered italic
-                serif note, not the large Caveat the story uses. */}
-            {step.voice_note && step.voice_note.trim() && (
+                serif note. Hidden in cooking mode. */}
+            {!cooking && step.voice_note && step.voice_note.trim() && (
               <span className="block border-l-2 border-plum/40 pl-2.5 mt-2 font-serif italic text-[13.5px] leading-[1.35] text-ink-soft">
                 &ldquo;{step.voice_note.trim()}&rdquo;
               </span>
