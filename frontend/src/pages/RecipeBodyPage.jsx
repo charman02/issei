@@ -22,6 +22,8 @@ export default function RecipeBodyPage() {
   }, [id])
 
   const back = () => navigate(`/recipes/${id}`)
+  const currentUser = JSON.parse(localStorage.getItem('issei_user') || '{}')
+  const isOwner = recipe && currentUser.id === recipe.user_id
 
   if (error) {
     return (
@@ -41,7 +43,7 @@ export default function RecipeBodyPage() {
   return (
     <div className="relative min-h-screen">
       <header className="px-6 pt-4 pb-1">
-        <div className="flex items-center mb-2">
+        <div className="flex items-center justify-between mb-2">
           <button
             onClick={back}
             aria-label="Back to the plant"
@@ -49,6 +51,16 @@ export default function RecipeBodyPage() {
           >
             <Icon name="back" className="w-5 h-5" />
           </button>
+          {/* Owner-only edit affordance — mirrors the plant page's header. */}
+          {isOwner && (
+            <button
+              onClick={() => navigate(`/recipes/${recipe.id}/edit`)}
+              aria-label="Edit recipe"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full border border-line bg-card/70 text-terra shadow-[0_1px_0_rgba(255,255,255,.55)_inset,0_4px_12px_-8px_rgba(46,58,36,.4)] active:scale-95 transition"
+            >
+              <Icon name="edit" className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <h1 className="font-serif font-semibold text-[30px] leading-[1.04] text-ink text-center">
           {recipe.name}
