@@ -382,7 +382,7 @@ export default function RecipePage() {
             <span className="leading-none">Add a memory</span>
           </button>
           <button
-            onClick={() => openSheet('recipe')}
+            onClick={() => navigate(`/recipes/${recipe.id}/full`)}
             className="flex-1 inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card/60 border border-line rounded-[10px] px-3.5 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] transition-all duration-150 hover:bg-card active:scale-[0.97] active:bg-terra/10"
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[15px] h-[15px]">

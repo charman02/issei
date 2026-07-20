@@ -19,7 +19,11 @@ const recipe = {
 function renderAt() {
   return render(
     <MemoryRouter initialEntries={['/recipes/1']}>
-      <Routes><Route path="/recipes/:id" element={<RecipePageDefault />} /></Routes>
+      <Routes>
+        <Route path="/recipes/:id" element={<RecipePageDefault />} />
+        {/* marker route so we can assert navigation to the full recipe page */}
+        <Route path="/recipes/:id/full" element={<div>FULL RECIPE PAGE</div>} />
+      </Routes>
     </MemoryRouter>,
   )
 }
@@ -36,10 +40,12 @@ describe('RecipePage', () => {
     await waitFor(() => expect(screen.getByText('Adobo')).toBeTruthy())
     expect(document.querySelector('.plant')).toBeTruthy()
   })
-  it('opens the recipe body sheet when "View recipe" is tapped', async () => {
+  it('navigates to the full recipe page when "View recipe" is tapped', async () => {
     renderAt()
     await waitFor(() => screen.getByText('Adobo'))
     fireEvent.click(screen.getByText(/view recipe/i))
-    expect(document.querySelector('.sheet.open')).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByText('FULL RECIPE PAGE')).toBeTruthy(),
+    )
   })
 })
