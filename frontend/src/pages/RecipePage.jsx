@@ -329,9 +329,17 @@ export default function RecipePage() {
         <b className="not-italic font-semibold text-growth">{caption.lead}</b>
         {' · '}
         {caption.rest}
-        <span className="not-italic text-ink-soft/60 ml-1.5 text-[13px] align-middle">
-          &#9432;
-        </span>
+        {/* crisp SVG info glyph (the &#9432; font char rendered grainy). */}
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+          className="inline-block w-[15px] h-[15px] ml-1.5 -mt-0.5 align-middle text-ink-soft/55"
+        >
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+          <circle cx="12" cy="8" r="1.15" fill="currentColor" />
+          <path d="M12 11.2v5.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
       </button>
 
       {/* GENTLE GROW LINE — one soft "next nourishing act" (names one real gap).
@@ -359,7 +367,7 @@ export default function RecipePage() {
           <button
             onClick={tend}
             disabled={tending}
-            className="flex-1 inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-white bg-terra rounded-[10px] px-3.5 py-3 shadow-[0_8px_16px_rgba(181,80,42,0.28)] active:translate-y-px disabled:opacity-70 transition"
+            className="flex-1 inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-white bg-terra rounded-[10px] px-3.5 py-3 shadow-[0_8px_16px_rgba(181,80,42,0.28)] transition-all duration-150 hover:bg-[#a3471f] active:scale-[0.97] active:bg-[#963f1a] active:shadow-[0_3px_8px_rgba(181,80,42,0.3)] disabled:opacity-70"
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-4 h-4 flex-shrink-0">
               <g fill="#FCF8EE">
@@ -375,7 +383,7 @@ export default function RecipePage() {
           </button>
           <button
             onClick={() => openSheet('recipe')}
-            className="flex-1 inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card/60 border border-line rounded-[10px] px-3.5 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] active:translate-y-px transition"
+            className="flex-1 inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card/60 border border-line rounded-[10px] px-3.5 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] transition-all duration-150 hover:bg-card active:scale-[0.97] active:bg-terra/10"
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[15px] h-[15px]">
               <path
@@ -402,10 +410,10 @@ export default function RecipePage() {
 
           <button
             onClick={() => navigate(`/recipes/${recipe.id}/handoff`)}
-            className="mt-3 w-full inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card border border-terra/40 rounded-[10px] px-4 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] active:translate-y-px transition hover:bg-terra/5"
+            className="mt-3 w-full inline-flex items-center justify-center gap-2 font-serif font-semibold text-[15px] text-terra bg-card/60 border border-line rounded-[10px] px-3.5 py-3 shadow-[0_1px_0_rgba(255,255,255,.5)_inset] transition-all duration-150 hover:bg-card active:scale-[0.98] active:bg-terra/10"
           >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[18px] h-[18px]">
-              <path d="M4 12l16-7-7 16-2.5-6.5L4 12Z" stroke="#B5502A" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" />
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="w-[15px] h-[15px]">
+              <path d="M4 12l16-7-7 16-2.5-6.5L4 12Z" stroke="#B5502A" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
             </svg>
             Pass it on
           </button>
