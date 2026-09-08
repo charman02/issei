@@ -12,7 +12,7 @@ from app.models.recipe import Recipe
 from app.models.post import Post
 from app.models.handoff import Handoff
 from app.models.recipe_request import RecipeRequest
-from app.schemas.post import FeedSeenIn, PostCreate, PostResponse, PostWithRequesters
+from app.schemas.post import FeedSeenIn, PostCreate, PostResponse, PostUpdate, PostWithRequesters
 from app.schemas.notification import FulfillRequest, RequesterSummary
 from app.services.friends import are_friends, friend_ids
 from app.services.notifications import notify
@@ -677,6 +677,68 @@ def get_post(
     counts, mine = _request_context([post], current_user, db)
     return _to_response(
         post, post.user, viewable,
+        viewer_id=current_user.id, request_counts=counts, my_requested_post_ids=mine,
+    )
+
+
+@router.patch("/{post_id}", response_model=PostResponse)
+def update_post(
+    post_id: int,
+    body: PostUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Edit your own meal. Author-only; a non-author (or unknown id) gets 404, not 403 — same
+    answer `delete_post` gives, so neither confirms the post exists to someone not entitled.
+
+    READ IS NOT WRITE: a friend can see this post and can never edit it. The ownership filter
+    here is the whole authorization question, exactly as in `delete_post` and `patch_recipe`.
+
+    What editing does NOT do:
+      - It does not change the author. A post is "I made this"; reassigning it makes that false.
+      - It does not touch the read-mark. An edit is not a new post, so it must not resurface in
+        anyone's "new since you last looked" (#97) — `is_new` keys on the post's id, which
+        doesn't move, so this is true by construction rather than by a guard.
+      - It does not notify anyone. Nobody asked to hear that a caption changed.
+    """
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if post is None or post.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    if body.photo_url is not None:
+        post.photo_url = body.photo_url
+    if body.dish_name is not None:
+        post.dish_name = body.dish_name.strip()
+    if body.description is not None:
+        # "" clears it back to NULL; None above meant "unchanged".
+        post.description = body.description.strip() or None
+    if body.visibility is not None:
+        post.visibility = body.visibility
+    if body.recipe_id is not None:
+        if body.recipe_id == 0:
+            post.recipe_id = None  # detach
+        else:
+            # Same rule as create: only a recipe you OWN and haven't deleted. A post must never
+            # link someone else's recipe, and never a tombstone.
+            recipe = (
+                db.query(Recipe)
+                .filter(
+                    Recipe.id == body.recipe_id,
+                    Recipe.user_id == current_user.id,
+                    Recipe.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if recipe is None:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            post.recipe_id = recipe.id
+
+    db.commit()
+    db.refresh(post)
+    viewable = _viewable_recipe_ids([post], current_user, db)
+    counts, mine = _request_context([post], current_user, db)
+    return _to_response(
+        post, current_user, viewable,
         viewer_id=current_user.id, request_counts=counts, my_requested_post_ids=mine,
     )
 

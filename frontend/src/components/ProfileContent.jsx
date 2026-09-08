@@ -19,10 +19,16 @@ export default function ProfileContent({ userId, emptyLabel }) {
   const [tab, setTab] = useState('recipes')
   const [recipes, setRecipes] = useState(null) // null = not loaded yet
   const [posts, setPosts] = useState(null)
+  // How many to show before "Show all". A profile is a first impression, not an archive: six
+  // recipes is enough to read someone's cooking, and it keeps the page short enough that what
+  // sits below it (the block control on another person's profile) is actually reachable.
+  // Reset per tab-switch and per profile, so "expanded" never leaks between people.
+  const [showAll, setShowAll] = useState(false)
 
   // Reset when the profile changes (navigating between two people reuses this component).
   useEffect(() => {
     setTab('recipes')
+    setShowAll(false)
     setRecipes(null)
     setPosts(null)
   }, [userId])
@@ -38,6 +44,13 @@ export default function ProfileContent({ userId, emptyLabel }) {
   }, [tab, userId, recipes, posts])
 
   const active = tab === 'recipes' ? recipes : posts
+  // The API caps these lists server-side (30 recipes via PROFILE_GRID_LIMIT, 30 posts via
+  // FEED_PAGE), so "Show all" reveals everything that was FETCHED — not everything that
+  // exists. Past 30 there is nothing more on the client to show, and a paginated profile
+  // would need `before_id` on the recipe endpoint, which it doesn't have.
+  const PREVIEW = 6
+  const shown = active && !showAll ? active.slice(0, PREVIEW) : active
+  const hiddenCount = active && !showAll ? Math.max(0, active.length - PREVIEW) : 0
 
   return (
     <div className="mt-8">
@@ -54,7 +67,10 @@ export default function ProfileContent({ userId, emptyLabel }) {
               key={t}
               role="tab"
               aria-selected={tab === t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                setTab(t)
+                setShowAll(false)
+              }}
               className={`px-5 py-1.5 rounded-full capitalize transition ${
                 tab === t ? 'bg-terra text-cream' : 'text-ink-soft'
               }`}
@@ -76,7 +92,7 @@ export default function ProfileContent({ userId, emptyLabel }) {
         ) : tab === 'recipes' ? (
           // Two-up grid, matching MyRecipes/Browse.
           <div className="grid grid-cols-2 gap-4">
-            {recipes.map((r) => (
+            {shown.map((r) => (
               <RecipeCard
                 key={r.id}
                 recipe={r}
@@ -89,10 +105,21 @@ export default function ProfileContent({ userId, emptyLabel }) {
           // sends the photo through to the post's own page, matching Browse and the Kitchen
           // (and it's how the author reaches their own delete control).
           <div className="space-y-5">
-            {posts.map((p) => (
+            {shown.map((p) => (
               <PostCard key={p.id} post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
             ))}
           </div>
+        )}
+
+        {/* Only when there's genuinely more to reveal. Not a permanent control: a profile with
+            four recipes should never show a button that does nothing. */}
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="mt-5 w-full rounded-full bg-cream text-ink border-2 border-ink px-4 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+          >
+            Show all {active.length} {tab === 'recipes' ? 'recipes' : 'posts'}
+          </button>
         )}
       </div>
     </div>

@@ -8,9 +8,10 @@ vi.mock('../api/posts', () => ({
   requestRecipe: vi.fn(),
   retractRequest: vi.fn(),
   deletePost: vi.fn(),
+  updatePost: vi.fn(),
 }))
 vi.mock('../api/client', () => ({ default: {}, toUserMessage: (e, f) => f }))
-import { getPost, requestRecipe, retractRequest, deletePost } from '../api/posts'
+import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
 import PostPage from './PostPage'
 
 const postData = (over = {}) => ({
@@ -210,7 +211,7 @@ describe('PostPage — the cook on their own meal', () => {
     deletePost.mockResolvedValue({})
     renderPost()
     await screen.findByText('Sunday Adobo')
-    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     await userEvent.click(screen.getByRole('button', { name: /^delete it$/i }))
     await waitFor(() => expect(deletePost).toHaveBeenCalledWith(5))
     expect(await screen.findByText('your kitchen')).toBeInTheDocument()
@@ -220,7 +221,7 @@ describe('PostPage — the cook on their own meal', () => {
     getPost.mockResolvedValue({ data: mine() })
     renderPost()
     await screen.findByText('Sunday Adobo')
-    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     expect(deletePost).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /keep it/i }))
     expect(deletePost).not.toHaveBeenCalled()
@@ -230,7 +231,7 @@ describe('PostPage — the cook on their own meal', () => {
     getPost.mockResolvedValue({ data: mine({ recipe_id: 9, request_count: 2 }) })
     renderPost()
     await screen.findByText('Sunday Adobo')
-    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     expect(screen.getByText(/recipe you attached stays/i)).toBeInTheDocument()
     // ...and it's honest about the asks it takes with it (RecipeRequest cascades).
     expect(screen.getByText(/stops waiting/i)).toBeInTheDocument()
@@ -240,7 +241,7 @@ describe('PostPage — the cook on their own meal', () => {
     getPost.mockResolvedValue({ data: mine({ recipe_id: null, request_count: 0 }) })
     renderPost()
     await screen.findByText('Sunday Adobo')
-    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     expect(screen.queryByText(/stops waiting/i)).toBeNull()
     expect(screen.queryByText(/recipe you attached/i)).toBeNull()
   })
@@ -250,7 +251,7 @@ describe('PostPage — the cook on their own meal', () => {
     deletePost.mockRejectedValue(new Error('nope'))
     renderPost()
     await screen.findByText('Sunday Adobo')
-    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     await userEvent.click(screen.getByRole('button', { name: /^delete it$/i }))
     expect(await screen.findByText(/couldn.t delete this post/i)).toBeInTheDocument()
     expect(screen.getByText('Sunday Adobo')).toBeInTheDocument()
@@ -260,6 +261,116 @@ describe('PostPage — the cook on their own meal', () => {
     getPost.mockResolvedValue({ data: postData() }) // author 42, viewer 1
     renderPost()
     await screen.findByText('Sunday Adobo')
-    expect(screen.queryByRole('button', { name: /delete this meal/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^delete$/i })).toBeNull()
+  })
+})
+
+// Editing a meal you posted, and the date it was posted — both were missing.
+describe('PostPage — editing your own meal', () => {
+  const mine = (over = {}) => postData({ user_id: 1, ...over })
+
+  it('shows WHEN it was posted', async () => {
+    // A permalink is where you come to know, so the date is absolute rather than "3d ago".
+    getPost.mockResolvedValue({ data: mine({ created_at: '2026-08-20T12:00:00Z' }) })
+    renderPost()
+    // Locale-independent: toLocaleDateString orders the parts by the runtime's locale
+    // ("20 Aug 2026" here, "Aug 20, 2026" in a US-default test runner), so assert the PARTS
+    // rather than an ordering the browser is entitled to choose.
+    expect(await screen.findByText(/Aug/)).toBeInTheDocument()
+    expect(screen.getByText(/2026/)).toBeInTheDocument()
+    expect(screen.getByText(/20/)).toBeInTheDocument()
+  })
+
+  it('renders nothing rather than "Invalid Date" for a broken timestamp', async () => {
+    getPost.mockResolvedValue({ data: mine({ created_at: 'not-a-date' }) })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    expect(screen.queryByText(/invalid date/i)).toBeNull()
+  })
+
+  it('offers edit and delete as buttons, not underlined text', async () => {
+    getPost.mockResolvedValue({ data: mine() })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    expect(screen.getByRole('button', { name: /edit this meal/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^delete$/i })).toBeInTheDocument()
+  })
+
+  it('saves an edit and shows the updated meal', async () => {
+    getPost.mockResolvedValue({ data: mine({ description: 'first go' }) })
+    updatePost.mockResolvedValue({
+      data: mine({ dish_name: 'Chicken adobo', description: 'second go' }),
+    })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+
+    const name = screen.getByLabelText(/what is it\?/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Chicken adobo')
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(updatePost).toHaveBeenCalledWith(5, expect.objectContaining({
+      dish_name: 'Chicken adobo',
+    })))
+    expect(await screen.findByText('Chicken adobo')).toBeInTheDocument()
+  })
+
+  it('sends the description even when unchanged, so clearing one works', async () => {
+    // The API reads null as "leave it alone", so a diff would silently fail to clear a
+    // description. The client sends the whole editable set instead.
+    getPost.mockResolvedValue({ data: mine({ description: 'a line' }) })
+    updatePost.mockResolvedValue({ data: mine({ description: null }) })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+    await userEvent.clear(screen.getByLabelText(/anything to add/i))
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() =>
+      expect(updatePost).toHaveBeenCalledWith(5, expect.objectContaining({ description: '' })),
+    )
+  })
+
+  it('will not save a blank dish name', async () => {
+    getPost.mockResolvedValue({ data: mine() })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+    await userEvent.clear(screen.getByLabelText(/what is it\?/i))
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled()
+  })
+
+  it('says so when the save fails, and keeps your draft', async () => {
+    getPost.mockResolvedValue({ data: mine() })
+    updatePost.mockRejectedValue(new Error('offline'))
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+    const name = screen.getByLabelText(/what is it\?/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Renamed')
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    expect(await screen.findByText(/couldn.t save your changes/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/what is it\?/i)).toHaveValue('Renamed')
+  })
+
+  it('never mind discards the draft', async () => {
+    getPost.mockResolvedValue({ data: mine() })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+    await userEvent.type(screen.getByLabelText(/what is it\?/i), 'zzz')
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+    expect(updatePost).not.toHaveBeenCalled()
+    // Reopening starts from the POST again, not from the abandoned draft.
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+    expect(screen.getByLabelText(/what is it\?/i)).toHaveValue('Sunday Adobo')
+  })
+
+  it("offers no edit control on someone else's meal", async () => {
+    getPost.mockResolvedValue({ data: postData() }) // author 42, viewer 1
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    expect(screen.queryByRole('button', { name: /edit this meal/i })).toBeNull()
   })
 })

@@ -391,3 +391,150 @@ def test_all_post_endpoints_require_auth(client, make_user):
     assert client.get("/posts/feed").status_code == 401
     assert client.get("/posts/browse").status_code == 401
     assert client.post("/posts", json={"photo_url": "x", "dish_name": "y"}).status_code == 401
+
+
+# --- editing your own meal (PATCH /posts/{id}) ---
+
+
+def _own(client, headers, **over):
+    body = {"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "friends"}
+    body.update(over)
+    r = client.post("/posts", json=body, headers=headers)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_the_author_can_edit_their_meal(client, make_user):
+    _, ah = make_user()
+    post = _own(client, ah, description="first go")
+
+    r = client.patch(
+        f"/posts/{post['id']}",
+        json={"dish_name": "Chicken adobo", "description": "second go", "visibility": "public"},
+        headers=ah,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dish_name"] == "Chicken adobo"
+    assert body["description"] == "second go"
+    assert body["visibility"] == "public"
+    # And it persisted, not just echoed.
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["dish_name"] == "Chicken adobo"
+
+
+def test_a_partial_edit_leaves_everything_else_alone(client, make_user):
+    _, ah = make_user()
+    post = _own(client, ah, description="keep me", visibility="public")
+    client.patch(f"/posts/{post['id']}", json={"dish_name": "Renamed"}, headers=ah)
+    body = client.get(f"/posts/{post['id']}", headers=ah).json()
+    assert body["description"] == "keep me"
+    assert body["visibility"] == "public"
+    assert body["photo_url"] == "https://img.test/a.jpg"
+
+
+def test_an_empty_description_CLEARS_it_but_null_does_not(client, make_user):
+    """The cost of a partial update: `None` has to mean "unchanged", so clearing needs `""`."""
+    _, ah = make_user()
+    post = _own(client, ah, description="a line")
+
+    client.patch(f"/posts/{post['id']}", json={"description": None}, headers=ah)
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["description"] == "a line"
+
+    client.patch(f"/posts/{post['id']}", json={"description": "   "}, headers=ah)
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["description"] is None
+
+
+def test_READ_IS_NOT_WRITE_a_friend_cannot_edit_your_meal(client, make_user):
+    """A friend can SEE this post. Editing is a different question, answered by ownership."""
+    a, ah = make_user()
+    b, bh = make_user()
+    fid = client.post("/friends/request", json={"to_user_id": b.id}, headers=ah).json()["id"]
+    client.post(f"/friends/{fid}/accept", headers=bh)
+    post = _own(client, ah)
+    assert client.get(f"/posts/{post['id']}", headers=bh).status_code == 200  # can read
+
+    r = client.patch(f"/posts/{post['id']}", json={"dish_name": "Hijacked"}, headers=bh)
+    assert r.status_code == 404  # not 403 — don't confirm it exists to someone not entitled
+    assert r.json() == {"detail": "Post not found"}
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["dish_name"] == "Adobo"
+
+
+def test_editing_requires_auth_and_404s_on_an_unknown_post(client, make_user):
+    assert client.patch("/posts/1", json={"dish_name": "x"}).status_code == 401
+    _, ah = make_user()
+    assert client.patch("/posts/999999", json={"dish_name": "x"}, headers=ah).status_code == 404
+
+
+def test_you_can_attach_and_detach_a_recipe_you_own(client, make_user):
+    _, ah = make_user()
+    post = _own(client, ah)
+    rec = client.post(
+        "/recipes",
+        json={"name": "Adobo", "visibility": "private", "steps": [{"content": "Cook", "position": 1}]},
+        headers=ah,
+    ).json()
+
+    body = client.patch(
+        f"/posts/{post['id']}", json={"recipe_id": rec["id"]}, headers=ah
+    ).json()
+    assert body["recipe_id"] == rec["id"]
+    # 0 detaches; null would have meant "unchanged".
+    assert client.patch(
+        f"/posts/{post['id']}", json={"recipe_id": 0}, headers=ah
+    ).json()["recipe_id"] is None
+
+
+def test_you_cannot_attach_someone_ELSES_recipe(client, make_user):
+    _, ah = make_user()
+    _, bh = make_user()
+    post = _own(client, ah)
+    theirs = client.post(
+        "/recipes",
+        json={"name": "Theirs", "visibility": "public", "steps": [{"content": "Cook", "position": 1}]},
+        headers=bh,
+    ).json()
+    r = client.patch(f"/posts/{post['id']}", json={"recipe_id": theirs["id"]}, headers=ah)
+    assert r.status_code == 404
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["recipe_id"] is None
+
+
+def test_editing_does_not_make_a_post_NEW_again(client, make_user):
+    """An edit is not a new post. `is_new` keys on the post's id (#97), which an edit doesn't
+    move, so a friend who already read the feed must not see it resurface above the divider."""
+    a, ah = make_user()
+    b, bh = make_user()
+    fid = client.post("/friends/request", json={"to_user_id": b.id}, headers=ah).json()["id"]
+    client.post(f"/friends/{fid}/accept", headers=bh)
+    post = _own(client, ah)
+
+    # b reads the feed, marking it seen through this post.
+    assert client.get("/posts/feed", headers=bh).json()[0]["is_new"] is True
+    client.post("/posts/feed/seen", json={"through_post_id": post["id"]}, headers=bh)
+    assert client.get("/posts/feed", headers=bh).json()[0]["is_new"] is False
+
+    client.patch(f"/posts/{post['id']}", json={"dish_name": "Edited"}, headers=ah)
+    feed = client.get("/posts/feed", headers=bh).json()
+    assert feed[0]["dish_name"] == "Edited"
+    assert feed[0]["is_new"] is False, "an edit must not resurface as unread"
+
+
+def test_editing_notifies_nobody(client, make_user):
+    # Nobody asked to hear that a caption changed.
+    a, ah = make_user()
+    b, bh = make_user()
+    fid = client.post("/friends/request", json={"to_user_id": b.id}, headers=ah).json()["id"]
+    client.post(f"/friends/{fid}/accept", headers=bh)
+    client.post("/notifications/read", json={}, headers=bh)
+    post = _own(client, ah)
+
+    client.patch(f"/posts/{post['id']}", json={"dish_name": "Edited"}, headers=ah)
+    assert client.get("/notifications", headers=bh).json()["unread_count"] == 0
+
+
+def test_an_edit_cannot_blank_the_dish_name(client, make_user):
+    _, ah = make_user()
+    post = _own(client, ah)
+    for bad in ("", "   "):
+        assert client.patch(
+            f"/posts/{post['id']}", json={"dish_name": bad}, headers=ah
+        ).status_code == 422

@@ -168,10 +168,40 @@ export default function UserProfile() {
           <FriendButton />
         </div>
 
-        {/* Block (#85) — a small brick chip below the friend action. Sized down twice now: it
-            started as a grey underlined link (read as a footnote, too easy to miss) and then
-            overshot into a full pill (too loud for something you should rarely want). A chip
-            is findable without competing with the friend button. Hidden on your own profile. */}
+
+      </div>
+
+      {/* Body. A non-friend looking at someone who's shown them nothing (private
+          profile, no public items) gets a warm nudge toward the core action —
+          friending — instead of two empty grids. Everyone else gets the tabbed
+          recipes/posts content. `nothingVisible` uses the counts the profile payload
+          already computed with the same can_view/can_view_post rules the grids use, so
+          the header and the body can't disagree about whether there's anything to see. */}
+      {(() => {
+        const nothingVisible =
+          !isSelf &&
+          profile.friend_state !== 'accepted' &&
+          (profile.recipe_count || 0) === 0 &&
+          (profile.post_count || 0) === 0
+        if (nothingVisible) {
+          return (
+            <div className="mt-10 text-center">
+              <p className="font-display text-[15px] text-ink-soft leading-snug max-w-xs mx-auto">
+                Nothing to see here yet. Add {profile.first_name} as a friend to see
+                what they cook.
+              </p>
+            </div>
+          )
+        }
+        return <ProfileContent userId={userId} />
+      })()}
+
+        {/* Block (#85) — at the BOTTOM of the page, below the recipes and posts. It used to sit
+            directly under the friend button, which put a safety control inside the social one's
+            blast radius: the two most consequential taps on the page were adjacent. Down here
+            it's still findable — it's the last thing on the page, not hidden behind anything —
+            but you reach it by deciding to, having scrolled past everything this person actually
+            cooks. Hidden on your own profile. */}
         {!isSelf && (
           <div className="mt-4">
             {confirmingBlock ? (
@@ -221,32 +251,6 @@ export default function UserProfile() {
             )}
           </div>
         )}
-      </div>
-
-      {/* Body. A non-friend looking at someone who's shown them nothing (private
-          profile, no public items) gets a warm nudge toward the core action —
-          friending — instead of two empty grids. Everyone else gets the tabbed
-          recipes/posts content. `nothingVisible` uses the counts the profile payload
-          already computed with the same can_view/can_view_post rules the grids use, so
-          the header and the body can't disagree about whether there's anything to see. */}
-      {(() => {
-        const nothingVisible =
-          !isSelf &&
-          profile.friend_state !== 'accepted' &&
-          (profile.recipe_count || 0) === 0 &&
-          (profile.post_count || 0) === 0
-        if (nothingVisible) {
-          return (
-            <div className="mt-10 text-center">
-              <p className="font-display text-[15px] text-ink-soft leading-snug max-w-xs mx-auto">
-                Nothing to see here yet. Add {profile.first_name} as a friend to see
-                what they cook.
-              </p>
-            </div>
-          )
-        }
-        return <ProfileContent userId={userId} />
-      })()}
     </div>
   )
 }

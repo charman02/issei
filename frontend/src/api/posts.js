@@ -28,6 +28,10 @@ export const getPost = (id) => client.get(`/posts/${id}`)
 // Browse filters/searches client-side, same shape as GET /recipes/browse. Backend scopes
 // to visibility == 'public', so this never returns a friends/private post.
 export const browsePosts = () => client.get('/posts/browse')
+// Edit your own meal. Author-only server-side; a non-author gets 404, not 403. Send the whole
+// set of editable fields rather than a diff: the API reads `null` as "leave it alone", so a
+// diff would silently fail to clear a description (send "" for that).
+export const updatePost = (id, patch) => client.patch(`/posts/${id}`, patch)
 export const deletePost = (id) => client.delete(`/posts/${id}`)
 export const getUserPosts = (userId) => client.get(`/posts/users/${userId}`)
 // Recipe requests (#79) — the app's premise as a mechanic: you tasted it and asked for it.

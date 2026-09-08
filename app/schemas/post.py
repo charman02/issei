@@ -27,6 +27,26 @@ class PostCreate(BaseModel):
     visibility: Literal["public", "friends", "private"] = "friends"
 
 
+class PostUpdate(BaseModel):
+    """Edit a meal you posted. Every field optional — a client sends only what changed.
+
+    `None` means "leave it alone", which is why `description` can't be cleared by sending null;
+    send `""` for that (the router strips it back to NULL). That ambiguity is the cost of a
+    partial update, and the alternative — a sentinel — is worse to read.
+
+    Deliberately NOT editable: the author. A post is somebody saying "I made this", so
+    transferring one would make the sentence false.
+    """
+
+    photo_url: Optional[str] = Field(default=None, min_length=1)
+    dish_name: Optional[DishName] = None
+    description: Optional[str] = Field(default=None, max_length=500)
+    # Attach or re-attach a recipe you own; `recipe_id: 0` detaches (see the router — 0 is not a
+    # valid id, so it reads unambiguously as "remove the link" where null means "unchanged").
+    recipe_id: Optional[int] = None
+    visibility: Optional[Literal["public", "friends", "private"]] = None
+
+
 class FeedSeenIn(BaseModel):
     """How far the caller has read their feed (#97).
 

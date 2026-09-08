@@ -1,12 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getPost, requestRecipe, retractRequest, deletePost } from '../api/posts'
+import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
+import VisibilityChoice from '../components/VisibilityChoice'
 import { toUserMessage } from '../api/client'
 import BackButton from '../components/BackButton'
 import Avatar from '../components/Avatar'
 import Loader from '../components/Loader'
 
 const fullName = (p) => `${p.author_first_name} ${p.author_last_name}`.trim()
+
+// "12 Aug 2026" — an absolute date, because this page is a permalink rather than a feed you
+// scan. Guarded: a missing or unparseable timestamp renders nothing rather than "Invalid Date".
+function postedOn(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 // PostPage (/posts/:id) — a single shared meal, read-only. Reached by tapping a post in
 // Browse (#71); also a real permalink for any post the viewer may see. Read authorization
@@ -45,6 +55,13 @@ export default function PostPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  // Editing your own meal. Inline rather than a separate route: the thing you're editing is
+  // already on screen, and a caption fix shouldn't cost a page transition. `draft` is null when
+  // not editing, so opening the form always starts from the CURRENT post rather than from stale
+  // state left behind by a previous cancel.
+  const [draft, setDraft] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const me = JSON.parse(localStorage.getItem('issei_user') || '{}')
   const isMine = post ? String(me.id) === String(post.user_id) : false
@@ -78,6 +95,26 @@ export default function PostPage() {
       setDeleteError(toUserMessage(err, 'Couldn’t delete this post. Try again.'))
       setDeleting(false)
       // Deliberately leave the panel OPEN — it's where the error renders.
+    }
+  }
+
+  async function saveEdit() {
+    setSaveError('')
+    setSaving(true)
+    try {
+      // Send the whole set rather than diffing: the API treats null as "unchanged", so a diff
+      // would silently lose a cleared description. An empty string is how you clear one.
+      const { data } = await updatePost(post.id, {
+        dish_name: draft.dish_name.trim(),
+        description: draft.description,
+        visibility: draft.visibility,
+      })
+      setPost(data)
+      setDraft(null)
+    } catch (err) {
+      setSaveError(toUserMessage(err, 'Couldn’t save your changes. Try again.'))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -120,8 +157,17 @@ export default function PostPage() {
             className="flex items-center gap-2.5 min-w-0 text-left"
           >
             <Avatar name={post.author_first_name} photoUrl={post.author_photo_url} size="sm" />
-            <span className="font-display font-bold text-[14.5px] text-ink truncate">
-              {fullName(post)}
+            <span className="min-w-0">
+              <span className="block font-display font-bold text-[14.5px] text-ink truncate">
+                {fullName(post)}
+              </span>
+              {/* WHEN it was made. It was missing entirely, and on a page whose whole subject is
+                  "what someone cooked" the date is part of the fact — a meal from Tuesday and a
+                  meal from March are different claims. Absolute, not "3d ago": the relative form
+                  suits a feed you're scanning, but a permalink is where you come to know. */}
+              <span className="block font-display italic text-[12px] text-ink-soft">
+                {postedOn(post.created_at)}
+              </span>
             </span>
           </button>
         </div>
@@ -191,8 +237,94 @@ export default function PostPage() {
             </button>
           )}
 
+          {/* OWNER CONTROLS — edit and delete, as buttons rather than a text link. Delete used
+              to be grey underlined text, which read as a footnote for something consequential.
+              Edit is the primary of the two (you'll want it far more often), so it carries the
+              filled style and delete stays outlined until you commit to it. */}
+          {isMine && !draft && !confirmingDelete && (
+            <div className="mt-4 pt-3 border-t-2 border-line flex gap-2">
+              <button
+                onClick={() =>
+                  setDraft({
+                    dish_name: post.dish_name,
+                    description: post.description || '',
+                    visibility: post.visibility,
+                  })
+                }
+                className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+              >
+                Edit this meal
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="flex-none rounded-full bg-cream text-brick border-2 border-ink px-3.5 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+
+          {/* The edit form. Dish name, the line under it, and who can see it — the three things
+              you'd actually come back to change. The PHOTO is deliberately not editable here: a
+              different photo is a different meal, and re-shooting it is a new post, not an edit. */}
+          {isMine && draft && (
+            <div className="mt-4 pt-3 border-t-2 border-line">
+              <label className="section-label block mb-1" htmlFor="edit-dish">
+                What is it?
+              </label>
+              <input
+                id="edit-dish"
+                value={draft.dish_name}
+                onChange={(e) => setDraft({ ...draft, dish_name: e.target.value })}
+                className="field w-full"
+                placeholder="Sunday adobo"
+              />
+              <label className="section-label block mt-3 mb-1" htmlFor="edit-desc">
+                Anything to add? (optional)
+              </label>
+              <textarea
+                id="edit-desc"
+                value={draft.description}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                rows={3}
+                className="field w-full"
+                placeholder="Slow-cooked all afternoon."
+              />
+              <div className="mt-3">
+                <VisibilityChoice
+                  value={draft.visibility}
+                  onChange={(v) => setDraft({ ...draft, visibility: v })}
+                />
+              </div>
+              {saveError && (
+                <p className="mt-2">
+                  <span className="error-pill">{saveError}</span>
+                </p>
+              )}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={saveEdit}
+                  disabled={saving || !draft.dish_name.trim()}
+                  className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+                <button
+                  onClick={() => {
+                    setDraft(null)
+                    setSaveError('')
+                  }}
+                  disabled={saving}
+                  className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                >
+                  Never mind
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Delete (author-only). */}
-          {isMine && (
+          {isMine && confirmingDelete && (
             <div className="mt-4 pt-3 border-t-2 border-line">
               {confirmingDelete ? (
                 <div className="sticker bg-card p-3">
@@ -230,14 +362,7 @@ export default function PostPage() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmingDelete(true)}
-                  className="font-display text-[13px] text-ink-soft underline underline-offset-2"
-                >
-                  Delete this meal
-                </button>
-              )}
+              ) : null}
             </div>
           )}
         </div>
