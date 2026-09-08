@@ -47,11 +47,13 @@ const withUids = (rows) => rows.map((s) => (s.uid ? s : { ...s, uid: `s${++stepU
 // typed their whole method into step 1 and every ingredient into ingredient 1.
 // Seeing the shape of the list before typing is what prevents that; blank rows
 // are filtered out on submit, so extras cost nothing.
-// ONE of each. Three blank rows apiece made the form look like a chore on open — the thing
-// two rounds of user testing already flagged about capture effort — and an empty row is not a
-// prompt, it's just space. The add-another control carries it from here.
-const STARTING_INGREDIENTS = 1
-const STARTING_STEPS = 1
+// TWO of each. Three apiece made the form read as a chore on open — the capture-effort
+// problem two rounds of user testing already flagged — but ONE gives no hint that these are
+// separate entries, and a tester once typed their whole method into step 1 for exactly that
+// reason. Two is the smallest count that still shows the SHAPE: this is a list, not a box.
+// (Owner: 3 → 1 → 2, 2026-09-08.) The "one step per box" copy backs it up; keep both.
+const STARTING_INGREDIENTS = 2
+const STARTING_STEPS = 2
 
 const emptyRows = (make, n) => Array.from({ length: n }, make)
 

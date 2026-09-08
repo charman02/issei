@@ -293,23 +293,23 @@ function addIngredient(n = 1) {
 // Bring an ADD form up to three rows of each, for the tests that prove "EVERY row has X".
 // They used to lean on the starting count; that's a product decision and it has changed twice.
 function growTo3() {
-  addStep(2)
-  addIngredient(2)
+  addStep(1)
+  addIngredient(1)
 }
 
 describe('RecipeForm capture friction', () => {
-  it('starts an ADD with ONE blank row of each, and still says one step per box', () => {
+  it('starts an ADD with TWO blank rows of each, and says one step per box', () => {
     // The form opens short on purpose (owner, 2026-09-08): three blank rows apiece made it
-    // read as a chore before anything was typed.
+    // read as a chore before anything was typed. It went to one, then back up to TWO — because
+    // one row gives no hint these are separate entries, and a tester once typed their entire
+    // method into step 1 and every ingredient into ingredient 1 for exactly that reason.
+    // Seeing the SHAPE was the original fix, and two rows is the cheapest way to keep it.
     //
-    // BUT the three rows were doing real work. A tester once typed their entire method into
-    // step 1 and every ingredient into ingredient 1, because a single empty box gave no hint
-    // they were meant to be separate entries — seeing the SHAPE was the fix. With one row
-    // that hint now rests entirely on the copy, so the copy is what this pins. If that
-    // instruction ever disappears, the original bug is back and nothing else would catch it.
+    // Both halves are pinned here: the count AND the "one step per box" instruction. If either
+    // goes, that tester's bug is reachable again and nothing else would catch it.
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    expect(screen.getAllByPlaceholderText(/describe this step/i).length).toBe(1)
-    expect(screen.getAllByPlaceholderText(/e\.g\. soy sauce/i).length).toBe(1)
+    expect(screen.getAllByPlaceholderText(/describe this step/i).length).toBe(2)
+    expect(screen.getAllByPlaceholderText(/e\.g\. soy sauce/i).length).toBe(2)
     expect(screen.getByText(/one step per box/i)).toBeInTheDocument()
   })
 
@@ -317,8 +317,8 @@ describe('RecipeForm capture friction', () => {
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
     addStep()
     addIngredient()
-    expect(screen.getAllByPlaceholderText(/describe this step/i).length).toBe(2)
-    expect(screen.getAllByPlaceholderText(/e\.g\. soy sauce/i).length).toBe(2)
+    expect(screen.getAllByPlaceholderText(/describe this step/i).length).toBe(3)
+    expect(screen.getAllByPlaceholderText(/e\.g\. soy sauce/i).length).toBe(3)
   })
 
   it('does NOT pad blank rows when editing an existing recipe', () => {
