@@ -12,7 +12,7 @@ from app.models.recipe import Recipe
 from app.models.post import Post
 from app.models.handoff import Handoff
 from app.models.recipe_request import RecipeRequest
-from app.schemas.post import PostCreate, PostResponse, PostWithRequesters
+from app.schemas.post import FeedSeenIn, PostCreate, PostResponse, PostWithRequesters
 from app.schemas.notification import FulfillRequest, RequesterSummary
 from app.services.friends import are_friends, friend_ids
 from app.services.notifications import notify
@@ -33,6 +33,8 @@ def _to_response(
     viewer_id: Optional[int] = None,
     request_counts: Optional[dict] = None,
     my_requested_post_ids=frozenset(),
+    last_seen_post_id: Optional[int] = None,
+    mark_new: bool = False,
 ) -> PostResponse:
     # Expose the recipe link ONLY when the viewer can actually open it. A post links
     # a recipe the AUTHOR owns, but the viewer is usually a friend — and the author
@@ -60,8 +62,32 @@ def _to_response(
             if viewer_id is not None and post.user_id == viewer_id
             else None
         ),
+        # Only the feed asks for this (#97). Elsewhere it stays None rather than False, so a
+        # client can tell "not new" from "this surface doesn't have the concept".
+        is_new=(
+            _is_new(post, viewer_id, last_seen_post_id) if mark_new else None
+        ),
         created_at=post.created_at,
     )
+
+
+def _is_new(post: Post, viewer_id: Optional[int], last_seen_post_id: Optional[int]) -> bool:
+    """Whether this post arrived after the viewer last read their feed (#97).
+
+    Compares IDs, not timestamps: `created_at` is second-granular on SQLite, so a post made in
+    the same second as the mark would be wrongly counted as already-read. Ids are monotonic —
+    the same reasoning that makes the feed's pagination keyset on `id`.
+
+    Your own post is never new to you — you were there when you made it, and marking it new
+    would put your own meal above the divider every time you post.
+
+    A viewer who has never opened the feed (None) sees everything as new: they've read none of it.
+    """
+    if viewer_id is not None and post.user_id == viewer_id:
+        return False
+    if last_seen_post_id is None:
+        return True
+    return post.id > last_seen_post_id
 
 
 def _viewable_recipe_ids(posts, viewer: User, db: Session) -> set:
@@ -240,13 +266,59 @@ def feed(
     ]
     viewable = _viewable_recipe_ids(posts, current_user, db)
     counts, mine = _request_context(posts, current_user, db)
+    # The feed is the only surface where "new" means anything (#97). Read the caller's mark
+    # here and pass it down; advancing it is a separate explicit call (POST /posts/feed/seen),
+    # never a side effect of this GET — a read that mutates would mark posts seen on a stray
+    # prefetch or a retry, and being accurate about what you actually looked at is the point.
+    last_seen = current_user.last_feed_seen_post_id
     return [
         _to_response(
             p, p.user, viewable,
             viewer_id=current_user.id, request_counts=counts, my_requested_post_ids=mine,
+            last_seen_post_id=last_seen, mark_new=True,
         )
         for p in posts
     ]
+
+
+@router.post("/feed/seen", status_code=status.HTTP_204_NO_CONTENT)
+def mark_feed_seen(
+    body: FeedSeenIn | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Advance the caller's feed read-mark (#97).
+
+    A separate call rather than a side effect of GET /posts/feed, for the same reason
+    POST /notifications/read exists: a GET that mutates marks things seen on a prefetch, a
+    retry or a back-navigation, and this only has value if it is accurate. It also lets the
+    client choose the moment.
+
+    FORWARD ONLY. The mark is monotonic — a stale or out-of-order call (two tabs, a retried
+    request, a client sending an older page) can never rewind it and resurface posts the user
+    already read as new. That also means this endpoint is safely idempotent.
+
+    Note what this does NOT do: nothing is deleted, hidden or expired. The feed returns exactly
+    the same posts afterwards; they just stop being flagged `is_new`.
+    """
+    mark = body.through_post_id if body is not None else None
+    if mark is None:
+        # No id given — the page was empty, so there was nothing to miss. Watermark at the
+        # newest post that exists: the honest "I'm caught up on everything so far".
+        mark = db.query(func.max(Post.id)).scalar()
+    if mark is None:
+        return None  # no posts exist at all; nothing to mark
+
+    current = current_user.last_feed_seen_post_id
+    # FORWARD ONLY, so a stale or out-of-order call (two tabs, a retry, a client sending an
+    # older page) can never rewind the mark and resurface posts the user already read. Also no
+    # 404 on an unknown id: whether a post exists is not something this bookkeeping call should
+    # confirm, and an id past the end simply means "everything so far".
+    if current is not None and mark <= current:
+        return None
+    current_user.last_feed_seen_post_id = mark
+    db.commit()
+    return None
 
 
 @router.get("/browse", response_model=list[PostResponse])

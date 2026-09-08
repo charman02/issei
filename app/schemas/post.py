@@ -27,6 +27,22 @@ class PostCreate(BaseModel):
     visibility: Literal["public", "friends", "private"] = "friends"
 
 
+class FeedSeenIn(BaseModel):
+    """How far the caller has read their feed (#97).
+
+    `through_post_id` is the NEWEST post they actually received, and the mark is stored as that
+    ID. Two reasons it is an id and not a time. It records "I read up to HERE" rather than "I
+    opened the app at this time" — with a wall-clock mark, anything posted while the feed was on
+    screen would be silently marked seen. And ids are monotonic, whereas `created_at` is
+    second-granular on SQLite, so a timestamp mark misses a post made in the same second.
+
+    Omit it and the mark goes to the newest post that exists — the honest reading when the page
+    came back empty, since there was nothing to miss.
+    """
+
+    through_post_id: Optional[int] = None
+
+
 class PostResponse(BaseModel):
     """A post as the feed/profile renders it: the meal, plus who made it (name +
     id, never email). recipe_id is exposed so the card can link through when the
@@ -54,6 +70,12 @@ class PostResponse(BaseModel):
     # demand becomes public later by RANK (a "most asked for" row), which shows the dishes
     # that have demand without ever rendering an absence.
     request_count: Optional[int] = None
+    # NEW SINCE THE CALLER LAST READ THEIR FEED (#97) — set on the feed only, None everywhere
+    # else (Browse, a permalink, a profile grid), where "new" has no meaning. Drives the
+    # divider, so the client can show where you got to without anything being removed.
+    #
+    # Your OWN post is never new to you: you were there when you made it.
+    is_new: Optional[bool] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

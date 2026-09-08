@@ -5,6 +5,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 vi.mock('../api/posts', () => ({
   getFeed: vi.fn(),
+  markFeedSeen: vi.fn(() => Promise.resolve()),
 }))
 // Feed now renders the FriendsStrip (#75), which fetches the caller's friends. Mock it
 // so these Feed tests don't hit the real axios client; default to no friends (the strip
@@ -284,5 +285,57 @@ describe('Feed — the inbox bell', () => {
     renderFeed()
     expect(await screen.findByText('Dish 1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /what's new/i })).toBeInTheDocument()
+  })
+})
+
+// The feed read-mark (#97). The invariant that matters most here is the one that could rot into
+// a bug: the divider marks a BOUNDARY, it does not remove anything.
+describe('Feed — the caught-up divider (#97)', () => {
+  it('draws the line after the last new post, keeping the older ones on screen', async () => {
+    getFeed.mockResolvedValue({
+      data: [post(3, { is_new: true }), post(2, { is_new: true }), post(1, { is_new: false })],
+    })
+    renderFeed()
+    expect(await screen.findByText(/you.re all caught up/i)).toBeInTheDocument()
+    // Nothing is hidden: every post is still rendered, the old one included.
+    expect(screen.getByText('Dish 3')).toBeInTheDocument()
+    expect(screen.getByText('Dish 2')).toBeInTheDocument()
+    expect(screen.getByText('Dish 1')).toBeInTheDocument()
+  })
+
+  it('says nothing when there is no boundary to mark', async () => {
+    // All read: a permanent "all caught up" banner on every open stops meaning anything.
+    getFeed.mockResolvedValue({ data: [post(2, { is_new: false }), post(1, { is_new: false })] })
+    renderFeed()
+    expect(await screen.findByText('Dish 2')).toBeInTheDocument()
+    expect(screen.queryByText(/you.re all caught up/i)).toBeNull()
+  })
+
+  it('says nothing when EVERYTHING is new either', async () => {
+    // A first-ever visit has no "where you got to" — the line would be at the bottom of the
+    // list, marking nothing.
+    getFeed.mockResolvedValue({ data: [post(2, { is_new: true }), post(1, { is_new: true })] })
+    renderFeed()
+    expect(await screen.findByText('Dish 2')).toBeInTheDocument()
+    expect(screen.queryByText(/you.re all caught up/i)).toBeNull()
+  })
+
+  it('marks the feed read through the NEWEST post it received', async () => {
+    const { markFeedSeen } = await import('../api/posts')
+    getFeed.mockResolvedValue({ data: [post(9), post(8)] })
+    renderFeed()
+    await screen.findByText('Dish 9')
+    // The newest id, not now() — so a post arriving while this is on screen stays new.
+    await waitFor(() => expect(markFeedSeen).toHaveBeenCalledWith(9))
+  })
+
+  it('a failed mark never blanks the feed', async () => {
+    // Bookkeeping must not be able to hide content: a throw here used to be caught by the
+    // feed's own .catch and read as "the fetch failed", emptying a list that had arrived.
+    const { markFeedSeen } = await import('../api/posts')
+    markFeedSeen.mockRejectedValueOnce(new Error('offline'))
+    getFeed.mockResolvedValue({ data: [post(1)] })
+    renderFeed()
+    expect(await screen.findByText('Dish 1')).toBeInTheDocument()
   })
 })

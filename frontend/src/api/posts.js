@@ -15,6 +15,14 @@ export const getFeed = (beforeId, scope) =>
       ...(scope ? { scope } : {}),
     },
   })
+// Advance the feed read-mark (#97). `throughPostId` is the NEWEST post the client actually
+// received, so the mark lands on that post's timestamp rather than on now() — otherwise a post
+// that arrives while the feed is on screen gets silently marked seen. Forward-only server-side,
+// so a retry or a second tab can never rewind it. Marking seen HIDES NOTHING; it only stops
+// those posts being flagged as new next time.
+export const markFeedSeen = (throughPostId) =>
+  client.post('/posts/feed/seen', { through_post_id: throughPostId ?? null })
+
 export const getPost = (id) => client.get(`/posts/${id}`)
 // Public posts for Browse discovery (#71). Returns every public post (newest first);
 // Browse filters/searches client-side, same shape as GET /recipes/browse. Backend scopes

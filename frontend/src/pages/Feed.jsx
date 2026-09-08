@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getFeed } from '../api/posts'
+import { getFeed, markFeedSeen } from '../api/posts'
 import { getNotifications } from '../api/notifications'
 import PostCard from '../components/PostCard'
 import FriendsStrip from '../components/FriendsStrip'
@@ -109,6 +109,21 @@ export default function Feed() {
         if (cancelled) return
         setPosts(res.data)
         if (res.data.length < PAGE) setReachedEnd(true)
+        // Mark the feed read up to the NEWEST post we just received (#97). Sent after the
+        // page is on screen, and scoped to what actually arrived — so anything posted while
+        // this feed is open still counts as new next time. Fire-and-forget: a failed mark
+        // just means the divider shows again, which is the harmless direction to fail in.
+        // Only for the friends scope; 'everyone' isn't the feed you're catching up on.
+        if (scope !== 'everyone' && res.data.length) {
+          // try/catch as well as .catch: a synchronous throw here would be caught by the
+          // outer .catch below and read as "the feed failed to load", blanking a list that
+          // had just arrived. Bookkeeping must never be able to hide content.
+          try {
+            Promise.resolve(markFeedSeen(res.data[0].id)).catch(() => {})
+          } catch {
+            /* ignore — the divider simply shows again next time */
+          }
+        }
       })
       .catch(() => !cancelled && setPosts([]))
     // Ignore an in-flight response if the scope changed again before it landed.
@@ -263,12 +278,29 @@ export default function Feed() {
         )
       ) : (
         <div className="px-4 space-y-5">
-          {posts.map((p) => (
+          {posts.map((p, i) => (
+            <div key={p.id} className="space-y-5">
             // onOpen is passed here too now that the post page has an ACTION on it:
             // PostComposer lands you back on the Feed, so this is exactly where someone
             // notices they shared the wrong photo — and tapping it did nothing, leaving the
             // only route to delete as Kitchen → Posts tab → tap.
-            <PostCard key={p.id} post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
+            <PostCard post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
+              {/* The caught-up line (#97) — placed AFTER the last new post, so everything
+                  above it arrived since you last looked and everything below is where you
+                  got to. Nothing is hidden or removed: the older posts are right there
+                  under it, still scrollable. Rendered only when there is a real boundary
+                  to mark (at least one new post AND at least one older one), so it never
+                  becomes a permanent fixture that stops meaning anything. */}
+              {p.is_new && posts[i + 1] && !posts[i + 1].is_new && (
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="h-[2px] flex-1 bg-line" />
+                  <span className="font-display font-bold text-[12px] uppercase tracking-[0.08em] text-ink-soft">
+                    You&rsquo;re all caught up
+                  </span>
+                  <span className="h-[2px] flex-1 bg-line" />
+                </div>
+              )}
+            </div>
           ))}
           {!reachedEnd && (
             <button
