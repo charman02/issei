@@ -95,98 +95,105 @@ describe('Feed (Home)', () => {
     expect(await screen.findByText('user profile')).toBeInTheDocument()
   })
 
-  // --- friends/everyone toggle (#70) ---
+  // --- cold start (#94, replacing #70's toggle) ---
+  //
+  // The toggle is gone. Public posts now appear ONLY when nobody but you has posted anything
+  // you can see, because a brand-new user's Home was otherwise empty — the worst screen in the
+  // app, on the page they land on. `me` is unseeded in most tests here, so every fixture post
+  // counts as somebody else's and the feed stays in friends mode; the cold-start tests below
+  // set the id explicitly.
 
-  it('opens on the Friends scope and fetches it', async () => {
-    getFeed.mockResolvedValue({ data: [post(1)] })
+  it('asks for the friends feed, and only that, when friends have posted', async () => {
+    getFeed.mockResolvedValue({ data: [post(2), post(1)] })
     renderFeed()
-    await screen.findByText('Dish 1')
-    // First load is the friends scope (the default 'home base').
+    await screen.findByText('Dish 2')
+    expect(getFeed).toHaveBeenCalledTimes(1)
     expect(getFeed).toHaveBeenCalledWith(undefined, 'friends')
-    expect(screen.getByRole('tab', { name: /friends/i })).toHaveAttribute('aria-selected', 'true')
+    // No toggle to find any more.
+    expect(screen.queryByRole('tab', { name: /^everyone$/i })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /^friends$/i })).toBeNull()
   })
 
-  it('switching to Everyone refetches with the everyone scope', async () => {
-    getFeed.mockResolvedValue({ data: [post(5)] })
+  it('falls through to public posts when nobody you know has posted', async () => {
+    getFeed
+      .mockResolvedValueOnce({ data: [] })                      // friends: nothing
+      .mockResolvedValueOnce({ data: [post(7), post(6)] })      // public
     renderFeed()
-    await screen.findByText('Dish 5')
-    await userEvent.click(screen.getByRole('tab', { name: /everyone/i }))
-    await waitFor(() => expect(getFeed).toHaveBeenCalledWith(undefined, 'everyone'))
-    expect(screen.getByRole('tab', { name: /everyone/i })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('Dish 7')).toBeInTheDocument()
+    expect(getFeed).toHaveBeenNthCalledWith(1, undefined, 'friends')
+    expect(getFeed).toHaveBeenNthCalledWith(2, undefined, 'everyone')
+    // The band is LABELLED: without it a stranger's dish reads as somebody you know.
+    expect(screen.getByText(/while you find your people/i)).toBeInTheDocument()
   })
 
-  it('paginates within the current scope', async () => {
-    // A full page then a short page; the "load more" call must carry the everyone scope.
-    getFeed.mockResolvedValue({ data: Array.from({ length: 30 }, (_, i) => post(100 - i)) })
+  it('keeps YOUR OWN post above the strangers, rather than replacing it', async () => {
+    // A 0-friend user who shares a meal must not watch it vanish from Home. Safe to show both
+    // in one list precisely because cold start means there are no friends' posts to bury.
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+    getFeed
+      .mockResolvedValueOnce({ data: [post(1, { user_id: 42, dish_name: 'My adobo' })] })
+      .mockResolvedValueOnce({ data: [post(9, { dish_name: 'A stranger dish' })] })
     renderFeed()
-    await screen.findByText('Dish 100')
-    await userEvent.click(screen.getByRole('tab', { name: /everyone/i }))
-    await waitFor(() => expect(getFeed).toHaveBeenCalledWith(undefined, 'everyone'))
-    getFeed.mockResolvedValueOnce({ data: [post(1)] })
-    await userEvent.click(await screen.findByRole('button', { name: /load more/i }))
-    // The cursor call pages the everyone scope, using the last post's id.
-    await waitFor(() => expect(getFeed).toHaveBeenCalledWith(71, 'everyone'))
+    expect(await screen.findByText('My adobo')).toBeInTheDocument()
+    expect(screen.getByText('A stranger dish')).toBeInTheDocument()
+    expect(screen.getByText(/while you find your people/i)).toBeInTheDocument()
+    localStorage.clear()
   })
 
-  it('the Everyone empty state is discovery-flavored, not the friends cold-start', async () => {
-    getFeed.mockResolvedValue({ data: [] })
+  it('never advances the read-mark from the public fall-through', async () => {
+    // The mark is measured against friends' post ids; advancing it from strangers' would
+    // silently mark future friends' posts as already-read.
+    const { markFeedSeen } = await import('../api/posts')
+    getFeed
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [post(9)] })
     renderFeed()
-    // Friends empty first.
+    await screen.findByText('Dish 9')
+    expect(markFeedSeen).not.toHaveBeenCalled()
+  })
+
+  it('shows the cold-start empty state only when there is nothing ANYWHERE', async () => {
+    getFeed.mockResolvedValue({ data: [] }) // friends empty AND public empty
+    renderFeed()
     expect(await screen.findByText(/nothing cooking yet/i)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: /everyone/i }))
-    // Everyone empty: no "share a meal / find friends" cold-start prompt IN THE BOX.
-    // Scoped to the box on purpose — the masthead's permanent Friends button is a
-    // different thing and must stay (see the #80 describe block below).
-    await screen.findByText(/nothing public yet/i)
-    expect(screen.queryByRole('button', { name: /share a meal/i })).toBeNull()
-    // Global reach, not scoped to the box: the masthead's permanent Friends button is a
-    // different thing and must stay, so the guard is "there is EXACTLY ONE" — that still
-    // fails if a second find-friends prompt is added anywhere on this screen, and it
-    // can't be silently defeated by wrapping the empty state in another div.
-    expect(screen.getAllByRole('button', { name: /find friends/i })).toHaveLength(1)
+    // The two acts that fill a feed — the right nudge when the app itself is empty. TWO
+    // find-friends buttons here: the masthead's permanent one plus the empty state's.
+    expect(screen.getByRole('button', { name: /share a meal/i })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /find friends/i })).toHaveLength(2)
   })
 
-  it('drops a load-more page whose scope was switched away before it resolved', async () => {
-    // The #70 race the reviewer caught: tap "Load more" in Friends, then switch to
-    // Everyone before the page returns. The stale friends page must NOT be appended
-    // (that would either crash on [...null] or mix friends posts under the Everyone tab).
-    // Friends: a full page so "Load more" shows. Then a DEFERRED load-more response we
-    // resolve only after the scope has flipped.
-    const friendsPage = Array.from({ length: 30 }, (_, i) => post(100 - i))
-    let releaseLoadMore
-    const deferred = new Promise((resolve) => {
-      releaseLoadMore = () => resolve({ data: [post(1, { dish_name: 'STALE friends post' })] })
-    })
-    getFeed.mockImplementation((beforeId, scope) => {
-      if (beforeId === 71 && scope === 'friends') return deferred // the load-more call
-      if (scope === 'everyone') return Promise.resolve({ data: [post(200, { dish_name: 'Everyone post' })] })
-      return Promise.resolve({ data: friendsPage }) // initial friends load
-    })
+  it('falls back to the empty state if the public fetch fails', async () => {
+    getFeed
+      .mockResolvedValueOnce({ data: [] })
+      .mockRejectedValueOnce(new Error('offline'))
+    renderFeed()
+    // Not a spinner forever, and not a blank screen.
+    expect(await screen.findByText(/nothing cooking yet/i)).toBeInTheDocument()
+  })
+
+  it('paginates the source it is actually showing', async () => {
+    getFeed
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: Array.from({ length: 30 }, (_, i) => post(100 - i)) })
     renderFeed()
     await screen.findByText('Dish 100')
-    // Fire load-more (stays pending), then switch to Everyone.
+    getFeed.mockResolvedValueOnce({ data: [post(70)] })
     await userEvent.click(screen.getByRole('button', { name: /load more/i }))
-    await userEvent.click(screen.getByRole('tab', { name: /everyone/i }))
-    await screen.findByText('Everyone post')
-    // Now release the stale friends page; it must be discarded.
-    releaseLoadMore()
-    await new Promise((r) => setTimeout(r, 0)) // let the resolved promise flush
-    expect(screen.queryByText('STALE friends post')).toBeNull()
-    expect(screen.getByText('Everyone post')).toBeInTheDocument() // everyone view intact
+    // Page 2 must come from the PUBLIC source, or a friends page would append under it.
+    await waitFor(() => expect(getFeed).toHaveBeenLastCalledWith(71, 'everyone'))
   })
 
-  it('hides the friends strip in the Everyone scope', async () => {
-    getFeed.mockResolvedValue({ data: [post(1)] })
+  it('shows the friends strip whether or not your circle has posted', async () => {
+    // No longer gated on a scope. It self-hides with no friends, which is already right in
+    // cold start, and someone WITH friends whose circle is quiet should still see them.
+    const { getFriends } = await import('../api/friends')
     getFriends.mockResolvedValue({
-      data: [{ user_id: 42, first_name: 'Ana', last_name: 'R', photo_url: null }],
+      data: [{ user_id: 5, first_name: 'Ana', last_name: 'Cruz', photo_url: null }],
     })
+    getFeed.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({ data: [post(9)] })
     renderFeed()
-    // Strip shows in friends scope.
-    expect(await screen.findByRole('button', { name: /ana/i })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: /everyone/i }))
-    // Gone in everyone scope (discovery isn't about your circle).
-    await waitFor(() => expect(getFeed).toHaveBeenCalledWith(undefined, 'everyone'))
-    expect(screen.queryByRole('button', { name: /ana/i })).toBeNull()
+    await screen.findByText('Dish 9')
+    expect(await screen.findByText('Ana')).toBeInTheDocument()
   })
 })
 
@@ -205,14 +212,17 @@ describe('Feed — the permanent route to Friends', () => {
     expect(await screen.findByText('friends page')).toBeInTheDocument()
   })
 
-  it('is there in the everyone scope too, where no empty-state button exists', async () => {
-    getFeed.mockResolvedValue({ data: [] })
+  it('is there in the cold-start feed too, where no empty-state button exists', async () => {
+    // Public posts fill the screen, so the "find friends" button inside the empty-state box is
+    // gone — and this is the user with NO friends, i.e. exactly who needs the door. The
+    // masthead is the only one left.
+    getFeed
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [post(9)] })
     renderFeed()
-    await screen.findByText(/nothing cooking yet/i)
-    await userEvent.click(screen.getByRole('tab', { name: /^everyone$/i }))
-    // The everyone empty state deliberately has no find-friends prompt (it's a
-    // discovery tab), so the masthead is the ONLY door here.
-    await screen.findByText(/nothing public yet/i)
+    await screen.findByText('Dish 9')
+    // Exactly ONE left — the masthead's. The empty state's is gone with the empty state.
+    expect(screen.getAllByRole('button', { name: /find friends/i })).toHaveLength(1)
     expect(findFriends()).toBeInTheDocument()
   })
 
@@ -352,7 +362,7 @@ describe('Feed — the caught-up divider (#97)', () => {
     expect(await screen.findByText('Dish 1')).toBeInTheDocument()
   })
 
-  it('no divider on the Everyone tab, where the mark is never advanced', async () => {
+  it('no divider where is_new is null (the server omits it off the friends feed)', async () => {
     // The server sends is_new: null for that scope, so there is nothing to draw a line from —
     // otherwise it would freeze in one place forever in a tab nobody catches up on.
     getFeed.mockResolvedValue({

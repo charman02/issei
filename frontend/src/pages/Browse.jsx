@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client from '../api/client'
-import { browsePosts } from '../api/posts'
 import RecipeCard from '../components/RecipeCard'
-import PostCard from '../components/PostCard'
 import IconField from '../components/IconField'
 import MarkerTitle from '../components/MarkerTitle'
 import FilterSelect from '../components/FilterSelect'
@@ -83,14 +81,14 @@ export default function Browse() {
   const [cuisine, setCuisine] = useState('')
   const [diet, setDiet] = useState('')
   const [readyIn, setReadyIn] = useState('0')
-  // Recipes | Meals tabs (#71). Recipes is the default (Browse has always been recipe-
-  // first). Meals = public posts, for discovery. Posts load lazily the first time the
-  // Meals tab is opened. Search is scoped to whichever tab is active; the cuisine/diet/
-  // ready-in filters only apply to recipes (a post has none of those), so they hide on
-  // Meals. Search resets when switching tabs — the query rarely means the same across
-  // two different result kinds, and carrying it over reads as a broken filter.
-  const [tab, setTab] = useState('recipes')
-  const [posts, setPosts] = useState(null) // null = not loaded (lazy, Meals tab only)
+  // BROWSE IS RECIPES ONLY (#94, un-shipping #71's Meals tab). Browse is an INTENT surface:
+  // you arrive wanting a specific dish, and recipes are searchable that way. Nobody searches
+  // for a photo of someone's dinner — a stranger's meal works by ambush, not by query, so
+  // putting it behind a search box put the payload behind the wrong door, which is why the
+  // tab felt like it had no pull. Public posts moved to where serendipity belongs: the
+  // cold-start Home feed (see Feed.jsx).
+  //
+  // `GET /posts/browse` still exists, still tested; nothing on the client calls it now.
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -100,26 +98,11 @@ export default function Browse() {
       .catch(() => setRecipes([]))
   }, [])
 
-  // Load public posts the first time Meals is opened. Backend scopes to visibility ==
-  // 'public', so nothing friends/private surfaces.
-  useEffect(() => {
-    if (tab !== 'meals' || posts !== null) return
-    browsePosts()
-      .then((res) => setPosts(res.data))
-      .catch(() => setPosts([]))
-  }, [tab, posts])
-
   function clearAll() {
     setSearch('')
     setCuisine('')
     setDiet('')
     setReadyIn('0')
-  }
-
-  function switchTab(next) {
-    if (next === tab) return
-    setTab(next)
-    setSearch('') // a search rarely means the same thing across recipes vs meals
   }
 
   if (recipes === null) {
@@ -150,13 +133,6 @@ export default function Browse() {
     (section) => section.recipes.length > 0,
   )
 
-  // Meals tab: filter public posts by dish name (client-side, over the loaded set — same
-  // shape as recipe search here). The cuisine/diet/ready-in filters don't apply to posts.
-  const filteredPosts = (posts || []).filter(
-    (p) =>
-      !searchQuery || p.dish_name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
-
   return (
     <div className="min-h-screen bg-cream pt-6">
       <div className="px-4">
@@ -167,47 +143,21 @@ export default function Browse() {
           Browse<span className="text-terra">.</span>
         </MarkerTitle>
         <p className="font-display italic text-[15px] text-ink-soft mt-3">
-          {tab === 'meals'
-            ? 'Meals people shared with everyone.'
-            : 'Recipes from every kitchen.'}
+          Recipes from every kitchen.
         </p>
-
-        {/* Recipes | Meals tabs (#71). Same sticker pill idiom as the Kitchen + feed
-            toggles. */}
-        <div role="tablist" aria-label="Recipes or meals" className="flex mt-4">
-          <div className="inline-flex rounded-full border-2 border-ink bg-cream p-0.5 text-[13.5px] font-display font-bold">
-            {[
-              { value: 'recipes', label: 'Recipes' },
-              { value: 'meals', label: 'Meals' },
-            ].map((t) => (
-              <button
-                key={t.value}
-                role="tab"
-                aria-selected={tab === t.value}
-                onClick={() => switchTab(t.value)}
-                className={`px-5 py-1.5 rounded-full transition ${
-                  tab === t.value ? 'bg-terra text-cream' : 'text-ink-soft'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <IconField
           icon="search"
           iconClassName="text-ink-soft"
           type="text"
-          placeholder={tab === 'meals' ? 'Search meals' : 'Search recipes'}
+          placeholder="Search recipes"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           wrapperClassName="mt-3.5"
         />
 
-        {/* Dropdown filter row — recipes only (a post has no cuisine/diet/prep time). */}
-        {tab === 'recipes' && (
-          <div className="flex gap-2 mt-3">
+        {/* Dropdown filter row. */}
+        <div className="flex gap-2 mt-3">
             <FilterSelect
               label="Cuisine"
               value={cuisine}
@@ -226,10 +176,9 @@ export default function Browse() {
               onChange={setReadyIn}
               options={READY_IN}
             />
-          </div>
-        )}
+        </div>
 
-        {tab === 'recipes' && isFiltering && (
+        {isFiltering && (
           <div className="flex items-center justify-between mt-3">
             <span className="font-display font-bold text-[13px] text-ink">
               {filteredRecipes.length}{' '}
@@ -245,11 +194,10 @@ export default function Browse() {
         )}
       </div>
 
-      {/* RESULTS — recipes tab.
+      {/* RESULTS.
           Filtering → one flat grid of matches (no section titles).
           Default → curated horizontal-scroll section rows. */}
-      {tab === 'recipes' ? (
-      isFiltering ? (
+      {isFiltering ? (
         filteredRecipes.length === 0 ? (
           <div className="px-4 mt-8">
             <EmptyState
@@ -304,29 +252,6 @@ export default function Browse() {
                 ))}
               </div>
             </section>
-          ))}
-        </div>
-      )
-      ) : /* MEALS tab — public posts, tap → the post's detail page. */
-      posts === null ? (
-        <Loader />
-      ) : filteredPosts.length === 0 ? (
-        <div className="px-4 mt-8">
-          <EmptyState
-            icon={searchQuery ? '🔍' : '📸'}
-            badge={searchQuery ? 'bg-brick' : undefined}
-            title={searchQuery ? 'No meals match' : 'No meals shared yet'}
-            sub={
-              searchQuery
-                ? 'Try a different word.'
-                : 'Public meals people share will show up here.'
-            }
-          />
-        </div>
-      ) : (
-        <div className="px-4 pt-5 space-y-5">
-          {filteredPosts.map((p) => (
-            <PostCard key={p.id} post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
           ))}
         </div>
       )}

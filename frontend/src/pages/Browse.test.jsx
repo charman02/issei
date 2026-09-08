@@ -60,63 +60,40 @@ beforeEach(() => {
   localStorage.setItem('issei_user', JSON.stringify({ id: 1 }))
 })
 
-describe('Browse — Recipes | Meals tabs (#71)', () => {
-  it('opens on Recipes and shows the recipe view, not posts', async () => {
-    browsePosts.mockResolvedValue({ data: [] })
-    renderBrowse()
-    expect(await screen.findByRole('tab', { name: /recipes/i })).toHaveAttribute(
-      'aria-selected',
-      'true',
+// The Meals tab is GONE (#94, un-shipping #71). Browse is an INTENT surface — you arrive
+// wanting a specific dish, and recipes are searchable that way; nobody searches for a photo of
+// someone's dinner. Public posts moved to the cold-start Home feed, where serendipity belongs.
+describe('Browse is recipes only (#94)', () => {
+  it('shows recipes with no tabs to choose between', async () => {
+    render(
+      <MemoryRouter initialEntries={['/browse']}>
+        <Routes>
+          <Route path="/browse" element={<Browse />} />
+        </Routes>
+      </MemoryRouter>,
     )
-    // The cuisine/diet/ready-in filters are recipe-only.
-    expect(screen.getByText(/all cuisines/i)).toBeInTheDocument()
-    // Posts aren't fetched until Meals is opened.
+    expect(await screen.findByText('Recently Added')).toBeInTheDocument()
+    expect(screen.getAllByText('Adobo').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('tab', { name: /^meals$/i })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /^recipes$/i })).toBeNull()
+    expect(screen.getByPlaceholderText(/search recipes/i)).toBeInTheDocument()
+  })
+
+  it('never fetches public posts', async () => {
+    // The endpoint still exists and is still tested server-side; the client just stopped
+    // calling it. A stray call would mean the tab crept back in some other form.
+    render(
+      <MemoryRouter initialEntries={['/browse']}>
+        <Routes>
+          <Route path="/browse" element={<Browse />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Recently Added')
     expect(browsePosts).not.toHaveBeenCalled()
-  })
-
-  it('switching to Meals lazy-loads public posts and hides the recipe filters', async () => {
-    browsePosts.mockResolvedValue({ data: [post(1, 'Sunday Adobo')] })
-    renderBrowse()
-    await screen.findByRole('tab', { name: /meals/i })
-    await userEvent.click(screen.getByRole('tab', { name: /meals/i }))
-    await waitFor(() => expect(browsePosts).toHaveBeenCalled())
-    expect(await screen.findByText('Sunday Adobo')).toBeInTheDocument()
-    // Recipe filters gone on the Meals tab.
-    expect(screen.queryByText(/all cuisines/i)).toBeNull()
-  })
-
-  it('tapping a meal opens its post page', async () => {
-    browsePosts.mockResolvedValue({ data: [post(7, 'Sinigang')] })
-    renderBrowse()
-    await userEvent.click(await screen.findByRole('tab', { name: /meals/i }))
-    await screen.findByText('Sinigang')
-    await userEvent.click(screen.getByRole('button', { name: /open sinigang/i }))
-    expect(await screen.findByText('post page')).toBeInTheDocument()
-  })
-
-  it('searches meals by dish name on the Meals tab', async () => {
-    browsePosts.mockResolvedValue({
-      data: [post(1, 'Chicken Adobo'), post(2, 'Pork Sinigang')],
-    })
-    renderBrowse()
-    await userEvent.click(await screen.findByRole('tab', { name: /meals/i }))
-    await screen.findByText('Chicken Adobo')
-    await userEvent.type(screen.getByPlaceholderText(/search meals/i), 'adobo')
-    expect(screen.getByText('Chicken Adobo')).toBeInTheDocument()
-    expect(screen.queryByText('Pork Sinigang')).toBeNull()
-  })
-
-  it('shows a meals empty state when nobody has shared a public meal', async () => {
-    browsePosts.mockResolvedValue({ data: [] })
-    renderBrowse()
-    await userEvent.click(await screen.findByRole('tab', { name: /meals/i }))
-    expect(await screen.findByText(/no meals shared yet/i)).toBeInTheDocument()
   })
 })
 
-// The section ORDER is a product decision, not an accident of how buildSections was written —
-// it used to be the exact reverse, with Recently Added last. Pinned so a refactor can't quietly
-// bury the only row that changes between visits.
 describe('Browse — section order', () => {
   it('leads with Recently Added, then Quick & Easy, then cuisines', async () => {
     const client = (await import('../api/client')).default
