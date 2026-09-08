@@ -84,6 +84,11 @@ export function useCurrentUser() {
 export async function reconcile() {
   try {
     const { data } = await client.get('/auth/me')
+    // Re-check the token AFTER the round trip. Logout is an SPA navigation, so this JS context
+    // survives it: a reconcile fired at app start (the client allows 45s, and a cold backend
+    // can use it) could otherwise resolve after the user logged out and write their name,
+    // email and photo back into localStorage on a shared device.
+    if (!localStorage.getItem('issei_token')) return null
     patchUser(data)
     return data
   } catch {

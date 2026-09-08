@@ -862,7 +862,7 @@ export default function RecipeForm({
             A tester wrote their ENTIRE method into step 1, because with only one
             empty step rendered there was nothing on screen suggesting steps were
             meant to be separate. The fix is structural, not a hint: the add flow
-            starts with several empty steps (see STARTING_STEPS) so the pattern is
+            starts with two empty steps (see STARTING_STEPS) so the pattern is
             visible before you type, and pressing Enter in a step opens the next
             one. The line below states the intent for anyone who still wonders. */}
         <FormSection>Steps</FormSection>

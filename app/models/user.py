@@ -35,7 +35,7 @@ class User(Base):
     # and nothing is hidden — a post is the top of the funnel to a handoff, so a vanishing post
     # would take the ask with it, and posts are permanent records on their author's profile.
     #
-    # ONE COLUMN, not a post_view table: a timestamp answers all three things that needed this
+    # ONE COLUMN, not a post_view table: a watermark answers all three things that needed this
     # — the "new since you last looked" divider, the "you're all caught up" state, and the
     # content of a push prompt ("3 friends posted since you last looked", #89) — without a row
     # per user per post. Per-post read state buys precision nobody has asked for yet.

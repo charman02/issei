@@ -1,7 +1,7 @@
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -275,7 +275,11 @@ def feed(
         _to_response(
             p, p.user, viewable,
             viewer_id=current_user.id, request_counts=counts, my_requested_post_ids=mine,
-            last_seen_post_id=last_seen, mark_new=True,
+            # Friends scope only. On `everyone` the client deliberately never advances the
+            # mark (it isn't a feed you catch up on), so an is_new computed there would be
+            # measured against the FRIENDS watermark and freeze in one place forever — a
+            # "caught up" claim about a tab you never caught up on.
+            last_seen_post_id=last_seen, mark_new=(scope != "everyone"),
         )
         for p in posts
     ]
@@ -303,20 +307,34 @@ def mark_feed_seen(
     """
     mark = body.through_post_id if body is not None else None
     if mark is None:
-        # No id given — the page was empty, so there was nothing to miss. Watermark at the
-        # newest post that exists: the honest "I'm caught up on everything so far".
-        mark = db.query(func.max(Post.id)).scalar()
-    if mark is None:
-        return None  # no posts exist at all; nothing to mark
-
-    current = current_user.last_feed_seen_post_id
-    # FORWARD ONLY, so a stale or out-of-order call (two tabs, a retry, a client sending an
-    # older page) can never rewind the mark and resurface posts the user already read. Also no
-    # 404 on an unknown id: whether a post exists is not something this bookkeeping call should
-    # confirm, and an id past the end simply means "everything so far".
-    if current is not None and mark <= current:
+        # No id, nothing to do. Deliberately NOT "mark everything that exists": that branch
+        # would watermark past strangers' and blocked users' posts, suppressing is_new for a
+        # backlog the caller has never been shown. The client never calls without an id.
         return None
-    current_user.last_feed_seen_post_id = mark
+
+    # CLAMP to a real post id. Two distinct problems, both reachable by any authenticated
+    # caller: the column is int4 on Postgres, so an id above 2^31 raises NumericValueOutOfRange
+    # — a 500 that no SQLite test can catch, since SQLite has no such ceiling. And because the
+    # mark is forward-only BY DESIGN, a single call with a huge id would permanently leave that
+    # account with "nothing is ever new", unfixable without a manual database edit. Clamping
+    # keeps the no-404 decision (an out-of-range id is still not confirmed either way) while
+    # making the value harmless. `ge=1` on the schema handles negatives and zero.
+    newest = db.query(func.max(Post.id)).scalar()
+    if newest is None:
+        return None  # no posts exist at all; nothing to mark
+    mark = min(mark, newest)
+
+    # FORWARD ONLY, enforced in the UPDATE rather than by read-then-write. Two tabs both
+    # reading `current` and then writing could otherwise land the lower value last — harmless
+    # (a re-shown divider) but it made the docstring's "can never rewind it" merely usually
+    # true. One conditional statement makes it literally true.
+    db.query(User).filter(
+        User.id == current_user.id,
+        or_(
+            User.last_feed_seen_post_id.is_(None),
+            User.last_feed_seen_post_id < mark,
+        ),
+    ).update({"last_feed_seen_post_id": mark}, synchronize_session=False)
     db.commit()
     return None
 

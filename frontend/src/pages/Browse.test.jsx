@@ -113,3 +113,38 @@ describe('Browse — Recipes | Meals tabs (#71)', () => {
     expect(await screen.findByText(/no meals shared yet/i)).toBeInTheDocument()
   })
 })
+
+// The section ORDER is a product decision, not an accident of how buildSections was written —
+// it used to be the exact reverse, with Recently Added last. Pinned so a refactor can't quietly
+// bury the only row that changes between visits.
+describe('Browse — section order', () => {
+  it('leads with Recently Added, then Quick & Easy, then cuisines', async () => {
+    const client = (await import('../api/client')).default
+    client.get.mockResolvedValue({
+      data: [
+        {
+          id: 1, name: 'Adobo', cuisine: 'Filipino', diet: '',
+          prep_time_minutes: 20, created_at: '2026-08-01T00:00:00Z',
+          origin_attribution: 'Lola',
+        },
+      ],
+    })
+    render(
+      <MemoryRouter initialEntries={['/browse']}>
+        <Routes>
+          <Route path="/browse" element={<Browse />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Recently Added')
+    // Read the headings in DOM order — the assertion is about sequence, not presence.
+    const headings = screen
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent.trim())
+    expect(headings[0]).toBe('Recently Added')
+    expect(headings[1]).toBe('Quick & Easy')
+    // This recipe is Filipino and under 30 min, so it appears in all three — the cuisine row
+    // is present but must come last.
+    expect(headings[2]).toBe('Filipino')
+  })
+})

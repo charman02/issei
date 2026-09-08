@@ -40,7 +40,11 @@ class FeedSeenIn(BaseModel):
     came back empty, since there was nothing to miss.
     """
 
-    through_post_id: Optional[int] = None
+    # ge=1 because a post id is always positive; the router additionally CLAMPS to the newest
+    # existing id, since the column is int4 on Postgres (an oversized value is a 500 there and
+    # nothing on SQLite) and the mark is forward-only, so one bad call would otherwise leave an
+    # account permanently unable to see anything as new.
+    through_post_id: Optional[int] = Field(default=None, ge=1)
 
 
 class PostResponse(BaseModel):

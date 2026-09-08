@@ -277,7 +277,7 @@ describe('RecipeForm intro', () => {
 
 // The add flow's friction fixes. Each of these is a specific reported failure
 // from user testing, not a hypothetical.
-// The form now opens with ONE blank ingredient and ONE blank step (see STARTING_INGREDIENTS).
+// The form opens with TWO blank ingredients and TWO blank steps (see STARTING_INGREDIENTS).
 // Tests that need several rows to prove "every row has X" add them, rather than depending on
 // the starting count — which is a product decision that has changed twice.
 function addStep(n = 1) {
@@ -365,7 +365,7 @@ describe('RecipeForm capture friction', () => {
     // Testers found the TAPPING more tiring than the typing, so a whole list
     // should be enterable from the keyboard without reaching for "+ Add".
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     const stepFields = screen.getAllByPlaceholderText(/describe this step/i)
     stepFields[0].focus()
     fireEvent.keyDown(stepFields[0], { key: 'Enter' })
@@ -383,7 +383,7 @@ describe('RecipeForm capture friction', () => {
 
   it('Shift+Enter in a step does NOT advance — a step can run long', () => {
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     const stepFields = screen.getAllByPlaceholderText(/describe this step/i)
     stepFields[0].focus()
     fireEvent.keyDown(stepFields[0], { key: 'Enter', shiftKey: true })
@@ -403,7 +403,7 @@ describe('RecipeForm capture friction', () => {
 
   it('Enter on an amount advances to the next ingredient', () => {
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     const amounts = screen.getAllByPlaceholderText(
       /1\/2 cup · a dash · to taste/i,
     )
@@ -428,7 +428,7 @@ describe('RecipeForm ingredient autosuggest', () => {
     // persistent visible label has to still name it, and it must announce as a
     // combobox so a screen-reader user is told the list exists at all.
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     // Scope to the ingredient name fields by their label: the source and cuisine
     // fields are also comboboxes now (SuggestField), so a bare combobox count would
     // include them. Three ingredient rows → three "Ingredient" comboboxes.
@@ -664,7 +664,7 @@ describe('RecipeForm step photos', () => {
 
   it('offers a photo picker on every step, keyboard-reachable', () => {
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     const pickers = stepPickers()
     expect(pickers).toHaveLength(3)
     pickers.forEach((p) => {
@@ -716,7 +716,7 @@ describe('RecipeForm step photos', () => {
     const pending = deferredUploads()
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<RecipeForm mode="add" onSubmit={onSubmit} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
 
     fireEvent.change(screen.getByPlaceholderText('e.g. “Adobo”'), {
       target: { value: 'Dumplings' },
@@ -804,7 +804,7 @@ describe('RecipeForm step photos — per-step upload isolation', () => {
   it('uploads for different steps run in parallel — neither aborts the other', async () => {
     deferredUploads()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
 
     pick(stepPickers()[0], jpeg('one.jpg'))
     await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
@@ -819,7 +819,7 @@ describe('RecipeForm step photos — per-step upload isolation', () => {
   it('lands each photo on the step it was picked for, whatever the order', async () => {
     const pending = deferredUploads()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
 
     pick(stepPickers()[0], jpeg('one.jpg'))
     await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1))
@@ -892,7 +892,7 @@ describe('RecipeForm step photos — per-step upload isolation', () => {
   it('shows progress and failure only on the step that was picked', async () => {
     const pending = deferredUploads()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
 
     pick(stepPickers()[0], jpeg('one.jpg'))
     await waitFor(() =>
@@ -911,7 +911,7 @@ describe('RecipeForm step photos — per-step upload isolation', () => {
     const pending = deferredUploads()
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<RecipeForm mode="add" onSubmit={onSubmit} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
 
     const contents = screen.getAllByPlaceholderText('Describe this step…')
     fireEvent.change(contents[0], { target: { value: 'Pleat it.' } })
@@ -964,7 +964,7 @@ describe('RecipeForm dictation', () => {
   it('offers a mic on every text field: the dish, the story, and each step field', () => {
     supported()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     expect(
       screen.getByRole('button', { name: 'Dictate the dish name' }),
     ).toBeInTheDocument()
@@ -993,7 +993,7 @@ describe('RecipeForm dictation', () => {
     // amount each carry a mic alongside their autosuggest / unit-chip helpers.
     supported()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     const rows = document.querySelectorAll('[data-ingredient-row]')
     expect(rows).toHaveLength(3)
     for (let i = 0; i < rows.length; i++) {
@@ -1022,7 +1022,7 @@ describe('RecipeForm dictation', () => {
     // accessible name), so htmlFor has to carry what nesting used to.
     supported()
     render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    growTo3() // needs three rows to prove EVERY row; the default is now one
+    growTo3() // needs three rows to prove EVERY row; the default is two
     expect(screen.getByLabelText('Dish name')).toHaveAttribute(
       'placeholder',
       'e.g. “Adobo”',

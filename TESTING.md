@@ -45,7 +45,7 @@ change falls in, treat it as "stop and ask."
    - `issei-ship-review` → the `issei-branch-reviewer` agent: an adversarial,
      read-only review of the whole diff before a `main` merge. This is what catches
      the bugs tests don't have yet (it caught a silent edit-erasure bug that all
-     501 green tests missed).
+     a green suite missed).
    - `issei-docs-check` → the `issei-docs-auditor` agent: re-measures every count in
      the docs and scans for POSITIONING violations.
    - Run **both** before merging to `main`. Green suites are necessary, not
@@ -113,6 +113,13 @@ alone — re-run it):
   that's the actual failure mode, not a theoretical one: `discover_people`, `user_profile`,
   `request_friend`, `friend_suggestions` and `browse_recipes` each needed a hand-written
   check, and `friend_suggestions` was missed on the first pass.
+- **New surface that displays the signed-in person** (their name, email or avatar) → read it
+  through `lib/currentUser.js` (`useCurrentUser()` / `readUser()`), never
+  `localStorage.getItem('issei_user')` directly, and write with `patchUser` so the merge
+  happens over a fresh read. Two drift bugs shipped from the direct pattern: the Home photo
+  nudge that wouldn't go away, and the You page's stale monogram beside a correct avatar on the
+  same user's post card. `id` and `profile_visibility` are the only sanctioned direct reads.
+  → `frontend/src/lib/currentUser.test.jsx`
 - **New recipe-form field** → seed it in `EditRecipe.initialValues` and add a
   round-trip assertion (invariant 7). Add it to the payload test.
 - **New user-facing copy near dictation/handoff** → it's covered by the banned-word
@@ -139,6 +146,32 @@ Pinned by `tests/test_recipe_requests.py` — `test_the_count_goes_to_the_cook_a
 assert `None`, not `0`) — and by `frontend/src/components/PostCard.test.jsx`, "shows the count
 to the COOK only, and never as a zero". (`Browse` has a test file now.)
 (`EditRecipe` being untested is exactly how invariant 7's bug reached prod.)
+
+### Invariant 10 — `is_new` is a flag, never a filter (nothing in issei expires)
+
+The feed returns **exactly the same posts** before and after a read-mark. `is_new` (#97) marks
+a BOUNDARY so the client can draw "You're all caught up"; it must never become a reason to omit
+a row. Filtering seen posts out of the feed looks like a pure win — smaller payload, less to
+scroll — and no other test would fail. This is the one that catches it.
+
+Why it's a product rule and not just a data one: a post is the top of the funnel to a handoff,
+so a vanishing post takes the ask with it. Posts are also permanent records on their author's
+profile. **issei is not ephemeral**, and BeReal's expiry is the one mechanic deliberately not
+copied.
+→ `tests/test_feed_seen.py::test_marking_seen_HIDES_NOTHING_it_only_clears_the_flag` (asserts
+dish names, order AND the id set, so a filter fails on the first assertion), plus
+`test_the_mark_only_moves_FORWARD`, `test_your_own_post_is_never_new_to_you`,
+`test_is_new_is_None_off_the_feed_where_new_has_no_meaning`,
+`test_the_everyone_tab_has_no_is_new_at_all`; and on the client
+`frontend/src/pages/Feed.test.jsx` — "draws the line after the last new post, keeping the older
+ones on screen", "draws ONE divider even when your own post sits among new ones".
+
+Two model constraints break separately and each has its own test:
+- **An id, not a timestamp.** `created_at` is second-granular on SQLite, so a post made in the
+  same second as the mark is wrongly counted as read. A test caught the timestamp version doing
+  exactly that → `test_marking_through_a_post_does_not_swallow_newer_ones`.
+- **Not a foreign key.** A FK to `posts.id` would `SET NULL` when that post is deleted, resetting
+  the user to "never looked" and resurfacing their whole feed as new. It is a watermark.
 
 ### Invariant 9 — a block beats visibility, never an accepted grant, and is always a 404
 

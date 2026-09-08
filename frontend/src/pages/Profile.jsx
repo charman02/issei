@@ -147,8 +147,8 @@ export default function Profile() {
   }, [user.id])
 
   // Avatar upload (#33) via the shared hook — it uploads (square face-crop), PATCHes
-  // /auth/me, and refreshes the cached issei_user. onDone mirrors the new URL into this
-  // page's own `user` state so the identity card updates immediately.
+  // /auth/me, and writes through the identity store, which this page subscribes to. So
+  // there is nothing for onDone to mirror locally any more.
   const {
     onPick: onPickPhoto,
     uploading: uploadingPhoto,

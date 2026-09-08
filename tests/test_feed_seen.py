@@ -76,7 +76,7 @@ def test_a_post_that_arrives_AFTER_the_mark_is_new_again(client, make_user):
     assert feed == {"Fresh": True, "Old": False}
 
 
-def test_marking_through_a_post_does_not_swallow_newer_ones(client, make_user):
+def test_marking_through_a_post_does_not_swallow_newer_ones(client, make_user, db_session):
     """Why the mark is the ID of a post the client actually received, not a wall-clock time:
     with now(), anything published while the feed was on screen would be silently marked seen.
 
@@ -88,9 +88,16 @@ def test_marking_through_a_post_does_not_swallow_newer_ones(client, make_user):
     _befriend(client, a, ah, b, bh)
     seen_post = _post(client, bh, dish="Read")
     later = _post(client, bh, dish="Published while looking")
-    assert later["created_at"][:19] == seen_post["created_at"][:19], (
-        "the point of this test is that they share a second"
-    )
+    # FORCE the shared second rather than hoping two HTTP calls land inside one — otherwise this
+    # flakes at a second boundary, in a suite that gates the prod deploy. Setting them equal is
+    # also strictly stronger than observing them equal.
+    from app.models.post import Post
+
+    first_row = db_session.query(Post).filter(Post.id == seen_post["id"]).first()
+    later_row = db_session.query(Post).filter(Post.id == later["id"]).first()
+    later_row.created_at = first_row.created_at
+    db_session.commit()
+    assert later_row.created_at == first_row.created_at
 
     _seen(client, ah, through=seen_post["id"])
 
@@ -143,27 +150,59 @@ def test_seen_requires_auth_and_ignores_an_unknown_post_id(client, make_user):
     ).status_code == 204
 
 
-def test_seen_with_no_body_marks_everything_that_exists_so_far(client, make_user, db_session):
-    """The empty-page case: the client got nothing back, so there was nothing to miss. The mark
-    goes to the newest post in existence rather than staying put, which is what stops an empty
-    first load from leaving the whole backlog flagged new later."""
+def test_seen_with_no_body_does_NOTHING(client, make_user, db_session):
+    """Deliberately a no-op rather than "mark everything that exists".
+
+    The tempting version watermarks at MAX(Post.id) — but that spans strangers' and blocked
+    users' posts, so it would suppress `is_new` for an entire backlog the caller has never been
+    shown. The client always sends an id; there is no legitimate no-id case worth that risk."""
     from app.models.user import User
 
     a, ah = make_user()
     b, bh = make_user()
-    # A post `a` cannot see (not friends), so their feed page really is empty.
-    theirs = _post(client, bh, dish="Not visible to a")
-    assert client.get("/posts/feed", headers=ah).json() == []
+    _post(client, bh, dish="Never shown to a")
 
     assert client.post("/posts/feed/seen", headers=ah).status_code == 204
     row = db_session.query(User).filter(User.id == a.id).first()
-    assert row.last_feed_seen_post_id == theirs["id"]
+    assert row.last_feed_seen_post_id is None
 
 
-def test_seen_is_a_no_op_when_no_posts_exist_at_all(client, make_user, db_session):
+def test_an_oversized_id_is_CLAMPED_not_stored(client, make_user, db_session):
+    """Two problems in one, both reachable by any authenticated caller, and neither catchable on
+    SQLite: the column is int4 on Postgres, so a value above 2^31 is a NumericValueOutOfRange
+    500 in prod only. And since the mark is forward-only BY DESIGN, one such call would leave
+    that account permanently unable to see anything as new — no product path could rewind it.
+
+    Clamping keeps the deliberate no-404 (an out-of-range id still isn't confirmed either way)
+    while making the stored value harmless."""
     from app.models.user import User
 
     a, ah = make_user()
-    assert client.post("/posts/feed/seen", headers=ah).status_code == 204
+    b, bh = make_user()
+    newest = _post(client, bh, dish="Newest")
+
+    assert client.post(
+        "/posts/feed/seen", json={"through_post_id": 3_000_000_000}, headers=ah
+    ).status_code == 204
     row = db_session.query(User).filter(User.id == a.id).first()
-    assert row.last_feed_seen_post_id is None  # nothing to mark, so nothing marked
+    assert row.last_feed_seen_post_id == newest["id"]  # clamped, not 3e9
+
+
+def test_a_zero_or_negative_id_is_rejected_at_the_boundary(client, make_user):
+    _, ah = make_user()
+    for bad in (0, -1):
+        r = client.post("/posts/feed/seen", json={"through_post_id": bad}, headers=ah)
+        assert r.status_code == 422, bad
+
+
+def test_the_everyone_tab_has_no_is_new_at_all(client, make_user):
+    """`is_new` is measured against the FRIENDS watermark, and the client never advances the mark
+    from the Everyone tab (it isn't a feed you catch up on). Computing it there would freeze a
+    "You're all caught up" divider in one spot forever, in a tab nobody ever caught up on."""
+    a, ah = make_user()
+    b, bh = make_user()
+    _post(client, bh, dish="Stranger public", visibility="public")
+
+    everyone = client.get("/posts/feed?scope=everyone", headers=ah).json()
+    assert [p["dish_name"] for p in everyone] == ["Stranger public"]
+    assert everyone[0]["is_new"] is None

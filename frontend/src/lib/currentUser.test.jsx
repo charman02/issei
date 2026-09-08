@@ -66,6 +66,7 @@ describe('the identity store', () => {
   it('reconcile() pulls the server value in, which is the actual fix', async () => {
     // The cache said no photo; the server knew there was one. Nothing used to close that gap,
     // so the nudge and the You page could stay wrong indefinitely.
+    localStorage.setItem('issei_token', 't') // reconcile is for a signed-in caller
     setUser({ id: 1, first_name: 'Ana' })
     client.get.mockResolvedValue({ data: { id: 1, first_name: 'Ana', photo_url: 'https://img.test/server.jpg' } })
 
@@ -80,8 +81,25 @@ describe('the identity store', () => {
     )
   })
 
+  it('reconcile() will not resurrect a user who logged out mid-flight', async () => {
+    // Logout is an SPA navigation, so this JS context survives it. A reconcile fired at app
+    // start (the client allows 45s, and a cold backend can use it) could otherwise resolve
+    // AFTER logout and write that person's name, email and photo back into localStorage — on a
+    // shared device, for the next person. So the token is re-checked after the round trip.
+    localStorage.setItem('issei_token', 't')
+    setUser({ id: 1, first_name: 'Ana' })
+    let resolveGet
+    client.get.mockReturnValue(new Promise((r) => { resolveGet = r }))
+    const pending = reconcile()
+    localStorage.removeItem('issei_token') // the user logs out while it's in flight
+    resolveGet({ data: { id: 1, first_name: 'Ana', photo_url: 'https://img.test/late.jpg' } })
+    await expect(pending).resolves.toBeNull()
+    expect(readUser().photo_url).toBeUndefined()
+  })
+
   it('reconcile() failing leaves the cached user alone', async () => {
     // Offline, or mid-401. Blanking someone's own name would be worse than a stale value.
+    localStorage.setItem('issei_token', 't')
     setUser({ id: 1, first_name: 'Ana', photo_url: 'https://img.test/cached.jpg' })
     client.get.mockRejectedValue(new Error('offline'))
     await expect(reconcile()).resolves.toBeNull()

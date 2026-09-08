@@ -329,13 +329,54 @@ describe('Feed — the caught-up divider (#97)', () => {
     await waitFor(() => expect(markFeedSeen).toHaveBeenCalledWith(9))
   })
 
-  it('a failed mark never blanks the feed', async () => {
-    // Bookkeeping must not be able to hide content: a throw here used to be caught by the
-    // feed's own .catch and read as "the fetch failed", emptying a list that had arrived.
+  it('a rejected mark never blanks the feed', async () => {
     const { markFeedSeen } = await import('../api/posts')
     markFeedSeen.mockRejectedValueOnce(new Error('offline'))
     getFeed.mockResolvedValue({ data: [post(1)] })
     renderFeed()
     expect(await screen.findByText('Dish 1')).toBeInTheDocument()
+  })
+
+  it('a mark that throws SYNCHRONOUSLY never blanks the feed either', async () => {
+    // This is the one that pins the guard. A rejected promise is handled by the .catch on the
+    // call itself, so the previous test passes even with the try/catch deleted. A SYNCHRONOUS
+    // throw is different: it escapes into the feed's own .then, gets caught by the outer
+    // .catch, and is read as "the fetch failed" — running setPosts([]) after setPosts(res.data)
+    // and blanking a list that had already arrived. Bookkeeping must not be able to hide content.
+    const { markFeedSeen } = await import('../api/posts')
+    markFeedSeen.mockImplementationOnce(() => {
+      throw new Error('boom')
+    })
+    getFeed.mockResolvedValue({ data: [post(1)] })
+    renderFeed()
+    expect(await screen.findByText('Dish 1')).toBeInTheDocument()
+  })
+
+  it('no divider on the Everyone tab, where the mark is never advanced', async () => {
+    // The server sends is_new: null for that scope, so there is nothing to draw a line from —
+    // otherwise it would freeze in one place forever in a tab nobody catches up on.
+    getFeed.mockResolvedValue({
+      data: [post(2, { is_new: null }), post(1, { is_new: null })],
+    })
+    renderFeed()
+    await screen.findByText('Dish 2')
+    expect(screen.queryByText(/you.re all caught up/i)).toBeNull()
+  })
+
+  it('draws ONE divider even when your own post sits among new ones', async () => {
+    // `is_new` is not monotonic: your own post is never new to you. A per-row boundary check
+    // drew a SECOND line above it, claiming you were caught up on unread content. The boundary
+    // is computed once from the array instead.
+    getFeed.mockResolvedValue({
+      data: [
+        post(8, { is_new: true }),
+        post(7, { is_new: false }), // yours
+        post(6, { is_new: true }),
+        post(5, { is_new: false }),
+      ],
+    })
+    renderFeed()
+    await screen.findByText('Dish 8')
+    expect(screen.getAllByText(/you.re all caught up/i)).toHaveLength(1)
   })
 })

@@ -241,7 +241,8 @@ draft to the add-a-recipe flow and gets the recipe back attached); and **the rec
 with an in-app inbox** (#79 — anyone who can see a meal may ask the cook for the recipe; the
 cook answers by writing or attaching one; delivery is a handoff grant per requester, so a
 PRIVATE recipe reaches the people who asked without its visibility changing); and **blocking**
-(#85 — `POST`/`GET`/`DELETE /friends/blocks`). Note what the directory means for any privacy
+(#85 — `POST`/`GET`/`DELETE /friends/blocks`); and a **feed read-mark** (#97 — the feed marks
+what arrived since you last looked and draws a "You're all caught up" line). Note what the directory means for any privacy
 claim: every signed-in user can enumerate every other user's name and photo, with no opt-out —
 so do **not** describe the app as private-by-default without qualifying that findability is not
 covered by the profile setting (see TECHDEBT's "Auth & permissions").
@@ -274,7 +275,7 @@ recipe, the cook's — so their later corrections reach the keeper, and if they 
 private or delete it the keeper genuinely loses access), and **only the cook can hand a
 recipe on** — a keeper has no re-share, no edit, and no delete.
 
-Five invariants still hold everywhere and must not be contradicted: the
+Six invariants still hold everywhere and must not be contradicted: the
 "everyone"/Browse surfaces show **public** posts only (a friends-only or private post never
 leaks into them — enforced in SQL); there is still **no like button** anywhere; there
 is **no count or list of who kept a recipe** — that would be the removed `child_count`
@@ -288,6 +289,14 @@ been blocked" or otherwise let someone detect that they were. That is the same r
 behind every other authorization denial in the app, and it is a copy rule as much as a code
 one. Nor is there any way to learn who has blocked **you**: `GET /friends/blocks` returns
 only the people the caller blocked.
+
+And the sixth, new with #97: **nothing in issei expires.** A post does not disappear after a day,
+after being seen, or ever — `is_new` is a flag, never a filter, and the feed returns the same
+posts before and after a read-mark. BeReal's ephemerality is the one mechanic deliberately NOT
+copied: a post is the top of the funnel to a handoff, so a vanishing post takes the ask with it,
+and posts are permanent records on their author's profile. Never describe issei as ephemeral, and
+never write "stories", "24 hours" or "disappears" as a feature. Recorded here before anyone
+proposes it, because arguing it later is more expensive.
 
 The fourth is new with #79 and the fifth with #85; the fourth is the easiest of the five to
 break by being helpful.
@@ -357,7 +366,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **58 routes**, **15 models**,
-**446 backend tests**, **698 frontend tests in 50 files**. Endpoint and test counts have
+**448 backend tests**, **705 frontend tests in 50 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

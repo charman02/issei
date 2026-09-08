@@ -31,26 +31,48 @@ const withAny = (label, values) => [
 // fourth and was the only cool colour in the app; peach carries the slot instead.
 const SECTION_COLORS = ['bg-saffron', 'bg-sage', 'bg-brick', 'bg-peach']
 
+// The rail sizes below are display caps, not filters — search reaches the whole corpus.
+const RECENT_ROW = 20
+
 // Curated section rows for the default (non-search) browse view.
+//
+// ORDER IS DELIBERATE, and it used to be the reverse of this (every cuisine, then Quick &
+// Easy, then Recently Added at the very bottom — the freshest thing in the app was the last
+// thing you'd reach). What lands first has to answer "is anything happening here?", and only
+// recency can:
+//
+//   1. Recently Added — the one row that is never empty while the app has any recipes at all,
+//      and the only one that changes between visits. It's the reason to come back.
+//   2. Quick & Easy — the most common actual intent ("what can I cook tonight?"), and it reads
+//      as an answer rather than a category.
+//   3. Cuisines — real but narrow: you only want one, and only when you already know which.
+//      They belong below the two rows that work without the reader having decided anything.
+//
+// Empty sections are dropped by the caller, so a cuisine nobody has cooked never renders.
 function buildSections(recipes) {
-  const sections = CUISINES.map((cuisine) => ({
-    title: cuisine,
-    recipes: recipes.filter((r) => matchesCuisine(r.cuisine, cuisine)),
-  }))
+  const sections = [
+    {
+      title: 'Recently Added',
+      // Capped because this is now the FIRST thing rendered: an uncapped rail would mount a
+      // card per recipe in the app before anything is on screen.
+      recipes: [...recipes]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, RECENT_ROW),
+    },
+    {
+      title: 'Quick & Easy',
+      recipes: recipes.filter(
+        (r) => r.prep_time_minutes != null && r.prep_time_minutes <= 30,
+      ),
+    },
+  ]
 
-  sections.push({
-    title: 'Quick & Easy',
-    recipes: recipes.filter(
-      (r) => r.prep_time_minutes != null && r.prep_time_minutes <= 30,
-    ),
-  })
-
-  sections.push({
-    title: 'Recently Added',
-    recipes: [...recipes].sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at),
-    ),
-  })
+  for (const cuisine of CUISINES) {
+    sections.push({
+      title: cuisine,
+      recipes: recipes.filter((r) => matchesCuisine(r.cuisine, cuisine)),
+    })
+  }
 
   return sections
 }

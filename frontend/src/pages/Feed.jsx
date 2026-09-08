@@ -132,6 +132,20 @@ export default function Feed() {
     }
   }, [scope])
 
+  // Index of the LAST post flagged new, or -1. The divider goes after it, and only when
+  // there is a genuine boundary to mark: at least one new post AND at least one older one
+  // below it. A permanent "all caught up" banner on every open stops meaning anything, and a
+  // line at the very bottom of an all-new first visit marks nothing at all.
+  //
+  // Never on the Everyone tab: `is_new` is null there (the server only computes it for the
+  // friends feed) and the mark is deliberately never advanced from it, so a divider there
+  // would freeze in one spot forever in a tab you never caught up on.
+  const lastNewIndex = posts
+    ? posts.reduce((acc, p, i) => (p.is_new ? i : acc), -1)
+    : -1
+  const caughtUpAfter =
+    posts && lastNewIndex >= 0 && lastNewIndex < posts.length - 1 ? lastNewIndex : -1
+
   const loadMore = useCallback(async () => {
     if (loadingMore || reachedEnd || !posts || posts.length === 0) return
     const firedScope = scope
@@ -278,20 +292,27 @@ export default function Feed() {
         )
       ) : (
         <div className="px-4 space-y-5">
+          {/* onOpen makes each photo open the post — that page carries the author's own
+              delete control, so a card that doesn't open is a dead end for the person most
+              likely to want it (PostComposer lands you back here after publishing).
+
+              THIS MUST BE A JSX COMMENT, not a `//` one. In children position `//` lines are
+              TEXT NODES: an earlier version of this block rendered four lines of source above
+              every card on Home. It compiled, built clean and passed every test, because
+              nothing asserted the ABSENCE of stray text. */}
           {posts.map((p, i) => (
             <div key={p.id} className="space-y-5">
-            // onOpen is passed here too now that the post page has an ACTION on it:
-            // PostComposer lands you back on the Feed, so this is exactly where someone
-            // notices they shared the wrong photo — and tapping it did nothing, leaving the
-            // only route to delete as Kitchen → Posts tab → tap.
-            <PostCard post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
-              {/* The caught-up line (#97) — placed AFTER the last new post, so everything
-                  above it arrived since you last looked and everything below is where you
-                  got to. Nothing is hidden or removed: the older posts are right there
-                  under it, still scrollable. Rendered only when there is a real boundary
-                  to mark (at least one new post AND at least one older one), so it never
-                  becomes a permanent fixture that stops meaning anything. */}
-              {p.is_new && posts[i + 1] && !posts[i + 1].is_new && (
+              <PostCard post={p} onOpen={() => navigate(`/posts/${p.id}`)} />
+              {/* The caught-up line (#97), after the LAST new post: above it is what arrived
+                  since you last looked, below is where you'd got to. Nothing is hidden or
+                  removed — the older posts are right there under it, still scrollable.
+
+                  The boundary index is computed ONCE from the array (see caughtUpAfter) rather
+                  than per row. Per-row would draw a line wherever a new post sits directly
+                  above a not-new one, and the flag is NOT monotonic: your own post is never
+                  `is_new` to you, so one of yours between two friends' new posts produced TWO
+                  dividers, the upper one claiming you were caught up on unread content. */}
+              {i === caughtUpAfter && (
                 <div className="flex items-center gap-3 pt-1">
                   <span className="h-[2px] flex-1 bg-line" />
                   <span className="font-display font-bold text-[12px] uppercase tracking-[0.08em] text-ink-soft">
