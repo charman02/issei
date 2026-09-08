@@ -16,6 +16,11 @@ const ago = (iso) => {
   return `${Math.floor(hrs / 24)}d`
 }
 
+// Types the server strips the actor from (mirrors ANONYMOUS_TYPES in services/notifications.py).
+// The client keeps its own copy deliberately: it must render safely even if a regression ships
+// an actor for one of these.
+const ANON_TYPES = new Set(['recipe_kept'])
+
 const nameOf = (n) =>
   [n.actor_first_name, n.actor_last_name].filter(Boolean).join(' ') || 'Someone'
 
@@ -122,7 +127,21 @@ export default function Notifications() {
             const to = targetFor(n)
             const body = (
               <>
-                <Avatar name={n.actor_first_name || '?'} photoUrl={n.actor_photo_url} size="sm" />
+                {/* An ANONYMOUS row gets a mark, not a face (#96). Avatar renders the first
+                    INITIAL of whatever name it's given, so passing the actor here would print
+                    "Z" beside a line that says "Someone" if the server ever leaked one — the
+                    avatar was the one place the anonymity could still break. A bookmark isn't
+                    a person, so a person-shaped monogram was wrong for this type anyway. */}
+                {ANON_TYPES.has(n.type) ? (
+                  <span
+                    aria-hidden="true"
+                    className="flex-none flex items-center justify-center w-9 h-9 rounded-full bg-cream border-2 border-ink text-[15px] leading-none"
+                  >
+                    🔖
+                  </span>
+                ) : (
+                  <Avatar name={n.actor_first_name || '?'} photoUrl={n.actor_photo_url} size="sm" />
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block font-display text-[14px] text-ink leading-snug">
                     {lineFor(n)}

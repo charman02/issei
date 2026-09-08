@@ -601,7 +601,9 @@ def save_recipe(
                 raise  # genuinely unexpected — don't swallow it
     _attach_growth_fields(recipe, db)
     recipe.kept_by_me = True
-    recipe.keeper_count = _keeper_count(recipe, current_user, db)
+    # No keeper_count here on purpose: the owner is rejected with a 400 above ("already
+    # yours"), so the caller of THIS endpoint is never the owner and the count would be None
+    # every time. The cook reads it from GET /recipes/{id}, their own recipe page.
     return recipe
 
 

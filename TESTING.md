@@ -147,60 +147,6 @@ assert `None`, not `0`) — and by `frontend/src/components/PostCard.test.jsx`, 
 to the COOK only, and never as a zero". (`Browse` has a test file now.)
 (`EditRecipe` being untested is exactly how invariant 7's bug reached prod.)
 
-### Invariant 11 — a keeper count is the cook's alone, and a keeper's NAME is nobody's
-
-Two separable claims, and the second is the one to guard hardest.
-
-1. **The count is owner-only.** `keeper_count` is `None` — never `0` — for anyone but the
-   recipe's owner, so a non-owner client is handed no number to render. Hidden at zero even for
-   the cook: "0 people keep this" under your own recipe is the discouraging line the private
-   count exists to avoid, and it's the default state of every recipe ever written.
-   → `tests/test_recipe_saves.py::test_the_keeper_count_is_the_COOKS_ALONE`,
-   `test_a_cook_with_no_keepers_gets_zero_not_None`; and
-   `frontend/src/pages/RecipePage.test.jsx` — "shows nothing at zero".
-
-2. **No keeper NAME reaches anyone, including the cook.** Keeping is a bookmark addressed to
-   nobody — unlike an ask, which is addressed to the cook — so naming the keeper would change
-   what keeping means and could chill it. There is no keeper-list endpoint and must never be
-   one. The `recipe_kept` notification stores `actor_id` (notify() needs it for the
-   never-notify-yourself check and for dedupe) but the RESPONSE nulls every actor field, so the
-   name never leaves the server; the client hardcodes "Someone" as well.
-   → `test_NO_keeper_names_or_list_for_anyone_including_the_cook`,
-   `test_the_keep_notification_NEVER_carries_who_did_it`,
-   `test_an_ask_still_names_the_asker` (the anonymity is scoped to keeps, not global), and
-   `frontend/src/pages/Notifications.test.jsx` — "a keep will not print a name even if one
-   arrives anyway".
-
-Also pinned, because a repeatable act needs it: keep → unkeep → keep does not flood the cook's
-inbox (`test_keep_unkeep_keep_does_not_flood_the_inbox`), and re-keeping an already-kept recipe
-notifies nothing new — the endpoint is idempotent, so the notification is too.
-
-### Invariant 10 — `is_new` is a flag, never a filter (nothing in issei expires)
-
-The feed returns **exactly the same posts** before and after a read-mark. `is_new` (#97) marks
-a BOUNDARY so the client can draw "You're all caught up"; it must never become a reason to omit
-a row. Filtering seen posts out of the feed looks like a pure win — smaller payload, less to
-scroll — and no other test would fail. This is the one that catches it.
-
-Why it's a product rule and not just a data one: a post is the top of the funnel to a handoff,
-so a vanishing post takes the ask with it. Posts are also permanent records on their author's
-profile. **issei is not ephemeral**, and BeReal's expiry is the one mechanic deliberately not
-copied.
-→ `tests/test_feed_seen.py::test_marking_seen_HIDES_NOTHING_it_only_clears_the_flag` (asserts
-dish names, order AND the id set, so a filter fails on the first assertion), plus
-`test_the_mark_only_moves_FORWARD`, `test_your_own_post_is_never_new_to_you`,
-`test_is_new_is_None_off_the_feed_where_new_has_no_meaning`,
-`test_the_everyone_tab_has_no_is_new_at_all`; and on the client
-`frontend/src/pages/Feed.test.jsx` — "draws the line after the last new post, keeping the older
-ones on screen", "draws ONE divider even when your own post sits among new ones".
-
-Two model constraints break separately and each has its own test:
-- **An id, not a timestamp.** `created_at` is second-granular on SQLite, so a post made in the
-  same second as the mark is wrongly counted as read. A test caught the timestamp version doing
-  exactly that → `test_marking_through_a_post_does_not_swallow_newer_ones`.
-- **Not a foreign key.** A FK to `posts.id` would `SET NULL` when that post is deleted, resetting
-  the user to "never looked" and resurfacing their whole feed as new. It is a watermark.
-
 ### Invariant 9 — a block beats visibility, never an accepted grant, and is always a 404
 
 Three separable claims, all pinned in `tests/test_blocks.py`. The middle one is the one a
@@ -256,3 +202,57 @@ restores it (`test_a_block_does_not_DELETE_your_bookmarks_of_their_recipes`, gua
 over-correction by `test_losing_access_for_any_OTHER_reason_still_prunes`) — and **the
 inbox is not exempt**, since `list_notifications` resolves an actor's name and photo with no
 `can_view` to lean on (`test_blocking_clears_notifications_between_the_two`).
+### Invariant 10 — `is_new` is a flag, never a filter (nothing in issei expires)
+
+The feed returns **exactly the same posts** before and after a read-mark. `is_new` (#97) marks
+a BOUNDARY so the client can draw "You're all caught up"; it must never become a reason to omit
+a row. Filtering seen posts out of the feed looks like a pure win — smaller payload, less to
+scroll — and no other test would fail. This is the one that catches it.
+
+Why it's a product rule and not just a data one: a post is the top of the funnel to a handoff,
+so a vanishing post takes the ask with it. Posts are also permanent records on their author's
+profile. **issei is not ephemeral**, and BeReal's expiry is the one mechanic deliberately not
+copied.
+→ `tests/test_feed_seen.py::test_marking_seen_HIDES_NOTHING_it_only_clears_the_flag` (asserts
+dish names, order AND the id set, so a filter fails on the first assertion), plus
+`test_the_mark_only_moves_FORWARD`, `test_your_own_post_is_never_new_to_you`,
+`test_is_new_is_None_off_the_feed_where_new_has_no_meaning`,
+`test_the_everyone_tab_has_no_is_new_at_all`; and on the client
+`frontend/src/pages/Feed.test.jsx` — "draws the line after the last new post, keeping the older
+ones on screen", "draws ONE divider even when your own post sits among new ones".
+
+Two model constraints break separately and each has its own test:
+- **An id, not a timestamp.** `created_at` is second-granular on SQLite, so a post made in the
+  same second as the mark is wrongly counted as read. A test caught the timestamp version doing
+  exactly that → `test_marking_through_a_post_does_not_swallow_newer_ones`.
+- **Not a foreign key.** A FK to `posts.id` would `SET NULL` when that post is deleted, resetting
+  the user to "never looked" and resurfacing their whole feed as new. It is a watermark.
+
+### Invariant 11 — a keeper count is the cook's alone, and a keeper's NAME is nobody's
+
+Two separable claims, and the second is the one to guard hardest.
+
+1. **The count is owner-only.** `keeper_count` is `None` — never `0` — for anyone but the
+   recipe's owner, so a non-owner client is handed no number to render. Hidden at zero even for
+   the cook: "0 people keep this" under your own recipe is the discouraging line the private
+   count exists to avoid, and it's the default state of every recipe ever written.
+   → `tests/test_recipe_saves.py::test_the_keeper_count_is_the_COOKS_ALONE`,
+   `test_a_cook_with_no_keepers_gets_zero_not_None`; and
+   `frontend/src/pages/RecipePage.test.jsx` — "shows nothing at zero".
+
+2. **No keeper NAME reaches anyone, including the cook.** Keeping is a bookmark addressed to
+   nobody — unlike an ask, which is addressed to the cook — so naming the keeper would change
+   what keeping means and could chill it. There is no keeper-list endpoint and must never be
+   one. The `recipe_kept` notification stores `actor_id` (notify() needs it for the
+   never-notify-yourself check and for dedupe) but the RESPONSE nulls every actor field, so the
+   name never leaves the server; the client hardcodes "Someone" as well.
+   → `test_NO_keeper_names_or_list_for_anyone_including_the_cook`,
+   `test_the_keep_notification_NEVER_carries_who_did_it`,
+   `test_an_ask_still_names_the_asker` (the anonymity is scoped to keeps, not global), and
+   `frontend/src/pages/Notifications.test.jsx` — "a keep will not print a name even if one
+   arrives anyway".
+
+Also pinned, because a repeatable act needs it: keep → unkeep → keep does not flood the cook's
+inbox (`test_keep_unkeep_keep_does_not_flood_the_inbox`), and re-keeping an already-kept recipe
+notifies nothing new — the endpoint is idempotent, so the notification is too.
+

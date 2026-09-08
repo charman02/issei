@@ -33,6 +33,17 @@ NOTIFICATION_TYPES = {
     "recipe_kept",
 }
 
+# Types whose ACTOR is never disclosed to the recipient (#96). Kept here, beside the vocabulary,
+# because anonymity is a property OF THE TYPE — not of one call site. It drives two things that
+# must not drift apart:
+#
+#   1. `routers/notifications.py` nulls every actor field on the way out for these types.
+#   2. `notify()`'s dedupe key EXCLUDES actor_id for these types (see below) — because two rows
+#      the reader cannot tell apart must not both exist.
+#
+# A second anonymous type should only need adding here.
+ANONYMOUS_TYPES = {"recipe_kept"}
+
 
 def notify(
     db: Session,
@@ -68,17 +79,27 @@ def notify(
     if actor_id is not None and actor_id == user_id:
         return None
     if dedupe:
-        already = (
-            db.query(Notification.id)
-            .filter(
-                Notification.user_id == user_id,
-                Notification.type == type,
-                Notification.actor_id == actor_id,
-                Notification.post_id == post_id,
-                Notification.read_at.is_(None),
-            )
-            .first()
-        )
+        # THE KEY MUST NAME EVERY FIELD THAT MAKES A ROW DISTINCT. It originally omitted
+        # `recipe_id`, because it was written for `recipe_request` where `post_id` is the
+        # discriminator — and that silently broke `recipe_kept`, whose post_id is always None:
+        # the key collapsed to "this actor, this cook, unread", so a keeper who kept a SECOND
+        # recipe generated no notification at all. Exactly the signal-lost failure #96 exists
+        # to prevent, and there was no row to backfill later. Caught in review.
+        #
+        # `actor_id` is excluded for ANONYMOUS_TYPES, and that is the other half of the same
+        # bug: with the actor in the key, two different people keeping the SAME recipe produced
+        # two rows the reader cannot tell apart — "Someone kept your Adobo." twice, both with a
+        # blank avatar. If the reader can't distinguish them, they aren't distinct.
+        conditions = [
+            Notification.user_id == user_id,
+            Notification.type == type,
+            Notification.post_id == post_id,
+            Notification.recipe_id == recipe_id,
+            Notification.read_at.is_(None),
+        ]
+        if type not in ANONYMOUS_TYPES:
+            conditions.append(Notification.actor_id == actor_id)
+        already = db.query(Notification.id).filter(*conditions).first()
         if already is not None:
             return None
     row = Notification(

@@ -24,7 +24,7 @@ from app.schemas.friend import (
 )
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.friends import existing_friendship, friend_ids
-from app.services.notifications import notify
+from app.services.notifications import ANONYMOUS_TYPES, notify
 from app.services.sharing import can_view, can_view_post
 
 router = APIRouter(prefix="/friends", tags=["friends"])
@@ -464,13 +464,22 @@ def block_user(
     # lingering name would make false. The inbox is also the one surface where a blocked
     # person's name and photo would keep appearing, because `list_notifications` resolves the
     # actor directly and has no `can_view` to lean on.
+    #
+    # EXCEPT the anonymous ones (#96). This sweep's justification is that "a lingering NAME
+    # would make 'you won't see each other anywhere' false" — and a `recipe_kept` row carries
+    # no name, so the rationale doesn't reach it. Worse, deleting it LEAKS: a cook with one
+    # unread "Someone kept your Adobo" who blocks a person and watches that line vanish (while
+    # keeper_count stays put, since the save survives a block by design) has just learned who
+    # the keeper was, by inference, through the server. That is the exact channel this feature
+    # closes everywhere else.
     db.query(Notification).filter(
+        Notification.type.notin_(ANONYMOUS_TYPES),
         or_(
             (Notification.user_id == current_user.id)
             & (Notification.actor_id == body.user_id),
             (Notification.user_id == body.user_id)
             & (Notification.actor_id == current_user.id),
-        )
+        ),
     ).delete(synchronize_session=False)
 
     try:

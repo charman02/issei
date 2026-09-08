@@ -314,7 +314,8 @@ and posts are permanent records on their author's profile. Never describe issei 
 never write "stories", "24 hours" or "disappears" as a feature. Recorded here before anyone
 proposes it, because arguing it later is more expensive.
 
-The fourth is new with #79 and the fifth with #85; the fourth is the easiest of the five to
+The fourth is new with #79, the fifth with #85 and the sixth with #97; the fourth is the
+easiest of the six to
 break by being helpful.
 `PostResponse.request_count` is populated only for the post's author and is `None` for every
 other viewer (`app/schemas/post.py`); the requesters' names appear only on
@@ -330,6 +331,13 @@ on *seeing*, not on *counting*. Two earlier specs recommended the public version
 outranks them. A future "most asked for" surface is permitted only as a **rank** — a Browse row
 of dishes that HAVE demand, which never renders an absence and never attaches a number to a
 person's post; a per-post tally is not covered by that allowance.
+
+The same allowance and the same three limits extend to a future **"most kept"** row — rank only,
+never a per-recipe tally, and never a number attached to a cook's recipe for anyone but the cook.
+Written down 2026-09-08, when #96 gave keeps a cook-only count: until then keeps produced no
+number for anyone, so the ask-shaped wording above covered everything. It doesn't any more, and
+"most kept isn't mentioned, so it isn't forbidden" is an argument that gets much harder to answer
+once such a row exists.
 
 Check the code before describing any social capability — this is the area moving fastest
 (see `docs/SOCIAL_FEED_PLAN.md`).
@@ -382,7 +390,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **58 routes**, **15 models**,
-**457 backend tests**, **712 frontend tests in 50 files**. Endpoint and test counts have
+**462 backend tests**, **712 frontend tests in 50 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

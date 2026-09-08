@@ -12,7 +12,7 @@ from app.schemas.notification import (
     NotificationList,
     NotificationResponse,
 )
-from app.services.notifications import mark_read, unread_count
+from app.services.notifications import ANONYMOUS_TYPES, mark_read, unread_count
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -80,7 +80,7 @@ def list_notifications(
         # and for dedupe, so the suppression has to happen here on the way out. Pinned by its
         # own test: a UI that merely declines to render the name would still be shipping it
         # over the wire.
-        anon = r.type == "recipe_kept"
+        anon = r.type in ANONYMOUS_TYPES
         out.append(
             NotificationResponse(
                 id=r.id,

@@ -145,6 +145,10 @@ describe('Notifications — issei’s first inbox (#79)', () => {
     ])
     expect(await screen.findByText('Someone kept your Adobo.')).toBeInTheDocument()
     expect(screen.queryByText(/Zenobia/)).toBeNull()
+    // And not the INITIAL either. Avatar renders the first letter of whatever name it gets, so
+    // a leaked actor would have printed "Z" next to a line reading "Someone" — a leak that
+    // queryByText(/Zenobia/) cannot see. Anonymous rows render a bookmark mark, not a monogram.
+    expect(screen.queryByText('Z')).toBeNull()
   })
 
   it('a keep opens the recipe, and nothing when the recipe is gone', async () => {

@@ -526,3 +526,109 @@ def test_keeping_never_notifies_you_about_your_own_recipe(client, make_user):
     rec = _recipe(client, oh, visibility="public")
     assert client.post(f"/recipes/{rec['id']}/save", headers=oh).status_code == 400
     assert client.get("/notifications", headers=oh).json()["notifications"] == []
+
+
+def test_keeping_a_SECOND_recipe_is_reported_too(client, make_user):
+    """The Critical this feature shipped with, caught in review.
+
+    `notify()`'s dedupe key was written for `recipe_request`, where `post_id` is the
+    discriminator — so it never looked at `recipe_id`. For a keep, post_id is always None, and
+    the key collapsed to "this actor, this cook, unread": the same person keeping a SECOND
+    recipe produced NO notification at all, with nothing to backfill later.
+
+    That's the exact signal-lost failure #96 exists to prevent, and the likeliest real pattern
+    for this feature — one enthusiastic person opening a cook's kitchen and keeping three
+    recipes in a sitting, with the cook told about one."""
+    owner, oh = make_user()
+    _, kh = make_user()
+    adobo = _recipe(client, oh, name="Adobo", visibility="public")
+    sinigang = _recipe(client, oh, name="Sinigang", visibility="public")
+
+    client.post(f"/recipes/{adobo['id']}/save", headers=kh)
+    client.post(f"/recipes/{sinigang['id']}/save", headers=kh)
+
+    inbox = client.get("/notifications", headers=oh).json()
+    subjects = sorted(
+        n["subject"] for n in inbox["notifications"] if n["type"] == "recipe_kept"
+    )
+    assert subjects == ["Adobo", "Sinigang"]
+    assert inbox["unread_count"] == 2
+
+
+def test_two_people_keeping_the_SAME_recipe_is_ONE_line(client, make_user):
+    """The mirror of the same bug. With actor_id in the key, two different keepers of one recipe
+    produced two rows the reader cannot tell apart — "Someone kept your Adobo." twice, both
+    anonymous. If the reader can't distinguish them, they aren't distinct, so the dedupe key
+    excludes actor_id for ANONYMOUS_TYPES."""
+    owner, oh = make_user()
+    _, k1 = make_user()
+    _, k2 = make_user()
+    rec = _recipe(client, oh, name="Adobo", visibility="public")
+
+    client.post(f"/recipes/{rec['id']}/save", headers=k1)
+    client.post(f"/recipes/{rec['id']}/save", headers=k2)
+
+    inbox = client.get("/notifications", headers=oh).json()
+    assert len([n for n in inbox["notifications"] if n["type"] == "recipe_kept"]) == 1
+    # ...and the COUNT still knows there are two. The line says "it happened"; the count says
+    # how much.
+    assert client.get(f"/recipes/{rec['id']}", headers=oh).json()["keeper_count"] == 2
+
+
+def test_an_ask_is_still_deduped_PER_ASKER(client, make_user):
+    """Excluding actor_id must be scoped to anonymous types. Two different people asking for the
+    same recipe are two different obligations, and the cook sees both names."""
+    cook, ch = make_user(first_name="Ana")
+    a, ah = make_user(first_name="Ben")
+    b, bh = make_user(first_name="Cruz")
+    post = client.post(
+        "/posts",
+        json={"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "public"},
+        headers=ch,
+    ).json()
+    client.post(f"/posts/{post['id']}/request", headers=ah)
+    client.post(f"/posts/{post['id']}/request", headers=bh)
+
+    names = sorted(
+        n["actor_first_name"]
+        for n in client.get("/notifications", headers=ch).json()["notifications"]
+        if n["type"] == "recipe_request"
+    )
+    assert names == ["Ben", "Cruz"]
+
+
+def test_blocking_does_NOT_delete_an_anonymous_keep_line(client, make_user):
+    """Important, caught in review: the block sweep deletes notifications by actor_id, which
+    caught `recipe_kept` rows — and DELETING one is what leaks the identity. A cook with one
+    unread "Someone kept your Adobo" who blocks a person and watches the line vanish (while
+    keeper_count stays put, since the save survives a block by design) has learned who the
+    keeper was, by inference, through the server.
+
+    The sweep's own justification is that a lingering NAME would break "you won't see each other
+    anywhere" — an anonymous row carries no name, so the rationale doesn't reach it."""
+    owner, oh = make_user()
+    keeper, kh = make_user()
+    rec = _recipe(client, oh, name="Adobo", visibility="public")
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+    assert client.get("/notifications", headers=oh).json()["unread_count"] == 1
+
+    assert client.post(
+        "/friends/blocks", json={"user_id": keeper.id}, headers=oh
+    ).status_code == 204
+
+    after = client.get("/notifications", headers=oh).json()
+    assert after["unread_count"] == 1, "the line must survive, or its absence names the keeper"
+    assert after["notifications"][0]["type"] == "recipe_kept"
+    assert after["notifications"][0]["actor_id"] is None  # still anonymous
+
+
+def test_blocking_STILL_deletes_the_named_notifications(client, make_user):
+    # The carve-out is scoped to anonymous types; a named line still goes, which is what the
+    # sweep was for.
+    owner, oh = make_user()
+    other, other_h = make_user(first_name="Ben")
+    client.post("/friends/request", json={"to_user_id": owner.id}, headers=other_h)
+    assert client.get("/notifications", headers=oh).json()["unread_count"] == 1
+
+    client.post("/friends/blocks", json={"user_id": other.id}, headers=oh)
+    assert client.get("/notifications", headers=oh).json()["notifications"] == []

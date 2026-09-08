@@ -68,4 +68,10 @@ class NotificationType(BaseModel):
     """Not used at the API boundary — kept as documentation of the vocabulary the client
     switches on. The authoritative set is `services/notifications.NOTIFICATION_TYPES`."""
 
-    type: Literal["recipe_request", "request_fulfilled", "friend_request", "friend_accept"]
+    type: Literal[
+        "recipe_request",
+        "request_fulfilled",
+        "friend_request",
+        "friend_accept",
+        "recipe_kept",
+    ]
