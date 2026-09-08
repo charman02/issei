@@ -41,7 +41,7 @@ export default function FriendsStrip() {
             className="flex-none flex flex-col items-center gap-1.5 w-[62px]"
           >
             <Avatar name={f.first_name} photoUrl={f.photo_url} size="md" />
-            <span className="w-full truncate text-center font-display font-bold text-[11.5px] text-ink-soft leading-none">
+            <span className="w-full truncate text-center font-display font-bold text-[11.5px] text-ink-soft leading-tight pb-px">
               {f.first_name}
             </span>
           </button>

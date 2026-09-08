@@ -168,10 +168,10 @@ export default function UserProfile() {
           <FriendButton />
         </div>
 
-        {/* Block (#85) — a real button in brick, below the friend action. It stays visually
-            secondary to the friend button (which is full-width terra) by being a compact pill
-            rather than by being a faint text link: it's a safety control people need to FIND,
-            and an underlined grey link read as a footnote. Hidden on your own profile. */}
+        {/* Block (#85) — a small brick chip below the friend action. Sized down twice now: it
+            started as a grey underlined link (read as a footnote, too easy to miss) and then
+            overshot into a full pill (too loud for something you should rarely want). A chip
+            is findable without competing with the friend button. Hidden on your own profile. */}
         {!isSelf && (
           <div className="mt-4">
             {confirmingBlock ? (
@@ -214,9 +214,9 @@ export default function UserProfile() {
             ) : (
               <button
                 onClick={() => setConfirmingBlock(true)}
-                className="inline-flex items-center rounded-full bg-brick text-cream border-2 border-ink px-4 py-1.5 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+                className="inline-flex items-center rounded-full bg-brick text-cream border-2 border-ink px-2.5 py-0.5 font-display font-bold text-[11.5px] shadow-[0_1px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
               >
-                Block {profile.first_name}
+                Block
               </button>
             )}
           </div>

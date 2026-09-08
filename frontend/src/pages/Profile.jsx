@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import client, { toUserMessage } from '../api/client'
+import { useCurrentUser, patchUser } from '../lib/currentUser'
 import { getUserProfile, getFriendRequests, getBlocks, unblockUser } from '../api/friends'
 import { getIncomingRequests } from '../api/posts'
 import { PHOTO_ACCEPT } from '../lib/photoUpload'
@@ -93,10 +94,11 @@ function AccountRow({ label, value, open, onToggle, children }) {
 
 export default function Profile() {
   const navigate = useNavigate()
-  // Kept in state so an account edit re-renders the identity card immediately.
-  const [user, setUser] = useState(() =>
-    JSON.parse(localStorage.getItem('issei_user') || '{}'),
-  )
+  // From the shared identity store (lib/currentUser), NOT a local snapshot of localStorage.
+  // That snapshot is what made this page show a stale monogram while the avatar on the user's
+  // own post card was correct: a post card renders server data, this rendered a cache nobody
+  // reconciled. Writes below go through patchUser, which merges over a FRESH read.
+  const user = useCurrentUser()
   const [prefs, setPrefs] = useState(loadPrefs)
 
   // Identity-box counts (recipes · posts · friends) + the incoming friend-request
@@ -152,7 +154,9 @@ export default function Profile() {
     uploading: uploadingPhoto,
     error: photoError,
   } = useAvatarUpload({
-    onDone: (url) => setUser((u) => ({ ...u, photo_url: url })),
+    // No local mirror needed — the hook writes through patchUser, and useCurrentUser above
+    // re-renders this page from the store.
+    onDone: () => {},
   })
   // Skipper reminder (#77): a gentle, dismissible line under the avatar shown only while
   // the user has NO photo and hasn't dismissed it. Disappears the moment a photo is set
@@ -212,14 +216,14 @@ export default function Profile() {
     setAccountDone('')
     try {
       const { data } = await client.patch('/auth/me', patch)
-      const next = {
-        ...user,
+      // patchUser merges over a FRESH read of the store. The old form spread `...user` from
+      // this component's closure, so a photo uploaded after mount got written back stale —
+      // one of the two ways the avatar drifted.
+      patchUser({
         first_name: data.first_name,
         last_name: data.last_name,
         email: data.email,
-      }
-      setUser(next)
-      localStorage.setItem('issei_user', JSON.stringify(next))
+      })
       setAccountDone(doneMsg)
       setOpenRow(null)
     } catch (err) {
@@ -252,9 +256,7 @@ export default function Profile() {
       const body = { profile_visibility: makePublic ? 'public' : 'private' }
       if (applyToAll) body.apply_visibility_to_all = applyToAll
       const { data } = await client.patch('/auth/me', body)
-      const next = { ...user, profile_visibility: data.profile_visibility }
-      setUser(next)
-      localStorage.setItem('issei_user', JSON.stringify(next))
+      patchUser({ profile_visibility: data.profile_visibility })
       setPendingFlip(null)
     } finally {
       setSavingVisibility(false)

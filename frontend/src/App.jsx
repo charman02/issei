@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { reconcile } from './lib/currentUser'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import BottomNav from './components/BottomNav'
@@ -34,6 +36,15 @@ function Layout({ children }) {
 }
 
 export default function App() {
+  // Bring the cached identity in line with the server, once per app start. The cache is what
+  // every screen displays your name and avatar from, and nothing used to reconcile it — so a
+  // photo added on one screen could stay invisible on another indefinitely. Deliberately
+  // fire-and-forget: `reconcile` swallows its own errors, because being offline is not a
+  // reason to blank someone's own name, and the cached value is the right fallback.
+  useEffect(() => {
+    if (localStorage.getItem('issei_token')) reconcile()
+  }, [])
+
   return (
     <Routes>
       <Route

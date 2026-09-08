@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import client, { toUserMessage } from '../api/client'
+import { setUser } from '../lib/currentUser'
 import { claimInvite } from '../api/sharing'
 import IconField from '../components/IconField'
 import Wordmark from '../components/Wordmark'
@@ -61,7 +62,7 @@ export default function Login() {
   // time they came back.
   async function finishAuth(data, { isNew = false } = {}) {
     localStorage.setItem('issei_token', data.access_token)
-    localStorage.setItem('issei_user', JSON.stringify(data.user))
+    setUser(data.user)
     if (inviteToken) {
       // The token IS the authorization; claim the grant for this account, then
       // land the user on the recipe they were invited to.

@@ -1,6 +1,7 @@
 import { loadPrefs, setPref } from '../lib/prefs'
 import { PHOTO_ACCEPT } from '../lib/photoUpload'
 import { useAvatarUpload } from '../lib/useAvatarUpload'
+import { useCurrentUser } from '../lib/currentUser'
 import Avatar from './Avatar'
 import Icon from './Icon'
 
@@ -25,13 +26,10 @@ import Icon from './Icon'
 // Uploading happens INLINE via the same hook the Welcome panel and Profile use — upload,
 // PATCH /auth/me, refresh the cached issei_user — so this is one tap, not a trip to Settings.
 export default function PhotoNudge({ onDone }) {
-  const user = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('issei_user') || '{}')
-    } catch {
-      return {}
-    }
-  })()
+  // From the shared store, so adding a photo ANYWHERE (the You page, the Welcome panel, or
+  // the inline upload below) removes this strip. Reading localStorage at mount is what left
+  // it on screen after the photo was already set.
+  const user = useCurrentUser()
 
   const { onPick, uploading, error, photoUrl } = useAvatarUpload({ onDone })
   const dismissed = !!loadPrefs().photoNudgeDismissed

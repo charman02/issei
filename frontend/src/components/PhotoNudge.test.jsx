@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // The upload hook is stubbed: this component's job is WHO SEES IT and what dismissing
@@ -15,6 +15,7 @@ vi.mock('../lib/useAvatarUpload', () => ({
 vi.mock('../lib/photoUpload', () => ({ PHOTO_ACCEPT: 'image/*' }))
 import PhotoNudge from './PhotoNudge'
 import { loadPrefs } from '../lib/prefs'
+import { patchUser } from '../lib/currentUser'
 
 const signIn = (over = {}) =>
   localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Ana', ...over }))
@@ -28,6 +29,22 @@ beforeEach(() => {
 })
 
 describe('PhotoNudge (#84) — the retro ask for accounts that predate #77', () => {
+  it('goes away when a photo is added ANYWHERE ELSE — the reported bug', async () => {
+    // Reported on prod 2026-09-08: the strip stayed on Home after a photo was added on the You
+    // page. It read localStorage once at mount, so it never learned. It now reads the shared
+    // identity store, which every write goes through — including a reconcile against the server.
+    signIn()
+    render(<PhotoNudge />)
+    expect(screen.getByText(/add a photo so friends know it/i)).toBeInTheDocument()
+
+    act(() => {
+      patchUser({ photo_url: 'https://img.test/set-elsewhere.jpg' })
+    })
+    await waitFor(() =>
+      expect(screen.queryByText(/add a photo so friends know it/i)).toBeNull(),
+    )
+  })
+
   it('asks someone signed in with no photo', () => {
     signIn()
     render(<PhotoNudge />)

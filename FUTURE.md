@@ -12,7 +12,7 @@ list of things the app does *not* do.
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
 + Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **57 routes, 15 models, 432
-backend tests, 671 frontend tests** — re-count rather than quote.
+backend tests, 693 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -110,27 +110,14 @@ but a floor is not an opt-out, and Instagram doesn't claim one either.
 
 ---
 
-## Multi-User Family Sharing
+## Multi-User Family Sharing — CUT
 
-**Current state:** ownership is per-user — `Recipe.user_id` scopes every owner query — and
-there is no `families` table. Cross-user *read* access now has three paths (a per-recipe
-handoff grant, `public` visibility, and `friends` visibility over the symmetric friend graph),
-but no shared library that several people co-own, and no non-owner write access anywhere.
-
-**What this adds:** several family members share one library. Mom adds recipes; children and
-grandchildren reach them without a grant issued per recipe per person. Role-based access
-(owner edits, members read).
-
-**Why it matters:** preserving family cooking across generations means more than one person
-touching the same collection.
-
-**Implementation notes:** `families` + `family_members` tables, and an extension of `can_view`
-in `services/sharing.py` rather than a second rule. This would be **the first feature to give
-a non-owner write access** — today editing and deleting are strictly owner-only via a
-`user_id` filter — so the role model is new surface, not a loosened check. Note the friend
-graph has since absorbed much of the *lightweight* sharing this was meant to solve, so scope
-it honestly: what's left is genuine co-ownership, which is a smaller and sharper feature than
-this section originally implied.
+Dropped by the owner, 2026-09-08. It was a pre-friend-graph idea: several people co-owning one
+library, so a family reaches Mom's recipes without a grant per recipe per person. The friend
+graph plus `friends` visibility plus handoff grants have since absorbed every *read* case it
+was meant to solve, leaving only genuine co-ownership — and that would be **the first feature
+to give a non-owner write access**, which is new authorization surface for a case nobody has
+asked for. Kept as a line rather than deleted so the reasoning survives if it ever comes back.
 
 ---
 
@@ -262,22 +249,32 @@ layer, not inside a list feature. Start with an alias table; fuzzy or LLM normal
 
 In order:
 
-*(Blocking was #1 here until #85 shipped it — the floor for showing the app to people you
-don't know. What that left uncovered is **reporting**, which is now folded into item 5.)*
+*(Reordered 2026-09-08. Blocking was #1 until #85 shipped it. Since then: the owner's call
+that issei doesn't hold users as a web app at all, so **the iOS app moved to the top** and
+carries notifications with it; family sharing was cut; language translation moved below both.)*
 
-1. **A deploy that can't half-ship** — infrastructure, unglamorous, and it already bit twice.
-2. **Re-sharing a recipe you don't own** — the other half of keeping, and the most common next
+1. **The iOS app, with notifications as its point** — one project, not two. Safari on iOS only
+   permits Web Push for a site added to the home screen as a PWA, so "regular prompts to post"
+   and "be a real app" are the same piece of work; building them apart means building the
+   notification layer twice. Note what exists today is an in-app inbox only — nothing reaches
+   a device. The BACKEND half (subscription storage, a scheduler, the sender, quiet hours,
+   preferences) is identical whichever shell wins, so it can be built before the shell is
+   chosen. Bring swipe-back to web first.
+2. **Reporting** — moved up from last, because it is an **App Store gate**, not a nice-to-have:
+   Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
+   has photos, free text and a public feed. Still mostly a process question (where does a report
+   go, who reads it) — a button writing to a table nobody reads promises review that isn't
+   happening — so it wants doing properly, right before submission.
+3. **A deploy that can't half-ship** — infrastructure, unglamorous, and it already bit twice.
+   Gets more important, not less, once there's a native client pinned to an API contract.
+4. **Re-sharing a recipe you don't own** — the other half of keeping, and the most common next
    thing a happy recipient wants.
-3. **Translation** — the deepest feature that speaks directly to the core audience, gated on
-   getting the imprecise-amount rule right.
-4. **Multi-user family sharing** — still real, but scope it to genuine co-ownership now that
-   the friend graph covers lightweight sharing.
-5. **Reporting** — blocking protects one person from one person; reporting is what a stranger
-   needs when the problem isn't aimed only at them. Deliberately below the others because it
-   is mostly a process question (where does a report go, who reads it) rather than a table.
-6. **iOS app** (with swipe-back brought to web first), then **video/gallery**, then
-   **ingredient canonicalization** — which unlocks cook-from-ingredients and better search,
-   and which nothing currently depends on.
+5. **Language translation** — a recipe written in Tagalog readable in English, amounts preserved
+   verbatim. The deepest feature that speaks to the core audience, and gated on getting the
+   imprecise-amount rule right. Below iOS as of 2026-09-08: it deepens the experience for people
+   already using the app, which is worth less than getting them to come back at all.
+6. Then **video/gallery**, then **ingredient canonicalization** — which unlocks
+   cook-from-ingredients and better search, and which nothing currently depends on.
 
 ---
 

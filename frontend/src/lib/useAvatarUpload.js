@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import client, { toUserMessage } from '../api/client'
 import { createUploader } from './photoUpload'
+import { patchUser, readUser } from './currentUser'
 
 // The pick → upload → save-photo flow, shared by the You page (#33) and the Welcome
 // prompt (#77) so the upload/PATCH/cache-refresh logic lives in one place. Reuses the
@@ -16,13 +17,7 @@ export function useAvatarUpload({ onDone } = {}) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   // Seeded from the cached user so an already-set photo shows without a fetch.
-  const [photoUrl, setPhotoUrl] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('issei_user') || '{}').photo_url || null
-    } catch {
-      return null
-    }
-  })
+  const [photoUrl, setPhotoUrl] = useState(() => readUser().photo_url || null)
 
   async function onPick(e) {
     await uploader.current.upload({
@@ -36,9 +31,7 @@ export function useAvatarUpload({ onDone } = {}) {
           const { data } = await client.patch('/auth/me', { photo_url: url })
           // Merge into the cached user (read fresh from storage, not a stale closure,
           // so a concurrent name/email edit isn't clobbered).
-          const cached = JSON.parse(localStorage.getItem('issei_user') || '{}')
-          const next = { ...cached, photo_url: data.photo_url }
-          localStorage.setItem('issei_user', JSON.stringify(next))
+          patchUser({ photo_url: data.photo_url })
           setPhotoUrl(data.photo_url)
           onDone?.(data.photo_url)
         } catch (err) {

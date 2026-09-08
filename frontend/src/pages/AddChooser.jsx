@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom'
-import BackButton from '../components/BackButton'
 import Icon from '../components/Icon'
 
 // The + tab now forks two creation acts. Sharing a meal is the LIGHT everyday act
@@ -10,9 +9,6 @@ export default function AddChooser() {
   const navigate = useNavigate()
   return (
     <div className="min-h-screen bg-cream px-[18px] pt-5">
-      <div className="mb-4">
-        <BackButton to="/" label="Back" />
-      </div>
       <h1 className="font-display font-black text-[30px] text-ink leading-tight">
         What are you adding?
       </h1>

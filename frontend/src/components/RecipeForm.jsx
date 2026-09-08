@@ -47,8 +47,11 @@ const withUids = (rows) => rows.map((s) => (s.uid ? s : { ...s, uid: `s${++stepU
 // typed their whole method into step 1 and every ingredient into ingredient 1.
 // Seeing the shape of the list before typing is what prevents that; blank rows
 // are filtered out on submit, so extras cost nothing.
-const STARTING_INGREDIENTS = 3
-const STARTING_STEPS = 3
+// ONE of each. Three blank rows apiece made the form look like a chore on open — the thing
+// two rounds of user testing already flagged about capture effort — and an empty row is not a
+// prompt, it's just space. The add-another control carries it from here.
+const STARTING_INGREDIENTS = 1
+const STARTING_STEPS = 1
 
 const emptyRows = (make, n) => Array.from({ length: n }, make)
 

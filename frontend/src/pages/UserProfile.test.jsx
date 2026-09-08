@@ -152,10 +152,10 @@ describe('UserProfile', () => {
 // Blocking (#85). Deliberately two taps, and secondary without being faint: it's a safety control, it
 // deletes the friendship, and it can't be undone from here — once blocked this profile 404s.
 describe('UserProfile — blocking', () => {
-  it('offers a quiet block link, not a button competing with Add friend', async () => {
+  it('offers a small block chip, not a control competing with Add friend', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    const link = await screen.findByRole('button', { name: /block lola/i })
+    const link = await screen.findByRole('button', { name: /^block$/i })
     expect(link).toBeInTheDocument()
     // The primary action stays the social one.
     expect(screen.getByRole('button', { name: /add friend/i })).toBeInTheDocument()
@@ -164,7 +164,7 @@ describe('UserProfile — blocking', () => {
   it('asks first, and names every consequence before doing it', async () => {
     getUserProfile.mockResolvedValue({ data: profile({ friend_state: 'accepted' }) })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /block lola/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
     // Not a bare "are you sure?" — it says what happens.
     expect(screen.getByText(/won.t see each other anywhere/i)).toBeInTheDocument()
     expect(screen.getByText(/can.t ask you for a\s+recipe/i)).toBeInTheDocument()
@@ -179,16 +179,16 @@ describe('UserProfile — blocking', () => {
   it('backing out does nothing at all', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /block lola/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
     await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
     expect(blockUser).not.toHaveBeenCalled()
-    expect(await screen.findByRole('button', { name: /block lola/i })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^block$/i })).toBeInTheDocument()
   })
 
   it('blocks, then leaves — this profile is a 404 for us now', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /block lola/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
     await userEvent.click(screen.getByRole('button', { name: /block them/i }))
     await waitFor(() => expect(blockUser).toHaveBeenCalledWith(2))
     // Staying would render an error screen, so it navigates away.
@@ -199,7 +199,7 @@ describe('UserProfile — blocking', () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     blockUser.mockRejectedValueOnce(new Error('offline'))
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /block lola/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
     await userEvent.click(screen.getByRole('button', { name: /block them/i }))
     expect(await screen.findByText(/couldn.t block them just now/i)).toBeInTheDocument()
     expect(screen.queryByText('friends page')).not.toBeInTheDocument()
