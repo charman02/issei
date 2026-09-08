@@ -147,6 +147,34 @@ assert `None`, not `0`) — and by `frontend/src/components/PostCard.test.jsx`, 
 to the COOK only, and never as a zero". (`Browse` has a test file now.)
 (`EditRecipe` being untested is exactly how invariant 7's bug reached prod.)
 
+### Invariant 11 — a keeper count is the cook's alone, and a keeper's NAME is nobody's
+
+Two separable claims, and the second is the one to guard hardest.
+
+1. **The count is owner-only.** `keeper_count` is `None` — never `0` — for anyone but the
+   recipe's owner, so a non-owner client is handed no number to render. Hidden at zero even for
+   the cook: "0 people keep this" under your own recipe is the discouraging line the private
+   count exists to avoid, and it's the default state of every recipe ever written.
+   → `tests/test_recipe_saves.py::test_the_keeper_count_is_the_COOKS_ALONE`,
+   `test_a_cook_with_no_keepers_gets_zero_not_None`; and
+   `frontend/src/pages/RecipePage.test.jsx` — "shows nothing at zero".
+
+2. **No keeper NAME reaches anyone, including the cook.** Keeping is a bookmark addressed to
+   nobody — unlike an ask, which is addressed to the cook — so naming the keeper would change
+   what keeping means and could chill it. There is no keeper-list endpoint and must never be
+   one. The `recipe_kept` notification stores `actor_id` (notify() needs it for the
+   never-notify-yourself check and for dedupe) but the RESPONSE nulls every actor field, so the
+   name never leaves the server; the client hardcodes "Someone" as well.
+   → `test_NO_keeper_names_or_list_for_anyone_including_the_cook`,
+   `test_the_keep_notification_NEVER_carries_who_did_it`,
+   `test_an_ask_still_names_the_asker` (the anonymity is scoped to keeps, not global), and
+   `frontend/src/pages/Notifications.test.jsx` — "a keep will not print a name even if one
+   arrives anyway".
+
+Also pinned, because a repeatable act needs it: keep → unkeep → keep does not flood the cook's
+inbox (`test_keep_unkeep_keep_does_not_flood_the_inbox`), and re-keeping an already-kept recipe
+notifies nothing new — the endpoint is idempotent, so the notification is too.
+
 ### Invariant 10 — `is_new` is a flag, never a filter (nothing in issei expires)
 
 The feed returns **exactly the same posts** before and after a read-mark. `is_new` (#97) marks

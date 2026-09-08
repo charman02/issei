@@ -13,7 +13,7 @@ So a recipe here is attributed to a **person** — the dish is the title, the pe
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling that refuses to invent precision, photo upload (with automatic iPhone HEIC → JPEG conversion), and a capability-token sharing system layered over a concrete visibility model. A profile is public or private (private by default); each recipe or post is set to "Everyone" (public), "Friends only" (friends), or "Only me" (private) — new items default to "Friends only", or "Everyone" on a public profile. The chosen value is stored literally and fixed once chosen, so a label never silently changes if the profile later changes.
 
-**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 58 endpoints, 15 data models, 1152 automated tests (448 pytest + 704 Vitest).
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 58 endpoints, 15 data models, 1169 automated tests (457 pytest + 712 Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -30,9 +30,9 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 
 **python-jose** JWT creation and verification for stateless authentication. Tokens are signed with a secret key and include expiry - no server-side session storage needed.
 
-**pytest** - backend tests (448) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
+**pytest** - backend tests (457) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
 
-**Vitest + React Testing Library** - frontend unit/component tests (704 in 50 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
+**Vitest + React Testing Library** - frontend unit/component tests (712 in 50 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
 
 **Cloudinary** - hosts recipe photos and profile pictures uploaded through the `/upload` endpoint.
 
@@ -85,7 +85,7 @@ A *lineage tree* modeled recipes as a generational graph (`parent_recipe_id`, a 
 | POST | /recipes/{recipe_id}/handoff | Yes | Passes the recipe on (owner only). A recipient is **optional**: with an in-app user or an email the grant is addressed to them; with neither it is "link-only" — it mints a shareable invite token the sender passes along however they already talk to that person. On a **private** recipe the grant confers access (view + cook, never edit). |
 | GET | /recipes/shared | Yes | Returns recipes shared *with* the current user (accepted grants; excludes their own). Superseded in the UI by `/recipes/kept`, which merges these with kept ones. |
 | GET | /recipes/kept | Yes | The **Kept shelf** (#57): recipes in the caller's kitchen that aren't theirs — ones handed to them (accepted grants) merged with ones they kept — each re-checked through `can_view` on every read. Also returns `unreachable_count`: how many shelf entries the caller can no longer open because the cook restricted or deleted them, as a bare number (never a dish name). |
-| POST | /recipes/{recipe_id}/save | Yes | **Keep** a recipe you didn't write — a bookmark, not a copy. Gated on `can_view`, so you can only keep what you can already read and keeping can never widen access; 404 otherwise, 400 on your own recipe. Idempotent (UNIQUE(user, recipe)). |
+| POST | /recipes/{recipe_id}/save | Yes | **Keep** a recipe you didn't write — a bookmark, not a copy. Gated on `can_view`, so you can only keep what you can already read and keeping can never widen access; 404 otherwise, 400 on your own recipe. Idempotent (UNIQUE(user, recipe)). A NEW keep notifies the cook — **anonymously** (#96): the row stores the keeper's id because `notify()` needs it, but every actor field is nulled on the way out, so the line reads "Someone kept your Adobo". Deduped while unread, so a keep/unkeep loop can't flood the inbox. The recipe response also gains `keeper_count`, populated **only for the owner** (`None`, never `0`, for anyone else) — the cook learns how many, never who, and there is no keeper list anywhere. |
 | DELETE | /recipes/{recipe_id}/save | Yes | Stop keeping. Touches only the caller's own bookmark — never the cook's recipe, never another keeper's shelf, and never a handoff grant someone gave you. |
 | GET | /recipes/users/{user_id} | Yes | A user's recipes for their profile grid, visibility-gated by `can_view`: own → all; a friend → their `public` + `friends` recipes; a non-friend → `public` only (never a `private` one, and never one merely handed to you — that's in `/recipes/shared`). Empty list, not 404, if nothing's visible. Mirrors `GET /posts/users/{id}`. |
 | POST | /recipes/handoffs/{handoff_id}/accept | Yes | Claims a pending invite for the current user (backend-only; the two auto-accept paths cover the in-app cases, so there is no MVP UI for this). |

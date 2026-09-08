@@ -73,14 +73,22 @@ def list_notifications(
             subject = recipes[r.recipe_id].name
         elif r.post_id in posts:
             subject = posts[r.post_id].dish_name
+        # ANONYMOUS BY TYPE (#96). A `recipe_kept` line must never say WHO kept it: the
+        # decision is that the cook learns how many, never who — keeping is a bookmark
+        # addressed to nobody, and naming the keeper would change what keeping means. The row
+        # DOES store actor_id, because notify() needs it for the never-notify-yourself check
+        # and for dedupe, so the suppression has to happen here on the way out. Pinned by its
+        # own test: a UI that merely declines to render the name would still be shipping it
+        # over the wire.
+        anon = r.type == "recipe_kept"
         out.append(
             NotificationResponse(
                 id=r.id,
                 type=r.type,
-                actor_id=r.actor_id,
-                actor_first_name=actor.first_name if actor else None,
-                actor_last_name=actor.last_name if actor else None,
-                actor_photo_url=actor.photo_url if actor else None,
+                actor_id=None if anon else r.actor_id,
+                actor_first_name=None if anon else (actor.first_name if actor else None),
+                actor_last_name=None if anon else (actor.last_name if actor else None),
+                actor_photo_url=None if anon else (actor.photo_url if actor else None),
                 # Only link a post/recipe the client can actually open. A recipe reference
                 # is safe by construction here (a fulfilment means the recipient holds a
                 # grant), but a soft-deleted recipe must not produce a dead link.

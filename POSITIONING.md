@@ -239,8 +239,9 @@ draft to the add-a-recipe flow and gets the recipe back attached); and **the rec
 with an in-app inbox** (#79 — anyone who can see a meal may ask the cook for the recipe; the
 cook answers by writing or attaching one; delivery is a handoff grant per requester, so a
 PRIVATE recipe reaches the people who asked without its visibility changing); and **blocking**
-(#85 — `POST`/`GET`/`DELETE /friends/blocks`); and a **feed read-mark** (#97 — the feed marks
-what arrived since you last looked and draws a "You're all caught up" line). Note what the directory means for any privacy
+(#85 — `POST`/`GET`/`DELETE /friends/blocks`); a **feed read-mark** (#97 — the feed marks
+what arrived since you last looked and draws a "You're all caught up" line); and **the cook
+learning their recipe was kept** (#96 — an anonymous inbox line plus a cook-only count). Note what the directory means for any privacy
 claim: every signed-in user can enumerate every other user's name and photo, with no opt-out —
 so do **not** describe the app as private-by-default without qualifying that findability is not
 covered by the profile setting (see TECHDEBT's "Auth & permissions").
@@ -284,9 +285,17 @@ recipe on** — a keeper has no re-share, no edit, and no delete.
 
 Six invariants still hold everywhere and must not be contradicted: the
 "everyone"/Browse surfaces show **public** posts only (a friends-only or private post never
-leaks into them — enforced in SQL); there is still **no like button** anywhere; there
-is **no count or list of who kept a recipe** — that would be the removed `child_count`
-wearing a new noun; **a recipe-request count is the cook's alone** — it renders on the cook's
+leaks into them — enforced in SQL); there is still **no like button** anywhere;
+there is **no PUBLIC count of who kept a recipe, and no LIST of keepers anywhere, ever** —
+either would be the removed `child_count` wearing a new noun. NARROWED 2026-09-08 (#96), and
+the narrowing is precise: the cook, and only the cook, now sees a NUMBER on their own recipe
+(`keeper_count`, `None` — never `0` — for every other viewer, hidden at zero even for them).
+What that buys is the only feedback a recipe written WITHOUT a post ever gets, since the
+ask/fulfil loop lives only on posts; a cook could share a link and never learn it landed. What
+it must never become is a keeper's NAME: keeping is a bookmark addressed to nobody, unlike an
+ask, which is addressed to the cook, so naming the keeper would change what keeping MEANS and
+could chill it. The `recipe_kept` notification is anonymous at the API boundary, not just in
+the UI — "Someone kept your Adobo"; **a recipe-request count is the cook's alone** — it renders on the cook's
 own feed card and their own post page, hidden at zero, and `request_count` is `None` (never
 `0`) for every other viewer, while a requester's NAME appears only on `/requests`; and **a
 block is always
@@ -373,7 +382,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **58 routes**, **15 models**,
-**448 backend tests**, **704 frontend tests in 50 files**. Endpoint and test counts have
+**457 backend tests**, **712 frontend tests in 50 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

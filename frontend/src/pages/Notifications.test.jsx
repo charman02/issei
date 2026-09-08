@@ -125,6 +125,42 @@ describe('Notifications — issei’s first inbox (#79)', () => {
     expect(await screen.findByText('requests page')).toBeInTheDocument()
   })
 
+  it('a keep says SOMEONE, never a name (#96)', async () => {
+    // The API already nulls every actor field for this type; the copy hardcodes "Someone" as
+    // well, so a server-side regression that leaked the name still couldn't surface it. The
+    // cook learns how many people kept a recipe, never who.
+    renderPage([
+      note({ type: 'recipe_kept', actor_first_name: null, actor_last_name: null,
+             actor_photo_url: null, post_id: null, recipe_id: 4, subject: 'Adobo' }),
+    ])
+    expect(await screen.findByText('Someone kept your Adobo.')).toBeInTheDocument()
+  })
+
+  it('a keep will not print a name even if one arrives anyway', async () => {
+    // Belt and braces: the client must not be the only thing standing between a leaked actor
+    // and the screen, but it must not be the thing that leaks it either.
+    renderPage([
+      note({ type: 'recipe_kept', actor_first_name: 'Zenobia', actor_last_name: 'Quist',
+             recipe_id: 4, subject: 'Adobo' }),
+    ])
+    expect(await screen.findByText('Someone kept your Adobo.')).toBeInTheDocument()
+    expect(screen.queryByText(/Zenobia/)).toBeNull()
+  })
+
+  it('a keep opens the recipe, and nothing when the recipe is gone', async () => {
+    renderPage([note({ type: 'recipe_kept', recipe_id: 4, subject: 'Adobo' })])
+    await userEvent.click(await screen.findByText('Someone kept your Adobo.'))
+    expect(await screen.findByText('recipe page')).toBeInTheDocument()
+  })
+
+  it('a keep whose recipe was deleted still reads, but is not a link', async () => {
+    renderPage([
+      note({ type: 'recipe_kept', recipe_id: null, post_id: null, subject: null }),
+    ])
+    expect(await screen.findByText(/someone kept one of your recipes/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /someone kept/i })).toBeNull()
+  })
+
   it('an empty inbox explains itself instead of showing a blank screen', async () => {
     renderPage([])
     expect(await screen.findByText(/nothing new/i)).toBeInTheDocument()

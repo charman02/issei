@@ -175,3 +175,44 @@ describe('RecipePage — keeping someone else’s recipe (#57)', () => {
     expect(screen.queryByRole('button', { name: /delete recipe/i })).toBeNull()
   })
 })
+
+// The cook's keeper count (#96). The count is the cook's alone and hidden at zero; there is no
+// keeper list anywhere, for anyone.
+describe('RecipePage — how many people keep this (#96)', () => {
+  // recipe.user_id is 9; the shared beforeEach signs in as id 1 (a non-owner).
+  const renderOwn = (over) => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 9 }))
+    client.get.mockResolvedValue({ data: { ...recipe, ...over } })
+    return renderAt()
+  }
+  const renderOther = (over) => {
+    client.get.mockResolvedValue({ data: { ...recipe, ...over } })
+    return renderAt()
+  }
+
+  it('tells the cook, on their own recipe', async () => {
+    renderOwn({ keeper_count: 3 })
+    expect(await screen.findByText(/3 people keep this in their kitchen/i)).toBeInTheDocument()
+  })
+
+  it('says "1 person", not "1 people"', async () => {
+    renderOwn({ keeper_count: 1 })
+    expect(await screen.findByText(/1 person keeps this in their kitchen/i)).toBeInTheDocument()
+  })
+
+  it('shows nothing at zero — the default state of every recipe ever written', async () => {
+    // "0 people keep this" under your own recipe is the discouraging line the private count
+    // exists to avoid.
+    renderOwn({ keeper_count: 0 })
+    await screen.findByText('Adobo')
+    expect(screen.queryByText(/keep this in their kitchen/i)).toBeNull()
+  })
+
+  it('says nothing to a viewer who is not the cook', async () => {
+    // The API sends null, never a number, to anyone else — so there is nothing to render even
+    // if this branch were reached.
+    renderOther({ keeper_count: null })
+    await screen.findByText('Adobo')
+    expect(screen.queryByText(/keep this in their kitchen/i)).toBeNull()
+  })
+})

@@ -30,6 +30,15 @@ function lineFor(n) {
       return what ? `${who} asked you for your ${what}.` : `${who} asked you for a recipe.`
     case 'request_fulfilled':
       return what ? `${who} sent you ${what}.` : `${who} sent you the recipe you asked for.`
+    case 'recipe_kept':
+      // "Someone" is HARDCODED, not `who` (#96). The API already nulls every actor field for
+      // this type, so `who` would fall back to "Someone" anyway — but writing it literally
+      // means a server-side regression that leaked the name could never surface it here. The
+      // cook learns how many people kept a recipe, never who: keeping is a bookmark addressed
+      // to nobody, unlike an ask, which is addressed to the cook.
+      return what
+        ? `Someone kept your ${what}.`
+        : 'Someone kept one of your recipes.'
     case 'friend_request':
       return `${who} wants to be friends.`
     case 'friend_accept':
@@ -49,6 +58,9 @@ function targetFor(n) {
   // cascade away with the post, so /requests would be empty — the line still reads ("Ben asked
   // you for a recipe" did happen) but tapping it must not assert an ask that no longer exists.
   if (n.type === 'recipe_request') return n.post_id ? '/requests' : null
+  // Opens the recipe itself — the cook's own, so there's no access question. No keeper list
+  // to link to, because there isn't one and never will be.
+  if (n.type === 'recipe_kept') return n.recipe_id ? `/recipes/${n.recipe_id}` : null
   if (n.type === 'friend_request') return '/friends'
   if (n.type === 'friend_accept' && n.actor_id) return `/u/${n.actor_id}`
   if (n.post_id) return `/posts/${n.post_id}`

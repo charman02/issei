@@ -224,6 +224,13 @@ class RecipeResponse(BaseModel):
     # place a "Keep"/"Kept" control is drawn; every list endpoint leaves it False
     # rather than firing a query per row.
     kept_by_me: bool = False
+    # How many people have kept this recipe — **only ever populated for its owner**, None for
+    # everyone else (#96). Never 0-for-others: a client can't print a number it wasn't given.
+    # The cook's private signal that a recipe landed, which matters most for a recipe written
+    # WITHOUT a post — the ask/fulfil loop only exists on posts, so keeps are the only signal
+    # that surface generates. There is deliberately NO list of keepers, anywhere: keeping is a
+    # bookmark addressed to nobody, and naming the keeper would change what keeping means.
+    keeper_count: Optional[int] = None
     ingredient_sections: list[IngredientSectionResponse] = []
     ingredients: list[IngredientResponse] = []
     steps: list[StepResponse] = []

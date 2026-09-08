@@ -357,8 +357,7 @@ def test_keeping_does_not_let_you_edit_delete_or_hand_on(client, make_user):
 
 
 def test_kept_by_me_is_only_ever_about_the_caller(client, make_user):
-    """No keeper counts, no keeper names — the response says whether YOU kept it and
-    nothing about anyone else (a count would be child_count restored, i.e. a like button)."""
+    """`kept_by_me` says whether YOU keep it and nothing about anyone else."""
     _, oh = make_user()
     _, k1 = make_user()
     _, k2 = make_user()
@@ -367,10 +366,56 @@ def test_kept_by_me_is_only_ever_about_the_caller(client, make_user):
 
     assert client.get(f"/recipes/{rec['id']}", headers=k1).json()["kept_by_me"] is True
     assert client.get(f"/recipes/{rec['id']}", headers=k2).json()["kept_by_me"] is False
+    owner_view = client.get(f"/recipes/{rec['id']}", headers=oh).json()
+    assert owner_view["kept_by_me"] is False  # the owner doesn't "keep" their own
+
+
+def test_the_keeper_count_is_the_COOKS_ALONE(client, make_user):
+    """Owner decision (#96, revised): the cook learns HOW MANY people kept a recipe, never WHO.
+
+    This narrowed an older rule that forbade any keeper count at all. What it was protecting
+    against was a PUBLIC tally — child_count restored, i.e. a like button. A cook-only number
+    doesn't create that: nobody can compare, and it's the only feedback a recipe written WITHOUT
+    a post ever gets, since the ask/fulfil loop lives only on posts.
+
+    None, never 0, for everyone else — a client can't render a number it was never given. Same
+    discipline as request_count (#79)."""
+    _, oh = make_user()
+    _, k1 = make_user()
+    _, k2 = make_user()
+    rec = _recipe(client, oh, visibility="public")
+    client.post(f"/recipes/{rec['id']}/save", headers=k1)
+    client.post(f"/recipes/{rec['id']}/save", headers=k2)
+
+    assert client.get(f"/recipes/{rec['id']}", headers=oh).json()["keeper_count"] == 2
+    # Not 0 — None. A zero would be a number to render; None is an absence of one.
+    assert client.get(f"/recipes/{rec['id']}", headers=k1).json()["keeper_count"] is None
+    assert client.get(f"/recipes/{rec['id']}", headers=k2).json()["keeper_count"] is None
+
+
+def test_a_cook_with_no_keepers_gets_zero_not_None(client, make_user):
+    # The owner/non-owner distinction has to be about IDENTITY, not about whether the number
+    # happens to be zero — otherwise "0 keepers" and "not your recipe" become indistinguishable
+    # and the client can't tell whether to hide the line or show nothing.
+    _, oh = make_user()
+    rec = _recipe(client, oh, visibility="public")
+    assert client.get(f"/recipes/{rec['id']}", headers=oh).json()["keeper_count"] == 0
+
+
+def test_NO_keeper_names_or_list_for_anyone_including_the_cook(client, make_user):
+    """The half of the old rule that did NOT change, and the one worth guarding hardest.
+
+    Keeping is a bookmark addressed to nobody — unlike an ask, which is addressed to the cook.
+    Naming the keeper would change what keeping means and could chill it, so there is no keeper
+    list endpoint and no keeper identity in any payload."""
+    _, oh = make_user()
+    keeper, kh = make_user(first_name="Zenobia")
+    rec = _recipe(client, oh, visibility="public")
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+
     body = client.get(f"/recipes/{rec['id']}", headers=oh)
-    assert body.json()["kept_by_me"] is False  # the owner doesn't "keep" their own
-    # Nothing in the payload counts or names keepers.
-    for banned in ("keeper", "keepers", "save_count", "kept_count", "keep_count", "saved_by"):
+    assert "Zenobia" not in body.text
+    for banned in ("keepers", "kept_by_users", "saved_by", "keeper_ids"):
         assert banned not in body.text
 
 
@@ -379,3 +424,105 @@ def test_kept_endpoints_require_auth(client, make_user):
     assert client.get("/recipes/kept").status_code == 401
     assert client.post("/recipes/1/save").status_code == 401
     assert client.delete("/recipes/1/save").status_code == 401
+
+
+# --- the cook is told, anonymously (#96) ---
+
+
+def test_the_cook_is_notified_when_someone_keeps_their_recipe(client, make_user):
+    """The gap this closes: a recipe written WITHOUT a post has no feedback channel at all. The
+    ask/fulfil loop lives only on posts, so keeps are the only signal that surface generates —
+    a cook could share a link and never learn it landed."""
+    owner, oh = make_user()
+    _, kh = make_user()
+    rec = _recipe(client, oh, name="Adobo", visibility="public")
+
+    assert client.get("/notifications", headers=oh).json()["unread_count"] == 0
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+
+    inbox = client.get("/notifications", headers=oh).json()
+    assert inbox["unread_count"] == 1
+    row = inbox["notifications"][0]
+    assert row["type"] == "recipe_kept"
+    assert row["subject"] == "Adobo"       # which dish, so the line is worth reading
+    assert row["recipe_id"] == rec["id"]   # and it opens
+
+
+def test_the_keep_notification_NEVER_carries_who_did_it(client, make_user):
+    """The whole point of the count-only decision, enforced at the API boundary rather than in
+    the UI. The row DOES store actor_id — notify() needs it for the never-notify-yourself check
+    and for dedupe — so a client that merely declined to render the name would still be
+    receiving it. This asserts it never leaves the server."""
+    owner, oh = make_user()
+    keeper, kh = make_user(first_name="Zenobia", last_name="Quist")
+    rec = _recipe(client, oh, visibility="public")
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+
+    res = client.get("/notifications", headers=oh)
+    assert "Zenobia" not in res.text and "Quist" not in res.text
+    row = res.json()["notifications"][0]
+    assert row["actor_id"] is None
+    assert row["actor_first_name"] is None
+    assert row["actor_last_name"] is None
+    assert row["actor_photo_url"] is None
+
+
+def test_an_ask_still_names_the_asker(client, make_user):
+    # The anonymity is scoped to recipe_kept. An ask is addressed TO the cook, so naming the
+    # asker is inherent — and the cook has to know who to hand the recipe to.
+    cook, ch = make_user(first_name="Ana")
+    fan, fh = make_user(first_name="Ben")
+    fid = client.post("/friends/request", json={"to_user_id": fan.id}, headers=ch).json()["id"]
+    client.post(f"/friends/{fid}/accept", headers=fh)
+    post = client.post(
+        "/posts",
+        json={"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "friends"},
+        headers=ch,
+    ).json()
+    client.post(f"/posts/{post['id']}/request", headers=fh)
+
+    row = [
+        n
+        for n in client.get("/notifications", headers=ch).json()["notifications"]
+        if n["type"] == "recipe_request"
+    ][0]
+    assert row["actor_first_name"] == "Ben"
+
+
+def test_keep_unkeep_keep_does_not_flood_the_inbox(client, make_user):
+    # One tap each way. Without dedupe the cook's inbox fills with the same line — the exact
+    # flood already fixed on the ask path (#79).
+    owner, oh = make_user()
+    _, kh = make_user()
+    rec = _recipe(client, oh, visibility="public")
+
+    for _ in range(3):
+        client.post(f"/recipes/{rec['id']}/save", headers=kh)
+        client.delete(f"/recipes/{rec['id']}/save", headers=kh)
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+
+    inbox = client.get("/notifications", headers=oh).json()
+    assert len([n for n in inbox["notifications"] if n["type"] == "recipe_kept"]) == 1
+
+
+def test_re_keeping_an_already_kept_recipe_notifies_nothing_new(client, make_user):
+    # The endpoint is idempotent, so the notification must be too.
+    owner, oh = make_user()
+    _, kh = make_user()
+    rec = _recipe(client, oh, visibility="public")
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)
+    client.post("/notifications/read", json={}, headers=oh)  # read it, so dedupe won't apply
+    client.post(f"/recipes/{rec['id']}/save", headers=kh)    # re-keep: no new row
+
+    inbox = client.get("/notifications", headers=oh).json()
+    assert inbox["unread_count"] == 0
+    assert len([n for n in inbox["notifications"] if n["type"] == "recipe_kept"]) == 1
+
+
+def test_keeping_never_notifies_you_about_your_own_recipe(client, make_user):
+    # You can't keep your own (400), but assert the inbox stays empty regardless — notify()
+    # refuses a self-notification too, and both guards should hold.
+    owner, oh = make_user()
+    rec = _recipe(client, oh, visibility="public")
+    assert client.post(f"/recipes/{rec['id']}/save", headers=oh).status_code == 400
+    assert client.get("/notifications", headers=oh).json()["notifications"] == []

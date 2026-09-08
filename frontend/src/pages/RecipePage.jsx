@@ -181,6 +181,20 @@ export default function RecipePage() {
         {/* OWNER SURFACES — who can see it, and passing it on to the next hand. */}
         {isOwner && (
           <div className="mt-8">
+            {/* How many people keep this (#96) — THE COOK'S ALONE. `keeper_count` is null for
+                every other viewer, so there is no number for anyone else to render, and there
+                is no keeper list anywhere: how many, never who.
+
+                Hidden at zero, like the ask count. "0 people keep this" under your own recipe
+                is the discouraging line the private count exists to avoid — and it's the
+                default state for every recipe ever written. */}
+            {recipe.keeper_count > 0 && (
+              <p className="font-display font-bold text-[13.5px] text-terra mb-3">
+                {recipe.keeper_count === 1
+                  ? '1 person keeps this in their kitchen'
+                  : `${recipe.keeper_count} people keep this in their kitchen`}
+              </p>
+            )}
             <VisibilityControl
               recipe={recipe}
               onChange={(v) => setRecipe({ ...recipe, visibility: v })}

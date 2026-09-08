@@ -23,6 +23,14 @@ NOTIFICATION_TYPES = {
     # Someone sent you a friend request / accepted the one you sent.
     "friend_request",
     "friend_accept",
+    # Someone kept one of your recipes (#96). DELIBERATELY ANONYMOUS to the reader: the row
+    # stores actor_id (notify() needs it for the never-notify-yourself check and for dedupe),
+    # but the RESPONSE nulls every actor field for this type — see NotificationResponse and
+    # routers/notifications.py. Keeping is a private act: a bookmark addressed to nobody,
+    # unlike an ask, which is addressed to the cook. Publishing the keeper's identity would
+    # change what keeping MEANS and could chill it; a bare count gives the cook the signal
+    # without costing the reader their privacy.
+    "recipe_kept",
 }
 
 

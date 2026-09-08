@@ -1,8 +1,10 @@
+from typing import Optional
 import secrets
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -36,6 +38,7 @@ from app.schemas.recipe import (
 )
 from app.services.scaling import scale_ingredient
 from app.services.blocks import blocked_ids, is_blocked
+from app.services.notifications import notify
 from app.services.sharing import effective_visibility, can_view
 from app.services.friends import are_friends
 from app.services.growth import soul_count, growth_stage, growth_vitality
@@ -49,6 +52,29 @@ router = APIRouter(prefix="/recipes", tags=["recipes"])
 # Cap on a profile's recipe grid (GET /recipes/users/{id}) — matches the posts feed's
 # FEED_PAGE so the two tabs on one profile behave alike under a prolific user.
 PROFILE_GRID_LIMIT = 30
+
+
+def _keeper_count(recipe, viewer, db) -> Optional[int]:
+    """How many people have kept this recipe — **the cook's alone** (#96).
+
+    `None` for everyone who isn't the owner, never `0`: a client can't render a number it was
+    never given, which is the same discipline as `request_count` (#79). What POSITIONING forbids
+    is a PUBLIC keeper count and a list of keepers ANYWHERE — the cook-only number is the single
+    carve-out, and it exists because a recipe written without a post has no other feedback
+    channel at all (the ask/fulfil loop only lives on posts).
+
+    Note this reads RecipeSave for DISPLAY only. `can_view` must never consult it — a save row
+    is created by the READER, so trusting it for authorization would be a self-grant.
+    `services/sharing.py` does not import RecipeSave and must not start.
+    """
+    if viewer is None or recipe.user_id != viewer.id:
+        return None
+    return (
+        db.query(func.count(RecipeSave.id))
+        .filter(RecipeSave.recipe_id == recipe.id)
+        .scalar()
+        or 0
+    )
 
 
 def _attach_growth_fields(recipe, db):
@@ -539,6 +565,23 @@ def save_recipe(
     )
     if existing is None:
         db.add(RecipeSave(user_id=current_user.id, recipe_id=recipe.id))
+        # Tell the cook, in the SAME transaction as the save (#96). notify() deliberately
+        # doesn't commit, precisely so it lands with its cause — a keep that committed without
+        # its notification would be a signal silently lost.
+        #
+        # Only on a NEW row, so re-POSTing an already-kept recipe stays silent: the endpoint is
+        # idempotent and the notification has to be too. And dedupe=True because keep → unkeep →
+        # keep is one tap each way; without it a cook's inbox fills with the same line, the
+        # exact flood already fixed on the ask path (#79). While it's unread, one line stands
+        # for "this got kept", however many times it was toggled.
+        notify(
+            db,
+            user_id=recipe.user_id,
+            type="recipe_kept",
+            actor_id=current_user.id,
+            recipe_id=recipe.id,
+            dedupe=True,
+        )
         try:
             db.commit()
         except IntegrityError:
@@ -558,6 +601,7 @@ def save_recipe(
                 raise  # genuinely unexpected — don't swallow it
     _attach_growth_fields(recipe, db)
     recipe.kept_by_me = True
+    recipe.keeper_count = _keeper_count(recipe, current_user, db)
     return recipe
 
 
@@ -1012,8 +1056,7 @@ def get_recipe(
     _attach_growth_fields(recipe, db)
     # Whether the CALLER keeps this one (#57), so the page can draw Keep vs Kept. Only
     # here — the single-recipe read — because this is the one screen with that control;
-    # list endpoints leave it False rather than firing a query per row. It says nothing
-    # about anyone else: no keeper names, no keeper count, ever.
+    # list endpoints leave it False rather than firing a query per row.
     if recipe.user_id != current_user.id:
         recipe.kept_by_me = (
             db.query(RecipeSave.id)
@@ -1021,6 +1064,11 @@ def get_recipe(
             .first()
             is not None
         )
+    # ...and, for the OWNER only, how many people keep it (#96). This is the screen the cook
+    # looks at, so it's where the count belongs. `_keeper_count` returns None for anyone else —
+    # never 0 — so a non-owner client is given no number to render. Still no keeper NAMES and
+    # no keeper list, anywhere, ever: the cook learns how many, never who.
+    recipe.keeper_count = _keeper_count(recipe, current_user, db)
     return recipe
 
 
