@@ -25,7 +25,19 @@ export default function RecipeCard({ recipe, onClick, variant = 'grid' }) {
   return (
     <button
       onClick={onClick}
-      className={`${widthClass} group text-left bg-transparent`}
+      // `flex flex-col` is load-bearing, and the reason is not obvious. A <button> CENTRES its
+      // own content vertically — a UA behaviour, not something Tailwind sets — and a grid item
+      // stretches to the height of the tallest card in its row. So a card whose title takes one
+      // line had its whole contents pushed down by half the difference: measured at 430px, the
+      // photo sat 10px lower than its neighbour's and so did the title. Giving the button an
+      // explicit flex column replaces that centring with normal top-down flow.
+      //
+      // This was ALWAYS true; the fixed two-line title slot that shipped in 80385fa masked it by
+      // making both titles the same height, which is why removing the slot (correctly — it left a
+      // blank line under short names) appeared to *cause* the misalignment. `self-start` and
+      // `block` were both tried and neither works: verified in a real browser, since jsdom has no
+      // layout and no unit test here can see it.
+      className={`${widthClass} group text-left bg-transparent flex flex-col`}
     >
       <div className="relative sticker sticker-press overflow-hidden bg-card">
         <CoverImage

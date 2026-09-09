@@ -20,6 +20,24 @@ describe('RecipeCard — the title/byline layout (settled twice, so: a test)', (
     expect(title.className).toMatch(/line-clamp-2/)
   })
 
+  it('lays the card out as a flex COLUMN, which is what keeps the photos level', () => {
+    // The least obvious class in this component. A <button> centres its own content vertically
+    // (a UA behaviour), and a grid item stretches to the tallest card in its row — so a card with
+    // a one-line title had its photo AND its title pushed down by half the difference. Measured
+    // at 430px in a real browser: 10px lower than its neighbour. An explicit flex column replaces
+    // that centring with top-down flow.
+    //
+    // A class assertion is the most a test here can do — jsdom has no layout engine, so nothing
+    // in this suite can measure the 10px. That is exactly why the class is asserted: it is the
+    // fix, it looks decorative, and deleting it would be silent.
+    const { container } = render(<RecipeCard recipe={recipe} onClick={() => {}} />)
+    const classes = container.querySelector('button').className.split(/\s+/)
+    // Both, and as WHOLE class names: flex-col alone sets the direction of a flex container
+    // that would not exist, so on its own it silently does nothing.
+    expect(classes).toContain('flex')
+    expect(classes).toContain('flex-col')
+  })
+
   it('keeps a very long source name to one line', () => {
     // A source name can be 120 characters (#100). It is a NAME, so one line + ellipsis rather
     // than the title's two-line clamp.
