@@ -6,16 +6,25 @@ import { toUserMessage } from '../api/client'
 import BackButton from '../components/BackButton'
 import Avatar from '../components/Avatar'
 import Loader from '../components/Loader'
+import { toUtcMs } from '../utils/time'
 
 const fullName = (p) => `${p.author_first_name} ${p.author_last_name}`.trim()
 
 // "12 Aug 2026" — an absolute date, because this page is a permalink rather than a feed you
 // scan. Guarded: a missing or unparseable timestamp renders nothing rather than "Invalid Date".
+//
+// Goes through toUtcMs for the reason spelled out in utils/time.js: the API sends a zone-less
+// timestamp, and parsing it raw lands on the wrong DAY for every viewer west of UTC. A relative
+// "3d" absorbs that error; a printed date displays it.
 function postedOn(iso) {
   if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  const ms = toUtcMs(iso)
+  if (Number.isNaN(ms)) return ''
+  return new Date(ms).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 // PostPage (/posts/:id) — a single shared meal, read-only. Reached by tapping a post in
@@ -128,6 +137,16 @@ export default function PostPage() {
         setAsked(Boolean(res.data.requested_by_me))
       })
       .catch(() => setError('This meal isn’t available.'))
+    // EVERY piece of per-post state resets here. React Router reuses this element when only
+    // the :id param changes, so nothing unmounts — and an edit form left open across
+    // /posts/5 → /posts/6 would then save post 5's dish name, description AND visibility onto
+    // post 6, since `draft` survives while `post` is replaced. Same shape of trap for a
+    // half-confirmed delete. No in-app link currently makes that jump, which is exactly why
+    // it needs a guard rather than a comment: the next link that does won't come with a test.
+    setDraft(null)
+    setSaveError('')
+    setConfirmingDelete(false)
+    setDeleteError('')
   }, [id])
 
   if (error) {
@@ -290,8 +309,9 @@ export default function PostPage() {
                 className="field w-full"
                 placeholder="Slow-cooked all afternoon."
               />
-              <div className="mt-3">
+              <div className="mt-4">
                 <VisibilityChoice
+                  compact
                   value={draft.visibility}
                   onChange={(v) => setDraft({ ...draft, visibility: v })}
                 />
@@ -323,46 +343,45 @@ export default function PostPage() {
             </div>
           )}
 
-          {/* Delete (author-only). */}
+          {/* Delete (author-only) — the two-tap confirm, which replaces the button pair above
+              while it's open so the page never shows two competing delete affordances. */}
           {isMine && confirmingDelete && (
             <div className="mt-4 pt-3 border-t-2 border-line">
-              {confirmingDelete ? (
-                <div className="sticker bg-card p-3">
-                  <p className="font-display font-bold text-[14px] text-ink leading-snug">
-                    Delete this meal?
+              <div className="sticker bg-card p-3">
+                <p className="font-display font-bold text-[14px] text-ink leading-snug">
+                  Delete this meal?
+                </p>
+                <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
+                  It comes off your kitchen and your friends&rsquo; feeds for good.
+                  {post.request_count > 0 &&
+                    ' Anyone still waiting on the recipe stops waiting.'}
+                  {post.recipe_id && ' The recipe you attached stays in your kitchen.'}
+                </p>
+                {deleteError && (
+                  <p className="mt-2">
+                    <span className="error-pill">{deleteError}</span>
                   </p>
-                  <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
-                    It comes off your kitchen and your friends&rsquo; feeds for good.
-                    {post.request_count > 0 &&
-                      ' Anyone still waiting on the recipe stops waiting.'}
-                    {post.recipe_id && ' The recipe you attached stays in your kitchen.'}
-                  </p>
-                  {deleteError && (
-                    <p className="mt-2">
-                      <span className="error-pill">{deleteError}</span>
-                    </p>
-                  )}
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={confirmDelete}
-                      disabled={deleting}
-                      className="flex-1 rounded-full bg-brick text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
-                    >
-                      {deleting ? 'Deleting…' : 'Delete it'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setConfirmingDelete(false)
-                        setDeleteError('')
-                      }}
-                      disabled={deleting}
-                      className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
-                    >
-                      Keep it
-                    </button>
-                  </div>
+                )}
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={confirmDelete}
+                    disabled={deleting}
+                    className="flex-1 rounded-full bg-brick text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    {deleting ? 'Deleting…' : 'Delete it'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConfirmingDelete(false)
+                      setDeleteError('')
+                    }}
+                    disabled={deleting}
+                    className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    Keep it
+                  </button>
                 </div>
-              ) : null}
+              </div>
             </div>
           )}
         </div>

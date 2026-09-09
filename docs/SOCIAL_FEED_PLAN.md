@@ -1,11 +1,23 @@
 # Implementation plan: the social presence feed (issei #62)
 
-> Phased build plan derived from `SOCIAL_FEED_DESIGN.md` (design + locked decisions).
-> **Phases 0, 1a, 1b and 2 have shipped** (friend graph + minimal profiles; posts + the friends feed
-> (posts + the friends feed, which became Home); later phases remain **planned, not
-> built**. Each phase is independently shippable, gets its own ship-review + docs gate,
-> and is a "stop and ask" item (new feature + data model + positioning) per the autonomy
-> policy in `TESTING.md`. Approve phase-by-phase.
+> **HISTORICAL PLANNING RECORD — do not read the per-phase stamps below as current state.**
+> Last reconciled with the code 2026-09-09. Phases 0, 1a, 1b and 2 shipped (friend graph and
+> minimal profiles; posts and the friends feed, which became Home; concrete per-item
+> visibility; the request → fulfil loop with notifications), and so did work this plan never
+> anticipated: the Kept shelf (#57), blocking (#85), the people directory (#80), the feed
+> read-mark (#97) and post editing (#98).
+>
+> Two things stamped "BUILT" below were later **UN-SHIPPED by #94** and must not be described
+> as features anywhere: the feed's **friends/everyone toggle** (#70) and Browse's **Meals tab**
+> (#71). The endpoints survive — `?scope=everyone` is now the client's cold-start
+> fall-through, and `GET /posts/browse` has no caller at all — but the user-facing controls
+> are gone. `POSITIONING.md` is the authority when this file disagrees with it, and `README.md`
+> is the authority on what the API does today.
+>
+> Kept as-is otherwise, deliberately: this is the record of what was planned and in what
+> order, which is worth more intact than retro-edited. Each phase was independently
+> shippable, got its own ship-review + docs gate, and was a "stop and ask" item per the
+> autonomy policy in `TESTING.md`.
 
 ## Guiding constraints (carried from the design)
 

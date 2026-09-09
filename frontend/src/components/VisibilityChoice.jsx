@@ -9,7 +9,13 @@
 //
 // Copy avoids the app's own vocabulary ("pass it on", "issei") that round-2 user testing
 // showed people couldn't decode, and names the consequence instead.
-export default function VisibilityChoice({ value, onChange }) {
+//
+// `compact` is for the one place this appears OUTSIDE a create form — PostPage's inline
+// edit (#98) — where the create-time framing reads wrong: the reassurance "You can change
+// this any time" is odd inside the form that IS the changing, and the 19px legend and its
+// top margin are sized for a full page rather than a card. Same three options, same stored
+// values; only the surrounding chrome differs.
+export default function VisibilityChoice({ value, onChange, compact = false }) {
   const OPTIONS = [
     {
       value: 'public',
@@ -30,8 +36,12 @@ export default function VisibilityChoice({ value, onChange }) {
   ]
 
   return (
-    <fieldset className="mt-7">
-      <legend className="font-display font-black text-[19px] text-ink mb-2.5">
+    <fieldset className={compact ? '' : 'mt-7'}>
+      <legend
+        className={`font-display font-black text-ink mb-2.5 ${
+          compact ? 'text-[15px]' : 'text-[19px]'
+        }`}
+      >
         Who can see this?
       </legend>
       <div className="space-y-2.5">
@@ -74,9 +84,11 @@ export default function VisibilityChoice({ value, onChange }) {
           )
         })}
       </div>
-      <p className="font-display italic text-[12px] text-ink-soft mt-2">
-        You can change this any time.
-      </p>
+      {!compact && (
+        <p className="font-display italic text-[12px] text-ink-soft mt-2">
+          You can change this any time.
+        </p>
+      )}
     </fieldset>
   )
 }

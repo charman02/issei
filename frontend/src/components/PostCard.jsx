@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { requestRecipe, retractRequest } from '../api/posts'
 import { toUserMessage } from '../api/client'
 import Avatar from './Avatar'
+import { toUtcMs } from '../utils/time'
 
 // A single meal in the feed: the photo big, then who made it and what it is.
 //
@@ -18,20 +19,8 @@ import Avatar from './Avatar'
 // without ever displaying an absence. Don't turn the count into a badge on the card.
 
 // Short relative time — "just now / 3h / 2d / Aug 4". Kept tiny and local; the feed
-// doesn't need a date library for this.
-//
-// The API serializes created_at as a NAIVE (timezone-less) UTC string, e.g.
-// "2026-08-18T21:37:06". JS's Date() parses a timezone-less ISO string as LOCAL
-// time, which skews the age by the viewer's UTC offset — a fresh post reads "just
-// now" for hours in the Americas, or "8h" immediately east of UTC. Force UTC by
-// appending 'Z' when the string carries no zone. (Scoped here — this is the app's
-// only relative-time render; a server-side tz change would touch every schema and
-// the existing Browse sort.)
-function toUtcMs(iso) {
-  const hasZone = /[zZ]|[+-]\d\d:?\d\d$/.test(iso)
-  return new Date(hasZone ? iso : `${iso}Z`).getTime()
-}
-
+// doesn't need a date library for this. The naive-UTC parse lives in utils/time.js —
+// see the long note there for why a bare new Date() is wrong on every one of these.
 function ago(iso) {
   const then = toUtcMs(iso)
   const now = Date.now()

@@ -543,15 +543,38 @@ def retract_request(
 
     Deliberately does NOT delete the cook's notification: they were told something true, and
     un-telling it would be rewriting history inside someone else's inbox.
+
+    NO READ CHECK, unlike every other route on a post — deliberately, and it's the one place
+    that asymmetry is right. `can_view_post` guarded this until review pointed out what that
+    costs: ask on a public meal, watch the cook set it to friends-only or private (one tap since
+    `PATCH /posts/{id}`, and already possible via the profile-wide sweep), and your own pending
+    ask becomes permanent — 404 on the post AND 404 on withdrawing it, with the cook still
+    looking at your name on /requests forever. Taking back a row you created is not a read of
+    someone else's content, so it doesn't answer to their visibility. The delete is still scoped
+    to `requester_id == caller` and `state == "pending"`.
+
+    It is a PENDING ROW **or** read access, though — not neither. Dropping the check outright
+    would have turned this route into a peephole: anyone could poll DELETE on any id and read a
+    private post's dish name, photo and author out of the response body. Holding a pending ask is
+    the credential, and it's a real one — you could see the post when you asked, so handing that
+    same body back as you withdraw discloses nothing you didn't already have on screen.
     """
     post = db.query(Post).filter(Post.id == post_id).first()
-    if post is None or not can_view_post(post, current_user, db):
+    if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
-    db.query(RecipeRequest).filter(
-        RecipeRequest.post_id == post.id,
-        RecipeRequest.requester_id == current_user.id,
-        RecipeRequest.state == "pending",
-    ).delete(synchronize_session=False)
+    mine = (
+        db.query(RecipeRequest)
+        .filter(
+            RecipeRequest.post_id == post.id,
+            RecipeRequest.requester_id == current_user.id,
+            RecipeRequest.state == "pending",
+        )
+        .first()
+    )
+    if mine is None and not can_view_post(post, current_user, db):
+        raise HTTPException(status_code=404, detail="Post not found")
+    if mine is not None:
+        db.delete(mine)
     db.commit()
     viewable = _viewable_recipe_ids([post], current_user, db)
     counts, mine = _request_context([post], current_user, db)
@@ -700,13 +723,23 @@ def update_post(
         anyone's "new since you last looked" (#97) — `is_new` keys on the post's id, which
         doesn't move, so this is true by construction rather than by a guard.
       - It does not notify anyone. Nobody asked to hear that a caption changed.
+      - It does not touch the photo or the attached recipe. Both were in the schema and both
+        came out in review: the photo because a different photo is a different meal (a new
+        post, not an edit) and the field had no host validation, and the recipe because
+        attaching one to a post people ASKED about is answering them — which is
+        `POST /{post_id}/fulfill`'s whole job, grants and notifications included. Attaching
+        here would have left every ask pending behind an already-attached recipe.
+
+    One thing it CAN do that's worth knowing: lowering visibility (public -> private) hides the
+    post from anyone who asked and isn't a friend. Their ask survives, and `fulfill` still
+    delivers to them — the cook chose to answer, and a grant is orthogonal to visibility. What
+    they lose is the post, not the recipe; `retract_request` deliberately doesn't require read
+    access so they can still withdraw the ask.
     """
     post = db.query(Post).filter(Post.id == post_id).first()
     if post is None or post.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if body.photo_url is not None:
-        post.photo_url = body.photo_url
     if body.dish_name is not None:
         post.dish_name = body.dish_name.strip()
     if body.description is not None:
@@ -714,24 +747,6 @@ def update_post(
         post.description = body.description.strip() or None
     if body.visibility is not None:
         post.visibility = body.visibility
-    if body.recipe_id is not None:
-        if body.recipe_id == 0:
-            post.recipe_id = None  # detach
-        else:
-            # Same rule as create: only a recipe you OWN and haven't deleted. A post must never
-            # link someone else's recipe, and never a tombstone.
-            recipe = (
-                db.query(Recipe)
-                .filter(
-                    Recipe.id == body.recipe_id,
-                    Recipe.user_id == current_user.id,
-                    Recipe.deleted_at.is_(None),
-                )
-                .first()
-            )
-            if recipe is None:
-                raise HTTPException(status_code=404, detail="Recipe not found")
-            post.recipe_id = recipe.id
 
     db.commit()
     db.refresh(post)

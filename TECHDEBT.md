@@ -37,7 +37,10 @@ strangers arrive. Security/privacy first.
   shipped in #85, so that gap is closed and its replacement debt is listed below.)
 
   1. **We BROWSE-ALL; they SEARCH-ONLY.** `GET /friends/discover` with no `?q=` returns
-     every other user, newest first, 50 at a time. Instagram will find a name you type; it
+     every other user, newest first, 50 at a time — though only for addable STRANGERS:
+     anyone the caller has already asked comes back outside that cap (#80), so a response can
+     legitimately exceed 50, and the cap can never drop the person whose "Requested" label is
+     the whole reason the row stays. Instagram will find a name you type; it
      will not hand you a paginated list of the whole platform. At a dozen users browse-all
      IS the feature (it is why #80 exists — a real user could not find anybody). Past a few
      hundred it is a scrapeable member list. *When to revisit:* make `q` required once the
@@ -95,10 +98,24 @@ strangers arrive. Security/privacy first.
   flagged:* it's a performance optimization that can become a leak if used carelessly. *Where:*
   `app/services/sharing.py`; callers in `app/routers/posts.py`, `recipes.py`, `friends.py`.
 
+- **A profile grid now has TWO ceilings, and "Show all" only lifts one.** (#98)
+  `ProfileContent` previews six items per tab behind a "Show all N" button, but the endpoints
+  behind it cap at 30 server-side (`PROFILE_GRID_LIMIT`, `FEED_PAGE`). So the button reveals
+  everything **fetched**, not everything that exists — and on a profile with 45 visible
+  recipes the header count ("45 recipes", uncapped and `can_view`-gated) disagrees with the
+  button ("Show all 30 recipes"). Neither number lies about what it describes; together they
+  read like a bug. *Fix:* `before_id` keyset pagination on `GET /recipes/users/{id}` (the
+  posts endpoint already has the shape), then make "Show all" fetch rather than just
+  un-slice. *Why flagged:* invisible until someone has more than 30 of anything, and
+  permanently confusing after that. *Where:*
+  `frontend/src/components/ProfileContent.jsx`, `app/routers/recipes.py`,
+  `app/routers/posts.py`.
+
 - **Blocking is enforced in two places, and only one of them is structural.** (#85)
   `_resource_is_visible` covers every recipe and post read, which is the right shape. But
-  `discover_people`, `user_profile`, `request_friend`, `friend_suggestions` and
-  `browse_recipes` each carry a hand-written `is_blocked` / `blocked_ids` call, because they
+  `request_friend`, `accept_friend`, `friend_suggestions`, `discover_people`,
+  `user_profile` and `browse_recipes` each carry a hand-written `is_blocked` / `blocked_ids`
+  call, because they
   return *people* (or run unauthenticated) and so have no `can_view` to lean on. This is not
   hypothetical: `friend_suggestions` was missed on the first pass and the review caught it —
   a blocked person reappeared as a friend suggestion precisely *because* you had once handed
@@ -143,10 +160,12 @@ strangers arrive. Security/privacy first.
   and a signed-in viewer's blocks are honoured) loads *all* non-deleted recipes then drops
   non-public ones and blocked owners' with one Python comprehension carrying *two* predicates
   — mis-edit either and you leak (private recipes to anonymous callers, or a blocked person's
-  recipes back into the blocker's feed). The Meals tab's `browse_posts` (#71, auth-gated) filters
-  `visibility=='public'` in SQL (safer), but is deliberately **uncapped** so the client
-  can search the full set — both read the whole matching table per call and paginate/search
-  client-side. Fine now; a scaling wall as the corpus grows. *Fix:* server-side search +
+  recipes back into the blocker's feed). `browse_posts` (#71, auth-gated) filters
+  `visibility=='public'` in SQL (safer) and is **uncapped** — which was justified by the
+  client searching the full set from Browse's Meals tab, and that tab is gone (#94), so
+  today it is an uncapped query with **no caller at all**. Either give it a cap before
+  anything calls it again (#82's "most asked for" row is the likely one) or delete it.
+  `browse_recipes` still reads the whole matching table per call and searches client-side. Fine now; a scaling wall as the corpus grows. *Fix:* server-side search +
   keyset pagination on both, mirroring the feed's `?before_id=` cursor. *Why flagged:* the
   recipe one is also a privacy single-point-of-failure; both are scaling walls.
   *Where:* `app/routers/recipes.py` (`browse_recipes`), `app/routers/posts.py` (`browse_posts`);
@@ -287,9 +306,17 @@ imminent scaling risk.
   create-form visibility default from `profile_visibility`). If that value changes anywhere
   other than this device's login/edit, the browser keeps using the stale value. *Concept:*
   *client-side cache of server state.* *Why flagged:* small blast radius today (only a
-  default the user can override), but the pattern to watch — the clean fix is a `GET
-  /auth/me` refresh on app load. *Where:* `frontend/src/pages/Profile.jsx`, `PlantRecipe.jsx`,
-  `PostComposer.jsx` (reads); `Login.jsx`, `Profile.jsx` (the only writes).
+  default the user can override), but the pattern to watch. **LARGELY CLOSED (#90):** the
+  named fix — a `GET /auth/me` refresh on app load — shipped as `reconcile()` in
+  `lib/currentUser.js`, called once per app start from `App.jsx`, and every write now goes
+  through that module's `patchUser`/`setUser` (which merge over a fresh read, so a stale
+  closure can no longer revert a just-uploaded photo) instead of touching `localStorage`.
+  What remains is narrower than the entry originally described: `id` and
+  `profile_visibility` are still read straight from `localStorage` in a couple of places,
+  which is fine for an id and merely stale-tolerant for a create-form default.
+  *Where:* `frontend/src/lib/currentUser.js` (the store), `lib/useAvatarUpload.js`,
+  `pages/Login.jsx`, `pages/Profile.jsx` (writes); `PlantRecipe.jsx`, `PostComposer.jsx`
+  (the direct reads that remain).
 
 - **One axios instance carries three cross-cutting behaviors.** All API calls route through
   `client.js`, which auto-attaches the JWT (request interceptor), redirects to `/login` on
@@ -357,8 +384,14 @@ narrow situations.
   tracking-pixel class, unguarded. Not XSS (React `<img src>` won't run
   `javascript:`/`data:` script). *Why flagged:* the real fix is one shared validator (or
   an image proxy) applied to every user-supplied image URL, not per-field patches.
-  *Where:* `app/routers/auth.py` (avatar guard, done), vs `app/schemas/recipe.py`
-  `cover_photo_url` + `app/schemas/post.py` `photo_url` (unguarded); render sites
+  A third entry point nearly opened in #98: `PostUpdate` accepted `photo_url` with no host
+  check, which would have let an author repoint an existing post's image at any third-party
+  URL that then loaded in every friend's browser. It was dropped from the schema instead —
+  the right call there for a product reason too (a different photo is a different meal) — but
+  dropping a field is not a fix for this class, and the next schema to accept an image URL
+  will need the same catch. *Where:* `app/routers/auth.py` (avatar guard, done), vs
+  `app/schemas/recipe.py` `cover_photo_url` + `app/schemas/post.py` `photo_url` on CREATE
+  (both unguarded); render sites
   `frontend/src/components/{Avatar,CoverImage,PostCard}.jsx`.
 
 - **Signup leaks account existence; forgot-password deliberately doesn't.** Signup returns

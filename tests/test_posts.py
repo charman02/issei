@@ -391,6 +391,8 @@ def test_all_post_endpoints_require_auth(client, make_user):
     assert client.get("/posts/feed").status_code == 401
     assert client.get("/posts/browse").status_code == 401
     assert client.post("/posts", json={"photo_url": "x", "dish_name": "y"}).status_code == 401
+    assert client.patch("/posts/1", json={"dish_name": "y"}).status_code == 401
+    assert client.delete("/posts/1").status_code == 401
 
 
 # --- editing your own meal (PATCH /posts/{id}) ---
@@ -465,7 +467,20 @@ def test_editing_requires_auth_and_404s_on_an_unknown_post(client, make_user):
     assert client.patch("/posts/999999", json={"dish_name": "x"}, headers=ah).status_code == 404
 
 
-def test_you_can_attach_and_detach_a_recipe_you_own(client, make_user):
+def test_an_edit_CANNOT_touch_the_photo_or_the_attached_recipe(client, make_user):
+    """The edit surface is three fields wide, and the other two are absent on purpose.
+
+    The photo, because a different photo is a different meal — that's a new post, and the field
+    carried none of the Cloudinary-host validation `PATCH /auth/me` applies, so an author could
+    have repointed their own post's image at any third-party URL that then loaded in every
+    friend's browser. The recipe, because attaching one to a post people ASKED about is
+    answering them, and `POST /{id}/fulfill` is what answers: it mints a grant per pending
+    requester, marks the asks fulfilled and notifies. A quiet `recipe_id` here would have
+    attached the recipe and left every ask pending underneath it.
+
+    Both are dropped from the schema rather than rejected, so Pydantic ignores them — the
+    assertion that matters is that NOTHING moved.
+    """
     _, ah = make_user()
     post = _own(client, ah)
     rec = client.post(
@@ -474,28 +489,63 @@ def test_you_can_attach_and_detach_a_recipe_you_own(client, make_user):
         headers=ah,
     ).json()
 
-    body = client.patch(
-        f"/posts/{post['id']}", json={"recipe_id": rec["id"]}, headers=ah
-    ).json()
-    assert body["recipe_id"] == rec["id"]
-    # 0 detaches; null would have meant "unchanged".
+    r = client.patch(
+        f"/posts/{post['id']}",
+        json={
+            "dish_name": "Renamed",
+            "photo_url": "https://evil.test/tracker.gif",
+            "recipe_id": rec["id"],
+        },
+        headers=ah,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["dish_name"] == "Renamed"           # the field that IS editable moved
+    assert body["photo_url"] == post["photo_url"]   # the two that aren't did not
+    assert body["recipe_id"] is None
+    # And not just in the response — re-read it.
+    fresh = client.get(f"/posts/{post['id']}", headers=ah).json()
+    assert fresh["photo_url"] == post["photo_url"]
+    assert fresh["recipe_id"] is None
+
+
+def test_hiding_a_post_does_not_TRAP_the_ask_of_someone_who_can_no_longer_see_it(client, make_user):
+    """Withdrawing your own ask must not depend on still being able to read the post.
+
+    Ana asks on Ben's public meal; Ben makes it private (one tap now that PATCH exists, and
+    already reachable before it via the profile-wide visibility sweep). Ana can no longer see the
+    post — correct — but if the retract route also demanded read access, her ask would be
+    permanent: 404 on the post AND 404 on withdrawing it, with Ben looking at her name on
+    /requests forever and `fulfill` still ready to hand her a grant. A row you created is yours
+    to delete; it isn't a read of someone else's content.
+    """
+    _, ah = make_user()   # Ben, the cook
+    _, bh = make_user()   # Ana, who asks
+    post = _own(client, ah, visibility="public")
+    assert client.post(f"/posts/{post['id']}/request", headers=bh).status_code == 201
+    assert len(client.get("/posts/requests/incoming", headers=ah).json()) == 1
+
     assert client.patch(
-        f"/posts/{post['id']}", json={"recipe_id": 0}, headers=ah
-    ).json()["recipe_id"] is None
+        f"/posts/{post['id']}", json={"visibility": "private"}, headers=ah
+    ).status_code == 200
+    assert client.get(f"/posts/{post['id']}", headers=bh).status_code == 404  # hidden, as it should be
+
+    assert client.delete(f"/posts/{post['id']}/request", headers=bh).status_code == 200
+    assert client.get("/posts/requests/incoming", headers=ah).json() == []
 
 
-def test_you_cannot_attach_someone_ELSES_recipe(client, make_user):
+def test_the_retract_route_is_not_a_PEEPHOLE_into_a_private_post(client, make_user):
+    """The other half of the rule above: a pending ask is the credential, not nothing at all.
+
+    Without that, DELETE /posts/{id}/request would let anyone poll any id and read a private
+    post's dish name, photo and author straight out of the response body.
+    """
     _, ah = make_user()
     _, bh = make_user()
-    post = _own(client, ah)
-    theirs = client.post(
-        "/recipes",
-        json={"name": "Theirs", "visibility": "public", "steps": [{"content": "Cook", "position": 1}]},
-        headers=bh,
-    ).json()
-    r = client.patch(f"/posts/{post['id']}", json={"recipe_id": theirs["id"]}, headers=ah)
+    post = _own(client, ah, visibility="private")
+    r = client.delete(f"/posts/{post['id']}/request", headers=bh)
     assert r.status_code == 404
-    assert client.get(f"/posts/{post['id']}", headers=ah).json()["recipe_id"] is None
+    assert r.json()["detail"] == "Post not found"
 
 
 def test_editing_does_not_make_a_post_NEW_again(client, make_user):

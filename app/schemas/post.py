@@ -34,16 +34,28 @@ class PostUpdate(BaseModel):
     send `""` for that (the router strips it back to NULL). That ambiguity is the cost of a
     partial update, and the alternative — a sentinel — is worse to read.
 
-    Deliberately NOT editable: the author. A post is somebody saying "I made this", so
-    transferring one would make the sentence false.
+    THREE fields, matching exactly what the edit form on PostPage offers. Two things a client
+    might expect here are deliberately absent, and both were removed after review flagged that
+    the schema was wider than any rule or UI backing it:
+
+      - `photo_url`. A different photo is a different meal, so re-shooting it is a NEW post, not
+        an edit — the UI, the README and CLAUDE.md all said so while the schema quietly accepted
+        the field, with no Cloudinary-host check of the kind `PATCH /auth/me` applies. A rule
+        enforced only in the client isn't enforced.
+      - `recipe_id`. Attaching a recipe to a post people have ASKED about is answering them, and
+        answering already has an endpoint that does the whole job: `POST /posts/{id}/fulfill`
+        mints a grant per pending requester, marks the asks fulfilled and notifies them. A quiet
+        `recipe_id` here would attach the recipe while leaving every ask pending — the cook's own
+        card would keep reading "1 person asked for this" about a recipe already on the post.
+        Attaching to an EXISTING post that nobody asked about has no home yet; that's a feature
+        with a UI, not a field to leave half-wired in a schema.
+
+    Also not editable: the author. A post is somebody saying "I made this", so transferring one
+    would make the sentence false.
     """
 
-    photo_url: Optional[str] = Field(default=None, min_length=1)
     dish_name: Optional[DishName] = None
     description: Optional[str] = Field(default=None, max_length=500)
-    # Attach or re-attach a recipe you own; `recipe_id: 0` detaches (see the router — 0 is not a
-    # valid id, so it reads unambiguously as "remove the link" where null means "unchanged").
-    recipe_id: Optional[int] = None
     visibility: Optional[Literal["public", "friends", "private"]] = None
 
 

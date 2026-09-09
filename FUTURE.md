@@ -1,6 +1,6 @@
 # Future Roadmap
 
-*Current state verified against the code on **2026-09-04**. Re-verify before trusting any
+*Current state verified against the code on **2026-09-09**. Re-verify before trusting any
 claim here; this file has drifted a full release cycle behind before.*
 
 This document outlines planned features and improvements for Issei — a full-stack app for
@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **59 routes, 15 models, 472
-backend tests, 721 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **59 routes, 15 models, 473
+backend tests, 730 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -29,8 +29,8 @@ entries. A cover photo and per-step photos via Cloudinary, with iPhone HEIC conv
 
 **The social layer, built through 2026-08/09.** A symmetric friend graph; a presence feed of
 **shared meals** as Home (photo + dish name, optionally linked to a recipe — a post is not a
-recipe, and there is deliberately **no like button**); a Friends|Everyone feed toggle; Browse
-with **Recipes | Meals** tabs; read-only profiles; an app-wide **people directory** with name
+recipe, and there is deliberately **no like button**); Browse; read-only profiles; an app-wide
+**people directory** with name
 search; a **Kept** shelf for bookmarking someone else's recipe (never a copy); and — newest —
 writing a recipe **without abandoning the meal post you're in the middle of**; and the
 **recipe-request loop** (#79) — anyone who can see a meal can ask the cook for the recipe, the

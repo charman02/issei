@@ -1,10 +1,10 @@
 # issei — architecture refresher
 
-Written to be reread before an interview. Verified against the code on 2026-08-06, not
+Written to be reread before an interview. Verified against the code on 2026-09-09, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 59 endpoints · 15 tables · 21 migrations · 472 backend tests · 721 frontend
-tests · 6,320 lines of Python under `app/` (excluding tests and migrations), deployed
+**Scale:** 59 endpoints · 15 tables · 21 migrations · 473 backend tests · 730 frontend
+tests · 6,560 lines of Python under `app/` (excluding tests and migrations), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
 
 ---
@@ -61,8 +61,15 @@ users
         ├── cook_events          (recipe_id FK)
         ├── handoffs             (recipe_id, from_user_id, to_user_id)
         └── recipe_saves         (user_id, recipe_id — a bookmark; UNIQUE(user,recipe), one recipe FK)
+  ├── recipe_requests            (post_id, requester_id — an ask on a post; UNIQUE(post,requester), state pending|fulfilled)
+  ├── notifications              (user_id, actor_id + nullable post_id/recipe_id, both SET NULL so a line outlives its subject)
+  └── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
 feedback                          (standalone)
 ```
+
+The last three are the ones people ask about, so they belong in the picture rather than only
+in §5's prose: `recipe_requests` is the ask that makes a handoff happen, `notifications` is the
+only place the app speaks first, and `blocks` is the row that outranks every visibility value.
 
 ### The three design decisions to be able to defend
 

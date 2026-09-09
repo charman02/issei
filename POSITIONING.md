@@ -190,13 +190,15 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). SIX test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). EIGHT test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
-and `pages/InviteLanding.test.jsx`. (This list previously named `pages/PlantRecipe.test.jsx`,
-which asserts nothing of the kind, and omitted three files that do — verified by reading
-each one, not by grepping for the word.)
+`pages/InviteLanding.test.jsx`, `components/RecipeForm.test.jsx` (both mic states) and
+`pages/Notifications.test.jsx`. (This list previously named `pages/PlantRecipe.test.jsx`,
+which asserts nothing of the kind, and has twice undercounted the files that do — verified
+by reading each one, not by grepping for the word. Every new user-facing surface tends to
+add another; the count is a floor, not a fixed number.)
 
 Internal identifiers (`voice_note`, `soul_count`) may keep their names; **user-facing
 and recruiter-facing text may not**.
@@ -390,7 +392,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **59 routes**, **15 models**,
-**472 backend tests**, **721 frontend tests in 50 files**. Endpoint and test counts have
+**473 backend tests**, **730 frontend tests in 51 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

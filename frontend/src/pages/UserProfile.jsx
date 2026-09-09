@@ -167,8 +167,6 @@ export default function UserProfile() {
         <div className="mt-5">
           <FriendButton />
         </div>
-
-
       </div>
 
       {/* Body. A non-friend looking at someone who's shown them nothing (private

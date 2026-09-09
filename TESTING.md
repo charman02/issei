@@ -70,9 +70,13 @@ alone — re-run it):
    → `tests/test_sharing.py`, `tests/test_visibility.py`, `tests/test_blocks.py`
 
 2. **Read is not write: a recipient can never edit or delete.**
-   `patch_recipe` / `delete_recipe` / `handoff_recipe` filter on `user_id`. A
-   grantee can read and cook, never mutate someone else's record.
-   → `tests/test_sharing.py`, `tests/test_sharing_api.py`
+   `patch_recipe` / `delete_recipe` / `handoff_recipe` filter on `user_id`, and so do
+   `update_post` / `delete_post` — a POST is editable now (#98) and answers to the same
+   rule. A grantee or a friend can read and cook, never mutate someone else's record.
+   Every one of these returns **404, not 403**, to a non-owner: the same answer an unknown
+   id gets, so a refusal never confirms the thing exists.
+   → `tests/test_sharing.py`, `tests/test_sharing_api.py`,
+   `tests/test_posts.py::test_READ_IS_NOT_WRITE_a_friend_cannot_edit_your_meal`
 
 3. **Autosuggest never leaks another user's data.**
    `ingredient-suggestions` and `field-suggestions` are scoped to the caller's own
@@ -110,9 +114,9 @@ alone — re-run it):
   required) and, if it reads user data, its **scope** (invariant 1/3). If it returns
   **another person's** name, photo, recipe or post, it must either funnel through
   `can_view` / `can_view_post` or call `is_blocked` / `blocked_ids` itself (invariant 9) —
-  that's the actual failure mode, not a theoretical one: `discover_people`, `user_profile`,
-  `request_friend`, `friend_suggestions` and `browse_recipes` each needed a hand-written
-  check, and `friend_suggestions` was missed on the first pass.
+  that's the actual failure mode, not a theoretical one: `request_friend`, `accept_friend`,
+  `friend_suggestions`, `discover_people`, `user_profile` and `browse_recipes` each needed a
+  hand-written check, and `friend_suggestions` was missed on the first pass.
 - **New surface that displays the signed-in person** (their name, email or avatar) → read it
   through `lib/currentUser.js` (`useCurrentUser()` / `readUser()`), never
   `localStorage.getItem('issei_user')` directly, and write with `patchUser` so the merge

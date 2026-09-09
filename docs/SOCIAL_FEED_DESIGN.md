@@ -1,8 +1,16 @@
 # Design: "What are your friends making" — the presence feed
 
-> **Status:** Phases 0–1a built (friend graph + minimal profiles, then posts + the
-> friends feed that became Home); later phases still design draft. Working artifact for
-> a dedicated build session — later open decisions below aren't committed to product yet.
+> **HISTORICAL DESIGN DRAFT — not a description of the current app.**
+> Last reconciled with the code 2026-09-09. Phases 0, 1a, **1b and 2** have all shipped, so
+> several things this file frames as open questions or proposals are long since decided in
+> code: symmetric friends (not followers), whether there's a public feed (answered twice —
+> #70 added a toggle, #94 removed it), and the visibility model, whose three-tier per-recipe
+> sketch in "Tension 1" was **superseded by #68's** concrete `public | friends | private`
+> value stored literally per item. Comments on a meal are still unbuilt (Phase 3).
+>
+> Read `POSITIONING.md` for what may be claimed, `README.md` for what the API does, and
+> `ARCHITECTURE.md` for how it's put together. This file is kept for the reasoning — the
+> tensions and the arguments that produced those decisions — not for its status lines.
 
 ## The idea (as proposed)
 

@@ -269,16 +269,25 @@ describe('PostPage — the cook on their own meal', () => {
 describe('PostPage — editing your own meal', () => {
   const mine = (over = {}) => postData({ user_id: 1, ...over })
 
-  it('shows WHEN it was posted', async () => {
+  it('shows WHEN it was posted, on the right DAY', async () => {
     // A permalink is where you come to know, so the date is absolute rather than "3d ago".
-    getPost.mockResolvedValue({ data: mine({ created_at: '2026-08-20T12:00:00Z' }) })
+    //
+    // The fixture is deliberately NAIVE (no 'Z'), which is exactly how the API serializes
+    // created_at. This test can only assert what the runtime PRINTS, and that depends on its
+    // timezone — in UTC (i.e. CI) a bare parse and a UTC parse agree exactly, so no fixture
+    // here can catch the wrong-day bug. `utils/time.test.js` pins that contract in absolute
+    // milliseconds instead, which is true in every zone. This one checks the wiring: that the
+    // date renders at all, from the right helper, in the author's own view.
+    getPost.mockResolvedValue({ data: mine({ created_at: '2026-08-20T23:30:00' }) })
     renderPost()
     // Locale-independent: toLocaleDateString orders the parts by the runtime's locale
     // ("20 Aug 2026" here, "Aug 20, 2026" in a US-default test runner), so assert the PARTS
     // rather than an ordering the browser is entitled to choose.
-    expect(await screen.findByText(/Aug/)).toBeInTheDocument()
-    expect(screen.getByText(/2026/)).toBeInTheDocument()
-    expect(screen.getByText(/20/)).toBeInTheDocument()
+    const line = await screen.findByText(/Aug/)
+    expect(line).toBeInTheDocument()
+    expect(line.textContent).toMatch(/2026/)
+    // 20, not 21 (a naive parse east of UTC) and not 19 (bare parse to the west).
+    expect(line.textContent).toMatch(/\b20\b/)
   })
 
   it('renders nothing rather than "Invalid Date" for a broken timestamp', async () => {
