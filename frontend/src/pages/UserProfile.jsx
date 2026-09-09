@@ -194,61 +194,65 @@ export default function UserProfile() {
         return <ProfileContent userId={userId} />
       })()}
 
-        {/* Block (#85) — at the BOTTOM of the page, below the recipes and posts. It used to sit
-            directly under the friend button, which put a safety control inside the social one's
-            blast radius: the two most consequential taps on the page were adjacent. Down here
-            it's still findable — it's the last thing on the page, not hidden behind anything —
-            but you reach it by deciding to, having scrolled past everything this person actually
-            cooks. Hidden on your own profile. */}
-        {!isSelf && (
-          <div className="mt-4">
-            {confirmingBlock ? (
-              <div className="sticker bg-card p-3 text-left">
-                <p className="font-display font-bold text-[14px] text-ink leading-snug">
-                  Block {profile.first_name}?
+      {/* Block (#85) — at the BOTTOM of the page, below the recipes and posts. It used to sit
+          directly under the friend button, which put a safety control inside the social one's
+          blast radius: the two most consequential taps on the page were adjacent. Down here
+          it's still findable — it's the last thing on the page, not hidden behind anything —
+          but you reach it by deciding to, having scrolled past everything this person actually
+          cooks. Hidden on your own profile. */}
+      {!isSelf && (
+        // text-center because this section no longer lives inside the identity block's
+        // items-center column — without it the resting chip renders flush to the page's left
+        // edge, orphaned under two full-width content grids. The confirm card keeps its own
+        // text-left, since a paragraph of consequences shouldn't be centered.
+        <div className="mt-6 text-center">
+          {confirmingBlock ? (
+            <div className="sticker bg-card p-3 text-left">
+              <p className="font-display font-bold text-[14px] text-ink leading-snug">
+                Block {profile.first_name}?
+              </p>
+              <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
+                You won&rsquo;t see each other anywhere, and they can&rsquo;t ask you for a
+                recipe. It also removes them as a friend
+                {profile.friend_state === 'accepted' ? '' : " if you're friends"} — unblocking
+                later won&rsquo;t bring that back. A recipe you already sent them stays
+                theirs.
+              </p>
+              {blockError && (
+                <p className="mt-2">
+                  <span className="error-pill">{blockError}</span>
                 </p>
-                <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
-                  You won&rsquo;t see each other anywhere, and they can&rsquo;t ask you for a
-                  recipe. It also removes them as a friend
-                  {profile.friend_state === 'accepted' ? '' : " if you're friends"} — unblocking
-                  later won&rsquo;t bring that back. A recipe you already sent them stays
-                  theirs.
-                </p>
-                {blockError && (
-                  <p className="mt-2">
-                    <span className="error-pill">{blockError}</span>
-                  </p>
-                )}
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={confirmBlock}
-                    disabled={blocking}
-                    className="flex-1 rounded-full bg-brick text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
-                  >
-                    {blocking ? 'Blocking…' : 'Block them'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setConfirmingBlock(false)
-                      setBlockError('')
-                    }}
-                    disabled={blocking}
-                    className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
-                  >
-                    Never mind
-                  </button>
-                </div>
+              )}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={confirmBlock}
+                  disabled={blocking}
+                  className="flex-1 rounded-full bg-brick text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                >
+                  {blocking ? 'Blocking…' : 'Block them'}
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmingBlock(false)
+                    setBlockError('')
+                  }}
+                  disabled={blocking}
+                  className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                >
+                  Never mind
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setConfirmingBlock(true)}
-                className="inline-flex items-center rounded-full bg-brick text-cream border-2 border-ink px-2.5 py-0.5 font-display font-bold text-[11.5px] shadow-[0_1px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
-              >
-                Block
-              </button>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmingBlock(true)}
+              className="inline-flex items-center rounded-full bg-brick text-cream border-2 border-ink px-2.5 py-0.5 font-display font-bold text-[11.5px] shadow-[0_1px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+            >
+              Block
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -72,7 +72,10 @@ export default function PostCard({ post, onOpen }) {
     setAsked(next)
     try {
       const { data } = next ? await requestRecipe(post.id) : await retractRequest(post.id)
-      setAsked(Boolean(data.requested_by_me))
+      // A retract can answer 204 with no body — when the ask was the caller's only credential
+      // on a post the cook has since hidden, there is nothing to hand back. `?.` covers it:
+      // no body means the ask is gone, which is exactly `false`.
+      setAsked(Boolean(data?.requested_by_me))
     } catch (err) {
       setAsked(!next)
       setAskError(toUserMessage(err, 'Couldn’t ask just now. Try again.'))

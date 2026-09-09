@@ -15,7 +15,11 @@ describe('toUtcMs — the API sends timestamps with no timezone', () => {
 
   it('is NOT what a bare Date() does, anywhere with an offset', () => {
     const iso = '2026-08-20T02:30:00'
-    const offsetMinutes = new Date().getTimezoneOffset()
+    // The offset AT THE PARSED INSTANT, not today's. Reading `new Date().getTimezoneOffset()`
+    // here compares a December offset against an August fixture: EST 300 vs EDT 240 in New
+    // York, and 0 vs BST 60 in London — which would send a London winter run down the
+    // "this is UTC" branch and fail it. The bug this test exists to describe, in the test.
+    const offsetMinutes = new Date(iso).getTimezoneOffset()
     const bare = new Date(iso).getTime()
     if (offsetMinutes === 0) {
       // Running in UTC (this is CI). The two agree, which is precisely why the assertion

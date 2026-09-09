@@ -265,6 +265,33 @@ def test_a_blocked_person_cannot_ask_you_for_a_recipe(client, make_user):
     assert client.post(f"/posts/{mine['id']}/request", headers=bh).status_code == 404
 
 
+def test_a_blocked_person_gets_the_SAME_404_from_the_retract_route(client, make_user):
+    """The one route that answers to a pending row rather than to read access (#98).
+
+    `retract_request` deliberately doesn't require `can_view_post` — otherwise a cook who hides
+    a post would trap the asker's ask forever. Its block-safety therefore rests on a property
+    enforced somewhere else entirely: `block_user` deletes pending `RecipeRequest` rows in both
+    directions, so a blocked person never holds the credential. That's a real dependency across
+    two modules with nothing asserting the junction, and if someone later decides a pending ask
+    is "history" worth preserving across a block — symmetric to the reasoning already in the
+    code for FULFILLED rows — this route silently becomes a 200-vs-404 block oracle.
+
+    The answer must be byte-identical to what an unknown post id gives, because a blocked
+    person must never be able to detect the block.
+    """
+    cook, ch = make_user()
+    asker, akh = make_user()
+    post = _post(client, ch, visibility="public")
+    assert client.post(f"/posts/{post['id']}/request", headers=akh).status_code == 201
+
+    assert client.post("/friends/blocks", json={"user_id": asker.id}, headers=ch).status_code == 204
+
+    blocked = client.delete(f"/posts/{post['id']}/request", headers=akh)
+    unknown = client.delete("/posts/999999/request", headers=akh)
+    assert blocked.status_code == unknown.status_code == 404
+    assert blocked.json() == unknown.json() == {"detail": "Post not found"}
+
+
 def test_blocking_clears_pending_asks_in_both_directions(client, make_user, db_session):
     from app.models.recipe_request import RecipeRequest
 

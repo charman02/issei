@@ -530,8 +530,25 @@ def test_hiding_a_post_does_not_TRAP_the_ask_of_someone_who_can_no_longer_see_it
     ).status_code == 200
     assert client.get(f"/posts/{post['id']}", headers=bh).status_code == 404  # hidden, as it should be
 
-    assert client.delete(f"/posts/{post['id']}/request", headers=bh).status_code == 200
+    # 204, not 200: she withdrew an ask on a post she can no longer see, so there is no body
+    # to hand back. The tempting 200-with-body is a disclosure — Ben can rename the dish and
+    # rewrite the description in the SAME call that hides it, so the body would be content that
+    # was never on her screen.
+    r = client.delete(f"/posts/{post['id']}/request", headers=bh)
+    assert r.status_code == 204
+    assert r.content == b""
     assert client.get("/posts/requests/incoming", headers=ah).json() == []
+
+
+def test_retracting_on_a_post_you_can_STILL_see_returns_the_post(client, make_user):
+    """The ordinary case keeps its body — both clients read `requested_by_me` off it."""
+    _, ah = make_user()
+    _, bh = make_user()
+    post = _own(client, ah, visibility="public")
+    client.post(f"/posts/{post['id']}/request", headers=bh)
+    r = client.delete(f"/posts/{post['id']}/request", headers=bh)
+    assert r.status_code == 200
+    assert r.json()["requested_by_me"] is False
 
 
 def test_the_retract_route_is_not_a_PEEPHOLE_into_a_private_post(client, make_user):

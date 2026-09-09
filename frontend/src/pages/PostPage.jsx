@@ -27,20 +27,21 @@ function postedOn(iso) {
   })
 }
 
-// PostPage (/posts/:id) — a single shared meal, read-only. Reached by tapping a post in
-// Browse (#71); also a real permalink for any post the viewer may see. Read authorization
-// is the backend's: GET /posts/{id} returns the post only if can_view_post allows this
-// viewer (author, a friend on a friends post, or ANYONE on a public one), else 404 — so a
-// non-friend opening a public meal from Browse gets it, and a private/friends post they
-// aren't entitled to reads as "not found", never confirming it exists.
+// PostPage (/posts/:id) — a single shared meal. Read-only to everyone but its AUTHOR, who
+// also gets the edit and delete controls below. A real permalink for any post the viewer may
+// see, reached from the Kitchen's Posts tab or a profile grid. (Browse used to be a third
+// door; #94 removed that tab.) Read authorization is the backend's: GET /posts/{id} returns
+// the post only if can_view_post allows this viewer (author, a friend on a friends post, or
+// ANYONE on a public one), else 404 — so a non-friend opening a public meal gets it, and a
+// private/friends post they aren't entitled to reads as "not found", never confirming it
+// exists.
 //
-// No like button, ever. ONE action, and it's the same either/or as the feed card: a post
-// whose recipe you can read links through to it (the discovery payoff); one you can't gets
-// "Ask for the recipe" (#79). This page especially needs the ask — it's where a STRANGER
-// lands from Browse's Meals tab, which is exactly the person with no other way to reach the
-// cook.
+// No like button, ever. ONE action for a non-author, and it's the same either/or as the feed
+// card: a post whose recipe you can read links through to it; one you can't gets "Ask for the
+// recipe" (#79). This page especially needs the ask — it's where someone who isn't a friend
+// lands, which is exactly the person with no other way to reach the cook.
 //
-// TWO author-only controls, and both are the cook's alone. The ask COUNT renders here for the
+// THREE author-only controls, and all three are the cook's alone. The ask COUNT renders here for the
 // author exactly as it does on the feed card — `request_count` is null for every non-author
 // (POSITIONING invariant 4), so there is no public tally to leak and no zero printed under
 // anyone's ordinary meal, including the cook's own. And DELETE lives here because this is the
@@ -49,7 +50,9 @@ function postedOn(iso) {
 // goes: the post, and any pending asks on it (RecipeRequest.post_id cascades). It also says
 // what does NOT go — a linked recipe is a separate row and survives — because "delete post"
 // reads as "delete the recipe I attached" otherwise, and that would be the scariest possible
-// misunderstanding in an app whose whole point is keeping the recipe.
+// misunderstanding in an app whose whole point is keeping the recipe. EDIT (#98) sits beside it,
+// inline rather than on its own route, and covers dish name, description and visibility — NOT
+// the photo, because a different photo is a different meal and that's a new post.
 export default function PostPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -83,8 +86,11 @@ export default function PostPage() {
     setAsked(next)
     try {
       const { data } = next ? await requestRecipe(post.id) : await retractRequest(post.id)
-      setPost(data)
-      setAsked(Boolean(data.requested_by_me))
+      // A retract can answer 204 with an empty body (the ask was the only credential on a post
+      // the cook has since hidden). Guard both: `setPost("")` would blank the page back to a
+      // loader, and reading a field off it would throw.
+      if (data) setPost(data)
+      setAsked(Boolean(data?.requested_by_me))
     } catch (err) {
       setAsked(!next)
       setAskError(toUserMessage(err, 'Couldn’t ask just now. Try again.'))
@@ -137,12 +143,19 @@ export default function PostPage() {
         setAsked(Boolean(res.data.requested_by_me))
       })
       .catch(() => setError('This meal isn’t available.'))
-    // EVERY piece of per-post state resets here. React Router reuses this element when only
-    // the :id param changes, so nothing unmounts — and an edit form left open across
-    // /posts/5 → /posts/6 would then save post 5's dish name, description AND visibility onto
-    // post 6, since `draft` survives while `post` is replaced. Same shape of trap for a
-    // half-confirmed delete. No in-app link currently makes that jump, which is exactly why
-    // it needs a guard rather than a comment: the next link that does won't come with a test.
+    // EVERY piece of per-post state resets here — and it has to be every one. React Router
+    // reuses this element when only the :id param changes, so nothing unmounts:
+    //   - `draft`: an edit form left open across /posts/5 → /posts/6 would save post 5's dish
+    //     name, description AND visibility onto post 6, since the draft survives while `post`
+    //     is replaced. `confirmingDelete` is the same trap with a worse ending.
+    //   - `error`: it short-circuits the whole render, so arriving from a 404'd id would show
+    //     "isn't available" over a post that loaded perfectly well.
+    //   - `post`: without clearing it, the PREVIOUS meal stays on screen during the refetch —
+    //     briefly showing one person's dinner under another's permalink.
+    // No in-app link makes that jump today, which is exactly why this is a guard rather than a
+    // comment: the next link that does won't arrive with a test.
+    setPost(null)
+    setError('')
     setDraft(null)
     setSaveError('')
     setConfirmingDelete(false)
@@ -169,26 +182,28 @@ export default function PostPage() {
       </div>
 
       <article className="sticker bg-card overflow-hidden">
-        {/* Author header — tap to their profile. */}
-        <div className="flex items-center gap-2.5 px-3.5 py-3">
+        {/* Author header — tap to their profile. A column, not a row: the posted-on date sits
+            below the name and deliberately OUTSIDE the button (see below). */}
+        <div className="px-3.5 py-3">
           <button
             onClick={openAuthor}
-            className="flex items-center gap-2.5 min-w-0 text-left"
+            className="flex items-center gap-2.5 min-w-0 max-w-full text-left"
           >
             <Avatar name={post.author_first_name} photoUrl={post.author_photo_url} size="sm" />
-            <span className="min-w-0">
-              <span className="block font-display font-bold text-[14.5px] text-ink truncate">
-                {fullName(post)}
-              </span>
-              {/* WHEN it was made. It was missing entirely, and on a page whose whole subject is
-                  "what someone cooked" the date is part of the fact — a meal from Tuesday and a
-                  meal from March are different claims. Absolute, not "3d ago": the relative form
-                  suits a feed you're scanning, but a permalink is where you come to know. */}
-              <span className="block font-display italic text-[12px] text-ink-soft">
-                {postedOn(post.created_at)}
-              </span>
+            <span className="block font-display font-bold text-[14.5px] text-ink truncate">
+              {fullName(post)}
             </span>
           </button>
+          {/* WHEN it was made. It was missing entirely, and on a page whose whole subject is
+              "what someone cooked" the date is part of the fact — a meal from Tuesday and a
+              meal from March are different claims. Absolute, not "3d ago": the relative form
+              suits a feed you're scanning, but a permalink is where you come to know.
+
+              OUTSIDE the author button, though it sits under the name: inside it, tapping the
+              date navigated to their profile, and a date is not a link to a person. */}
+          <p className="mt-1 ml-[42px] font-display italic text-[12px] text-ink-soft">
+            {postedOn(post.created_at)}
+          </p>
         </div>
 
         {/* The meal photo. */}

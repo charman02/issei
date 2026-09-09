@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -532,7 +532,13 @@ def request_recipe(
     )
 
 
-@router.delete("/{post_id}/request", response_model=PostResponse)
+@router.delete(
+    "/{post_id}/request",
+    response_model=PostResponse,
+    # 204 is the no-read case below: the caller withdrew an ask on a post they can no longer
+    # see, so there is nothing to hand back. Declared here so the schema says so.
+    responses={204: {"description": "Withdrawn; the post is no longer visible to you"}},
+)
 def retract_request(
     post_id: int,
     current_user: User = Depends(get_current_user),
@@ -556,13 +562,21 @@ def retract_request(
     It is a PENDING ROW **or** read access, though — not neither. Dropping the check outright
     would have turned this route into a peephole: anyone could poll DELETE on any id and read a
     private post's dish name, photo and author out of the response body. Holding a pending ask is
-    the credential, and it's a real one — you could see the post when you asked, so handing that
-    same body back as you withdraw discloses nothing you didn't already have on screen.
+    the credential.
+
+    AND WHEN THE ROW IS THE ONLY CREDENTIAL, THERE IS NO BODY — 204, not 200. The tempting
+    argument is that you could see the post when you asked, so handing the same body back
+    discloses nothing new. `PATCH /posts/{id}` made that false in the very same branch that
+    made this route reachable: the cook can now rename the dish and rewrite the description in
+    the same call that hides it, so the body you'd get back is content that was never on your
+    screen. Nothing needs it anyway — both clients read exactly one field off this response
+    (`requested_by_me`), and after a successful retract that field is false, which is what an
+    absent body already means to them.
     """
     post = db.query(Post).filter(Post.id == post_id).first()
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
-    mine = (
+    my_ask = (
         db.query(RecipeRequest)
         .filter(
             RecipeRequest.post_id == post.id,
@@ -571,11 +585,14 @@ def retract_request(
         )
         .first()
     )
-    if mine is None and not can_view_post(post, current_user, db):
+    readable = can_view_post(post, current_user, db)
+    if my_ask is None and not readable:
         raise HTTPException(status_code=404, detail="Post not found")
-    if mine is not None:
-        db.delete(mine)
+    if my_ask is not None:
+        db.delete(my_ask)
     db.commit()
+    if not readable:
+        return Response(status_code=204)
     viewable = _viewable_recipe_ids([post], current_user, db)
     counts, mine = _request_context([post], current_user, db)
     return _to_response(
