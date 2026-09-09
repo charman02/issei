@@ -1208,6 +1208,18 @@ def patch_recipe(
         for k, v in sent_fields.items()
         if k not in ("ingredient_sections", "ingredients", "steps", "origin")
     }
+    # An explicit null on a NOT NULL column is a 422, not a 500. `RecipeUpdate` types every
+    # field Optional so a client can omit it, which means an explicit `{"language": null}`
+    # arrives as a sent field whose value is None — and `language` is NOT NULL with a
+    # server_default, so setattr'ing None reached the database and came back as an
+    # IntegrityError, i.e. an unhandled 500. Refusing it here rather than in the schema keeps
+    # `Optional` honest (the field IS omittable) and puts the rule where the nullability
+    # actually lives. Only `language` qualifies today; the rest of the scalars are nullable
+    # columns where null is a legitimate "clear this".
+    if "language" in scalar_fields and scalar_fields["language"] is None:
+        raise HTTPException(
+            status_code=422, detail="Language can't be empty — leave it out to keep it as it is."
+        )
     for field, value in scalar_fields.items():
         setattr(recipe, field, value)
 

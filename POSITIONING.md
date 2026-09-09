@@ -261,7 +261,12 @@ cook answers by writing or attaching one; delivery is a handoff grant per reques
 PRIVATE recipe reaches the people who asked without its visibility changing); and **blocking**
 (#85 — `POST`/`GET`/`DELETE /friends/blocks`); a **feed read-mark** (#97 — the feed marks
 what arrived since you last looked and draws a "You're all caught up" line); and **the cook
-learning their recipe was kept** (#96 — an anonymous inbox line plus a cook-only count). Note what the directory means for any privacy
+learning their recipe was kept** (#96 — an anonymous inbox line plus a cook-only count); and
+**reporting a person** (#87 — `POST /friends/reports`, behind the ⋯ menu on their profile,
+alongside blocking). What reporting is NOT: there is no moderation queue, no review process and
+no way for anyone to read a report back from inside the app, so claim the mechanism and never a
+response. And you can report only a PERSON, not a post or a recipe — App Store Guideline 1.2
+asks for content reporting too, so don't describe the app as meeting that gate yet. Note what the directory means for any privacy
 claim: every signed-in user can enumerate every other user's name and photo, with no opt-out —
 so do **not** describe the app as private-by-default without qualifying that findability is not
 covered by the profile setting (see TECHDEBT's "Auth & permissions").
@@ -274,9 +279,13 @@ stays theirs."* — and it should not be reworded into anything that implies rev
 line the app draws is at the moment of OFFER, not acceptance: a share link or emailed invite
 the cook sent before blocking still works for that person (owner call, #88), because the token
 is the capability and they chose to send it. What a block stops is a *new* offer —
-`handoff_recipe` refuses across one.) And blocking is **not a report or
-a mute** — there is still no reporting, no moderation queue and no mute anywhere in the app,
-so never write "block and report".
+`handoff_recipe` refuses across one.) And blocking is **not a mute** — there is still no mute anywhere in the app. Reporting
+(#87) now exists and sits beside it in the same ⋯ menu, so "block and report" is finally a true
+sentence — but they are different acts and the difference is the point: a block is something you
+do FOR YOURSELF and it takes effect instantly, a report goes to whoever runs the app and takes
+effect when a human looks. Don't collapse them, and don't imply a report hides anyone: it
+changes nothing either party can see. There is still **no moderation queue** — see the section
+above on what may and may not be claimed about a report.
 
 Discoverability itself is a DECISION, not an oversight (owner call, 2026-09-04): name and
 photo findable by any signed-in user while content stays private is the same model Instagram,
@@ -409,8 +418,8 @@ git history now.
 
 ### Don't inflate the numbers — measure them
 
-As measured on this branch (see `README.md` for the method): **59 routes**, **15 models**,
-**510 backend tests**, **745 frontend tests in 51 files**. Endpoint and test counts have
+As measured on this branch (see `README.md` for the method): **60 routes**, **16 models**,
+**519 backend tests**, **750 frontend tests in 51 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

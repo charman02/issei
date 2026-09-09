@@ -314,7 +314,7 @@ export default function UserProfile() {
                 rows={3}
                 maxLength={1000}
                 className="field w-full"
-                placeholder="What happened, in your own words."
+                placeholder="What happened?"
               />
               {reportError && (
                 <p className="mt-2">
@@ -334,6 +334,11 @@ export default function UserProfile() {
                     setReporting(false)
                     setReportError('')
                     setMenuOpen(false)
+                    // Clear the draft too. Without this, backing out and reopening Report later
+                    // shows the old text still in the box — and sending would attach an account
+                    // of one thing to whatever reason you pick the second time.
+                    setReportNote('')
+                    setReportReason('harassment')
                   }}
                   disabled={reportSending}
                   className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
@@ -376,7 +381,7 @@ export default function UserProfile() {
                     setMenuOpen(false)
                   }}
                   disabled={blocking}
-                  className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+                  className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
                 >
                   Never mind
                 </button>

@@ -60,8 +60,12 @@ export default function RecipeCard({ recipe, onClick, variant = 'grid' }) {
         <p className="font-display font-black text-[19px] leading-[1.04] text-ink line-clamp-2">
           {recipe.name}
         </p>
+        {/* One line, truncated. A source name can be 120 characters (#100), and this is a
+            NAME rather than prose — so `truncate` (one line + ellipsis) is right where the
+            title above gets `line-clamp-2`. Without it a long name wrapped to three or four
+            lines of plum italic under a two-word dish title. */}
         {byline && (
-          <p className="text-[13px] mt-0.5">
+          <p className="text-[13px] mt-0.5 truncate">
             {byline.verb && (
               <span className="font-sans text-ink-soft/80">{byline.verb} </span>
             )}

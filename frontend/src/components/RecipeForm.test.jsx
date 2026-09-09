@@ -1139,7 +1139,7 @@ describe('RecipeForm dictation', () => {
     // stops a future change from doing so.
     supported()
     const { container } = render(<RecipeForm mode="add" onSubmit={() => {}} />)
-    const banned = /record|recording|\bvoice\b|audio|in their own words|listen/i
+    const banned = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
     const visibleAndNamed = () => {
       const attrs = ['aria-label', 'title', 'alt', 'placeholder']
       const named = [...container.querySelectorAll('*')].flatMap((el) =>

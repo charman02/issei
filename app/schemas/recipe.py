@@ -1,6 +1,6 @@
 from typing import Annotated, Optional, Literal
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +43,12 @@ MAX_INGREDIENTS = 100
 MAX_STEPS = 100
 MAX_SECTIONS = 30
 
+# The three-type quantity model. This was a bare `str` — so it accepted 100,000 characters
+# (verified in review, stored), AND it accepted any value at all, while `services/scaling.py`
+# branches on exactly these three. A `Literal` fixes both at once, which is why it isn't just
+# another Text alias: the fix for "too long" and the fix for "not a real type" are the same fix.
+QuantityType = Literal["precise", "imprecise", "unmeasured"]
+
 
 class OriginIn(BaseModel):
     # No min_length: "" is accepted here today and the router treats a blank name
@@ -57,7 +63,8 @@ class OriginIn(BaseModel):
 
 
 class StepCreate(BaseModel):
-    position: int
+    # See IngredientCreate.position — unbounded, this is a Postgres-only 500.
+    position: int = Field(ge=0, le=10000)
     # 2000 for a step and its note. A step is one instruction — the form's own copy
     # says "one step per box" — but people do write a paragraph, and a note carrying
     # the knowledge an ingredient list can't hold is exactly where someone should be
@@ -93,9 +100,12 @@ class IngredientCreate(BaseModel):
     quantity_text: Optional[Text60] = None
     quantity_value: Optional[float] = None
     unit: Optional[Text40] = None
-    quantity_type: str = "precise"
+    quantity_type: QuantityType = "precise"
     notes: Optional[Text300] = None
-    position: int
+    # Bounded: `position: int` accepts 10**19, which overflows int4 on Postgres and 500s there
+    # while passing on SQLite — the same shape of prod-only bug as #97's unvalidated
+    # `through_post_id`. A position beyond the collection cap can't mean anything anyway.
+    position: int = Field(ge=0, le=10000)
 
 
 class IngredientResponse(BaseModel):
@@ -122,20 +132,25 @@ class ParseTextIn(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
 
+# The PARSE response carries the same ceilings as the create schema, and it has to: this is
+# what `POST /recipes/parse` hands back for the client to correct and then SUBMIT. Uncapped, the
+# parser could produce a step or an ingredient name the create endpoint then refuses — a dead end
+# in the app's primary capture route, and the route most likely to produce one long field, since
+# run-on dictated prose is exactly what the local parser can't split.
 class ParsedIngredient(BaseModel):
-    name: str
+    name: Text120
     # The amount EXACTLY as the person said it. The typed fields beside it are the
     # app's own classification of that string — the model never gets to decide them.
-    amount: str = ""
-    quantity_text: Optional[str] = None
+    amount: Text60 = ""
+    quantity_text: Optional[Text60] = None
     quantity_value: Optional[float] = None
-    unit: Optional[str] = None
-    quantity_type: str = "unmeasured"
+    unit: Optional[Text40] = None
+    quantity_type: QuantityType = "unmeasured"
 
 
 class ParsedStep(BaseModel):
-    content: str
-    note: str = ""
+    content: Text2000
+    note: Text2000 = ""
 
 
 class ParsedRecipe(BaseModel):
@@ -145,13 +160,14 @@ class ParsedRecipe(BaseModel):
     the database yet, and the client is expected to show this for correction first.
     """
 
-    name: str = ""
-    source_name: str = ""
-    description: str = ""
-    servings: str = ""
-    cuisine: str = ""
-    ingredients: list[ParsedIngredient] = []
-    steps: list[ParsedStep] = []
+    name: Text120 = ""
+    source_name: Text80 = ""
+    description: Text500 = ""
+    # A STRING here, not an int: the model reports what the recipe said ("4-6", "a family").
+    servings: Text60 = ""
+    cuisine: Text60 = ""
+    ingredients: list[ParsedIngredient] = Field(default=[], max_length=MAX_INGREDIENTS)
+    steps: list[ParsedStep] = Field(default=[], max_length=MAX_STEPS)
     # False when the model was unavailable, so the client knows to fall back to its own
     # local parser rather than trusting an empty result. Reported as a field rather than
     # an error status because "the model is off" is a normal state, not a failure.
@@ -180,7 +196,7 @@ class FieldSuggestions(BaseModel):
 
 class IngredientSectionCreate(BaseModel):
     name: Text120
-    position: int
+    position: int = Field(ge=0, le=10000)
     ingredients: list[IngredientCreate] = Field(default=[], max_length=MAX_INGREDIENTS)
 
 
@@ -325,9 +341,15 @@ class HandoffIn(BaseModel):
     # (share sheet / iMessage / etc.) — the fastest way to pass a recipe on.
     # Supplying to_email additionally enables auto-accept when that address signs
     # up; to_user_id grants an existing user access instantly.
-    to_email: Optional[str] = None
+    # EmailStr, not a bare string: this value is later compared against a signing-up user's
+    # email to auto-accept the grant, so a 500KB unvalidated string was both unbounded storage
+    # and a comparison against something that could never be an address. Length is bounded too
+    # — EmailStr alone doesn't cap it.
+    to_email: Optional[Annotated[EmailStr, StringConstraints(max_length=254)]] = None
     to_user_id: Optional[int] = None
-    note: Optional[str] = None
+    # The note the sender writes alongside the recipe. Same 2000 as a step's note: it is a
+    # message to one person, not an essay.
+    note: Optional[Text2000] = None
 
 
 class HandoffResponse(BaseModel):
@@ -390,7 +412,10 @@ class RecipeUpdate(BaseModel):
     diet: Optional[Text60] = None
     source: Optional[Text80] = None
     notes: Optional[Text2000] = None
-    language: Optional[Text40] = None
+    # min_length=1 here and NOT on create, deliberately: the column is NOT NULL with a
+    # server_default, so create can omit it and get "en" — but an EXPLICIT null on update
+    # reaches setattr and 500s on the IntegrityError. A 422 is the honest answer.
+    language: Optional[Annotated[str, StringConstraints(min_length=1, max_length=40)]] = None
     visibility: Optional[Literal["public", "friends", "private"]] = None
     # When provided, these fully replace the recipe's existing children.
     # Omit them to leave the collections untouched (scalar-only update).

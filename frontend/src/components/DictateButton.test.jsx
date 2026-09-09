@@ -430,7 +430,7 @@ describe('DictateButton — onDone advances only on a real capture', () => {
 // it doesn't have more than once. A mic button is the single most tempting place
 // to reintroduce that claim, so the ban is asserted rather than remembered.
 describe('DictateButton — claims no audio, ever', () => {
-  const BANNED = /record|recording|voice|audio|in their own words|listen/i
+  const BANNED = /record|recording|voice|audio|in (their|your|his|her)( own)? words|listen/i
 
   function allText(container) {
     // Everything a user or an assistive technology can reach: visible text plus

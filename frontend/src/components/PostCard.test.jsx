@@ -248,23 +248,54 @@ describe('PostCard — asking for the recipe', () => {
 // off the screen — so the cost of someone writing at length was paid by everyone below them.
 describe('PostCard — long text on a card', () => {
   const LONG = 'x'.repeat(500)
+  const NAME = 'y'.repeat(120) // the schema ceilings from #100
+
+  // EVERY assertion here renders with onOpen, because that is the only branch any screen uses.
+  // The first version of these tests used the no-onOpen fallback, so deleting the clamps from the
+  // rendered markup would have left them green — which is exactly the hazard that made the
+  // duplicated JSX worth collapsing in the first place.
+  const renderOpenable = (over) =>
+    render(
+      <MemoryRouter>
+        <PostCard post={post(over)} onOpen={() => {}} />
+      </MemoryRouter>,
+    )
 
   it('clamps the description rather than letting it run the length of the card', () => {
-    renderCard(post({ description: LONG }))
-    const line = screen.getByText(LONG)
-    // The full text IS in the DOM — clamping is visual, so the text stays selectable and
-    // searchable and nothing is silently truncated server-side.
-    expect(line).toBeInTheDocument()
-    expect(line.className).toMatch(/line-clamp-3/)
+    renderOpenable({ description: LONG })
+    const el = screen.getByText(LONG)
+    // The full text IS in the DOM — clamping is visual, so nothing is truncated server-side.
+    expect(el).toBeInTheDocument()
+    expect(el.className).toMatch(/line-clamp-3/)
   })
 
   it('clamps a very long dish name to two lines', () => {
-    const NAME = 'y'.repeat(120) // the schema ceiling for a dish name
-    renderCard(post({ dish_name: NAME }))
-    expect(screen.getByText(NAME).className).toMatch(/line-clamp-2/)
+    renderOpenable({ dish_name: NAME })
+    // The clamp lives on the HEADING, which stays a real heading — see below.
+    expect(screen.getByRole('heading', { level: 3 }).className).toMatch(/line-clamp-2/)
   })
 
-  it('makes the text itself the way to read the rest, when the card can open', () => {
+  it('keeps the dish name a real HEADING, not swallowed by a button', () => {
+    // ARIA treats a button's children as presentational, so wrapping the <h3> in a <button>
+    // removes it from the accessibility tree — every meal in the feed stops being a heading and
+    // heading navigation over Home goes from one landmark per post to none.
+    renderOpenable({ dish_name: NAME })
+    const h = screen.getByRole('heading', { level: 3, name: NAME })
+    expect(h).toBeInTheDocument()
+    // The tap target is INSIDE the heading, which is valid (phrasing content) and keeps both.
+    expect(h.querySelector('button')).not.toBeNull()
+  })
+
+  it('never makes 600 characters of text the accessible name of a button', () => {
+    renderOpenable({ dish_name: NAME, description: LONG })
+    // Without explicit aria-labels the name is computed from the subtree, so a screen reader
+    // reads the whole title-plus-description before reaching "Ask for the recipe".
+    for (const b of screen.getAllByRole('button')) {
+      expect((b.getAttribute('aria-label') || b.textContent || '').length).toBeLessThan(200)
+    }
+  })
+
+  it('makes the text itself the way to read the rest', () => {
     // Rather than a "more" link, which would put a second control beside the card's one
     // deliberate action. Tapping what you were already reading opens the post.
     const onOpen = vi.fn()
@@ -277,11 +308,12 @@ describe('PostCard — long text on a card', () => {
     expect(onOpen).toHaveBeenCalled()
   })
 
-  it('still renders the text when there is nowhere to open (no onOpen)', () => {
-    // The non-tappable branch has to keep the same clamps; a card with no onOpen is a
-    // display-only card, not a broken one.
-    renderCard(post({ description: LONG }))
-    expect(screen.getByText(LONG)).toBeInTheDocument()
-    expect(screen.getByText('Adobo').className).toMatch(/line-clamp-2/)
+  it('still renders clamped text when there is nowhere to open (no onOpen)', () => {
+    // The fallback keeps the same clamps and a plain heading. No screen uses it, but a card with
+    // no destination should be display-only, not broken.
+    renderCard(post({ dish_name: NAME, description: LONG }))
+    expect(screen.getByText(LONG).className).toMatch(/line-clamp-3/)
+    expect(screen.getByRole('heading', { level: 3, name: NAME }).className).toMatch(/line-clamp-2/)
+    expect(screen.getByRole('heading', { level: 3 }).querySelector('button')).toBeNull()
   })
 })

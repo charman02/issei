@@ -34,6 +34,13 @@ from app.models.recipe_request import RecipeRequest  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.block import Block  # noqa: F401
 from app.models.report import Report  # noqa: F401
+# password_reset was MISSING from this list, which is not cosmetic: autogenerate diffs the
+# metadata it can see against the database, so an unimported model reads as a table that
+# should not exist. `alembic check` was reporting a pending DROP TABLE
+# password_reset_tokens — which the documented workflow (`alembic revision --autogenerate`)
+# would have written into a migration, and `main` runs migrations against Neon on push.
+# Every model belongs here, whether or not anything else in this file mentions it.
+from app.models.password_reset import PasswordResetToken  # noqa: F401
 
 target_metadata = Base.metadata
 

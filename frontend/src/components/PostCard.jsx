@@ -40,13 +40,21 @@ function ago(iso) {
 
 const fullName = (p) => `${p.author_first_name} ${p.author_last_name}`.trim()
 
-// `onOpen` makes the meal photo a tap target that opens the post. Every list that renders a
-// card now passes it (Browse, the Feed, your Kitchen's Posts tab, a profile grid): the post
-// page carries the author's own delete control, so a card that doesn't open is a dead end for
-// the person most likely to want it. Originally it was Browse-only —
-// in Browse (#71), where a card is a PREVIEW that should open the full post at /posts/:id.
-// In the feed it's omitted: the feed already shows the whole post inline, so there's
-// nothing to "open", and the photo stays a plain image.
+// `onOpen` makes the photo AND the text a tap target that opens the post. Every list that
+// renders a card passes it — the Feed, your Kitchen's Posts tab, a profile grid — because the
+// post page carries the author's own edit and delete controls, so a card that doesn't open is a
+// dead end for the person most likely to want it. (It began as Browse-only in #71, where a card
+// was a preview; #94 removed that tab, and by then every other list had adopted it.) The prop
+// stays optional so the component is renderable without a destination, but nothing ships that
+// way — which is why the clamps below are written ONCE rather than per branch.
+
+// ONE copy of each class string. The clamps used to be written twice (an onOpen branch and a
+// fallback), which meant a test could assert `line-clamp-3` on the branch no screen renders while
+// the rendered one silently lost it — the classic duplicated-JSX hazard, and exactly what the
+// first version of these tests did.
+const TITLE_CLASS = 'font-display font-black text-[18px] text-ink leading-tight line-clamp-2'
+const DESC_CLASS = 'font-display text-[14px] text-ink-soft leading-snug mt-1 line-clamp-3'
+
 export default function PostCard({ post, onOpen }) {
   const navigate = useNavigate()
   // The ask (#79). Local mirror of the server's answer so the button responds instantly.
@@ -132,33 +140,45 @@ export default function PostCard({ post, onOpen }) {
           below them in the feed. Two lines for the dish name, three for the line under it, and
           the browser's own ellipsis is the "there's more" signal; the post page shows the whole
           thing unclamped.
-          Wrapped in the same tap target as the photo (when there is one), so the way to read the
-          rest is to tap what you were already reading — rather than a "more" link, which would
-          put a second control next to the card's one deliberate action. */}
+
+          The markup below is deliberately fussy, because the obvious version was wrong twice
+          over. Wrapping the <h3> and <p> in one <button> put FLOW content inside a button
+          (invalid), and ARIA treats a button's children as presentational — so every dish name
+          in the feed stopped being a heading, and each card's accessible name became the whole
+          620 characters of title-plus-description read aloud before you reached the action.
+          So: the <h3> stays a real heading with a phrasing-only button INSIDE it, the
+          description is its own text-only button, and both carry an explicit aria-label so the
+          clamped text is never the accessible name. One shared class string each, rather than
+          two copies of the markup — the duplicated version let a test assert a clamp on the
+          branch nothing renders. */}
       <div className="px-3.5 py-3">
-        {onOpen ? (
-          <button onClick={onOpen} className="block w-full text-left">
-            <h3 className="font-display font-black text-[18px] text-ink leading-tight line-clamp-2">
+        <h3 className={TITLE_CLASS}>
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={post.dish_name}
+              className="block w-full text-left"
+            >
               {post.dish_name}
-            </h3>
-            {post.description && (
-              <p className="font-display text-[14px] text-ink-soft leading-snug mt-1 line-clamp-3">
-                {post.description}
-              </p>
-            )}
-          </button>
-        ) : (
-          <>
-            <h3 className="font-display font-black text-[18px] text-ink leading-tight line-clamp-2">
-              {post.dish_name}
-            </h3>
-            {post.description && (
-              <p className="font-display text-[14px] text-ink-soft leading-snug mt-1 line-clamp-3">
-                {post.description}
-              </p>
-            )}
-          </>
-        )}
+            </button>
+          ) : (
+            post.dish_name
+          )}
+        </h3>
+        {post.description &&
+          (onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              aria-label={`Read all of ${post.dish_name}`}
+              className={`${DESC_CLASS} block w-full text-left`}
+            >
+              {post.description}
+            </button>
+          ) : (
+            <p className={DESC_CLASS}>{post.description}</p>
+          ))}
         {/* The action row. A post whose recipe you CAN read links through to it; one you
             can't gets the ask. Exactly one of the two, because `recipe_id` arrives nulled
             when you may not read it — so "never written down" and "written but private" are

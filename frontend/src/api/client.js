@@ -14,12 +14,40 @@ const client = axios.create({
 
 // Field names as a person would say them, for turning a server-side validation
 // failure back into a sentence about the form they're looking at.
+// Every field a user can actually be refused on needs a line here, or the message names no
+// field at all. That became load-bearing with #100's length ceilings: before them almost
+// nothing could be too long, so "That field is too long" was rare and roughly locatable.
+// Now a cook who writes a 4,100-character story taps Save and gets one sentence with twelve
+// textareas on screen and no way to tell which one. The recipe fields below are why.
+//
+// The key is the LAST segment of Pydantic's `loc`, which is why a nested error on
+// `steps[3].content` lands on `content` rather than the index — good enough, since the form
+// puts every step in a visibly numbered box.
 const FIELD_LABELS = {
   email: 'Email',
   password: 'Password',
   first_name: 'First name',
   last_name: 'Last name',
   name: 'Name',
+  // Recipe (#100)
+  description: 'Description',
+  story: 'The story',
+  notes: 'Notes',
+  source: 'Passed down from',
+  cuisine: 'Cuisine',
+  diet: 'Diet',
+  servings: 'Servings',
+  prep_time_minutes: 'Ready in',
+  content: 'A step',
+  voice_note: 'A note on a step',
+  section_header: 'A section heading',
+  quantity_text: 'An amount',
+  unit: 'A unit',
+  cover_photo_url: 'Photo',
+  photo_url: 'Photo',
+  // Post + report
+  dish_name: 'Dish name',
+  note: 'Note',
 }
 
 // A Pydantic 422 entry is { loc: ['body', 'password'], msg: 'String should have
@@ -42,6 +70,10 @@ function humanizeFieldError(entry) {
   if (tooShort) return `${label} needs at least ${tooShort[1]} characters.`
   const tooLong = msg.match(/at most (\d+) character/i)
   if (tooLong) return `${label} is too long — keep it under ${tooLong[1]} characters.`
+  // #100's collection caps (100 ingredients / 100 steps / 30 sections). Pydantic says "List
+  // should have at most 100 items after validation, not 101", which is true and unreadable.
+  const tooMany = msg.match(/at most (\d+) item/i)
+  if (tooMany) return `That's more than ${tooMany[1]} — a recipe can't hold that many.`
   if (/field required/i.test(msg)) return `${label} is required.`
   return msg ? `${label}: ${msg}` : `${label} isn't valid.`
 }

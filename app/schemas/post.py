@@ -11,8 +11,15 @@ DishName = Annotated[
 ]
 
 
+# Same 500-char ceiling recipe URLs got (#100). A real Cloudinary URL is ~120; the point is
+# that an unbounded string rendered into an `<img src>` is a place to hide a payload, and a
+# post's photo is rendered to every friend. This was missed in the first pass — the caps went
+# on `schemas/recipe.py` and this file's URL was left as it was.
+PhotoUrl = Annotated[str, StringConstraints(min_length=1, max_length=500)]
+
+
 class PostCreate(BaseModel):
-    photo_url: str = Field(min_length=1)
+    photo_url: PhotoUrl
     # The dish name is required — a photo with no name is a picture, not "what I
     # made". Bounded so it stays a name, not a caption.
     dish_name: DishName

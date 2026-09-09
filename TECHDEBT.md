@@ -106,11 +106,14 @@ strangers arrive. Security/privacy first.
   honest for one operator and an obvious failure at any scale — and it is worth being precise
   that the App Store gate asks for a way for USERS to report, which this satisfies, not for a
   demonstrated review process. *Fix:* an owner-only surface (the simplest honest version is a
-  `GET` gated on a single admin user id in config) plus a way to mark a report `closed`, which
-  the dedupe already depends on — today nothing can move a report out of `open`, so a second
-  report from the same person about a genuinely new incident is silently dropped forever.
-  *Why flagged:* the dedupe rule and the missing close action interact, and that interaction is
-  a data-loss path, not just a gap. *Where:* `app/routers/friends.py::report_user`,
+  `GET` gated on a single admin user id in config) plus a way to mark a report `closed`.
+  Nothing can move a report out of `open` today, which the dedupe depends on: the first version
+  DISCARDED a second report from the same person, so a genuinely new incident weeks later was
+  thrown away while the UI answered "we'll take a look" about it — caught in review. It now
+  APPENDS to the open row (bounded at 8000 chars, earliest accounts kept), so the data-loss path
+  is closed and what remains is only the missing close action. *Why flagged:* until a report can
+  be closed, one grievance and a year of grievances are the same row, and nobody can tell which
+  reports have been dealt with. *Where:* `app/routers/friends.py::report_user`,
   `app/models/report.py`.
 
 - **A profile grid now has TWO ceilings, and "Show all" only lifts one.** (#98)

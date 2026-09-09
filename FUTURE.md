@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **60 routes, 16 models, 510
-backend tests, 745 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **60 routes, 16 models, 519
+backend tests, 750 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -91,11 +91,21 @@ otherwise reach.
 
 **What blocking deliberately does NOT do, and don't claim it does:** it is not *unsend* — a
 recipe you already handed that person stays readable to them forever, because the grant branch
-survives (a *new* grant can't cross a block, though). And it is not a report or a mute:
-**there is still no reporting, no moderation queue and no mute anywhere in the app.** Blocking
-is the only safety primitive that exists, so never write "block and report". Reporting is the
-honest next item in this area, and it needs somewhere for a report to *go* — which is a
-process question, not just a table.
+survives (a *new* grant can't cross a block, though). And it is not a mute — **there is still
+no mute anywhere in the app** — nor a report, though **reporting shipped in #87** and now sits
+beside blocking in the same ⋯ menu on a profile. Keep the two distinct: a block is something you
+do for yourself and it works instantly; a report goes to whoever runs the app and works when a
+human looks. A report changes nothing either party can see.
+
+What reporting still needs is the part that was always the hard bit — somewhere for a report to
+*go*. There is no moderation queue, no review process, and no way to read a report back from
+inside the app: rows land in a table and someone has to query Postgres. So claim the mechanism,
+never a response. And only a PERSON can be reported, not a post or a recipe, which App Store
+Guideline 1.2 also asks for — that is the remaining gap before submission. Both are recorded in
+TECHDEBT. One thing worth knowing precisely, because the first version of it was a real bug:
+nothing can move a report out of `open`, so a second report from the same person about a NEW
+incident used to be discarded while the app answered "we'll take a look" about it. It now appends
+to the open row instead — one case for whoever reads it, nothing thrown away.
 
 **What actually remains here:** `GET /friends/discover` still BROWSES ALL — no `?q=` returns
 every user, newest first, 50 at a time (#85 only subtracted blocked people from it).
@@ -262,7 +272,7 @@ carries notifications with it; family sharing was cut; language translation move
    subscription storage, the scheduler, the sender, quiet hours and preferences. The BACKEND half (subscription storage, a scheduler, the sender, quiet hours,
    preferences) is identical whichever shell wins, so it can be built before the shell is
    chosen. Bring swipe-back to web first.
-2. **Reporting** — moved up from last, because it is an **App Store gate**, not a nice-to-have:
+2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report
    go, who reads it) — a button writing to a table nobody reads promises review that isn't

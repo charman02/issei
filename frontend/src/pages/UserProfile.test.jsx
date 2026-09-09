@@ -200,6 +200,10 @@ describe('UserProfile — the safety menu', () => {
     renderAt('2')
     await screen.findByText(/Lola/)
     expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
+    // And not just the ⋯ — neither option may exist anywhere on the page. Asserting only the
+    // menu's absence would pass a regression that rendered a bare Block on your own profile.
+    expect(screen.queryByRole('button', { name: /block/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /report/i })).toBeNull()
   })
 })
 
@@ -342,5 +346,34 @@ describe('UserProfile — reporting (#87)', () => {
     await userEvent.click(screen.getByRole('button', { name: /send report/i }))
     await screen.findByText(/we.ll take a look/i)
     expect(document.body.textContent).not.toMatch(/they.ll be notified|we.ll tell them|has been told/i)
+  })
+})
+
+// This file had no BANNED assertion at all, which is how "in your own words" reached the report
+// form: the phrase POSITIONING forbids was spelled with "their" in all four guards, so a "your"
+// variant slipped every one of them. The regex is widened now; this adds the missing surface.
+describe('UserProfile — the phrase guard (POSITIONING)', () => {
+  const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
+
+  it('never claims a recording, on any state of the safety menu', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await screen.findByText(/Lola/)
+    expect(document.body.textContent).not.toMatch(BANNED)
+
+    await userEvent.click(screen.getByRole('button', { name: /more options for lola/i }))
+    expect(document.body.textContent).not.toMatch(BANNED)
+
+    await userEvent.click(screen.getByRole('button', { name: /^report lola$/i }))
+    expect(document.body.textContent).not.toMatch(BANNED)
+    // Placeholders aren't in textContent, so check them explicitly — that is exactly where the
+    // phrase was hiding.
+    for (const el of document.querySelectorAll('[placeholder]')) {
+      expect(el.getAttribute('placeholder')).not.toMatch(BANNED)
+    }
+
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await screen.findByText(/we.ll take a look/i)
+    expect(document.body.textContent).not.toMatch(BANNED)
   })
 })

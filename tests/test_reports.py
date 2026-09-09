@@ -135,16 +135,53 @@ def test_nothing_the_reported_person_can_read_changes(client, make_user):
 # --- dedupe ---
 
 
-def test_a_second_report_while_the_first_is_OPEN_is_not_stored(client, make_user, db_session):
-    """Repeated taps must not flood the table; a moderator sees one row per grievance."""
+def test_a_second_report_APPENDS_to_the_open_one_instead_of_vanishing(client, make_user, db_session):
+    """Still one row — but nothing the reporter typed is thrown away.
+
+    The first version of this discarded the second submission, which is worse than it sounds:
+    with no way to close a report, a genuinely NEW incident weeks later was dropped while the UI
+    answered "Thanks — we'll take a look" about it. In the one flow where trust in the response
+    is the whole reason someone uses it.
+    """
     _, rh = make_user()
     target, _ = make_user()
-    assert _report(client, rh, target.id, note="first").status_code == 204
-    assert _report(client, rh, target.id, note="second").status_code == 204
+    assert _report(client, rh, target.id, reason="spam", note="same link over and over").status_code == 204
+    assert _report(client, rh, target.id, reason="harassment", note="now he's messaging me").status_code == 204
+
+    rows = _rows(db_session, reported_user_id=target.id)
+    assert len(rows) == 1, "still ONE case for whoever reads it, not a thread"
+    note = rows[0].note
+    # The original account survives, first...
+    assert note.startswith("same link over and over")
+    # ...and the escalation is recorded after it, with the newer reason stamped inline, because
+    # spam becoming harassment is the most important thing a second report can say.
+    assert "now he's messaging me" in note
+    assert "harassment" in note
+    # The row's own `reason` stays the first one; the escalation lives in the note.
+    assert rows[0].reason == "spam"
+
+
+def test_a_duplicate_with_NO_new_words_changes_nothing(client, make_user, db_session):
+    """A double-tap, as opposed to a second account of something. Nothing to add, nothing to do."""
+    _, rh = make_user()
+    target, _ = make_user()
+    _report(client, rh, target.id, note="first")
+    _report(client, rh, target.id)  # no note
     rows = _rows(db_session, reported_user_id=target.id)
     assert len(rows) == 1
-    # The FIRST account is kept. A later duplicate must not overwrite what they originally said.
     assert rows[0].note == "first"
+
+
+def test_the_accumulating_note_is_BOUNDED(client, make_user, db_session):
+    """Appending is exactly the flooding the dedupe existed to stop, so it has a ceiling — and
+    past it the EARLIEST accounts are the ones kept."""
+    _, rh = make_user()
+    target, _ = make_user()
+    for i in range(12):
+        assert _report(client, rh, target.id, note=f"{i}-" + "x" * 990).status_code == 204
+    note = _rows(db_session, reported_user_id=target.id)[0].note
+    assert len(note) <= 8000
+    assert note.startswith("0-")
 
 
 def test_the_caller_cannot_tell_a_duplicate_from_a_first_report(client, make_user):

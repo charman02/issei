@@ -74,4 +74,8 @@ class AccountUpdate(BaseModel):
     # Profile picture URL (from POST /upload/avatar), or "" / null to clear back to the
     # monogram. Low-risk like a name edit — no current_password. Empty string is allowed
     # here (unlike the name rules) precisely so a user can remove their photo.
-    photo_url: Optional[str] = None
+    #
+    # The router pins the HOST (it must be a Cloudinary HTTPS URL); this pins the LENGTH,
+    # which nothing did — a megabyte of string beginning "https://x.cloudinary.com/" passed
+    # every check that existed. No min_length, because "" is how you remove the photo.
+    photo_url: Optional[Annotated[str, StringConstraints(max_length=500)]] = None

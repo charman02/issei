@@ -173,7 +173,7 @@ describe('Notifications — issei’s first inbox (#79)', () => {
   it('never says voice, audio, recording or listen', async () => {
     // POSITIONING: a per-step note is TYPED text. A new user-facing surface is exactly where
     // that claim gets made by accident.
-    const BANNED = /record|recording|\bvoice\b|audio|in their own words|listen/i
+    const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
     renderPage([
       note({ id: 1, type: 'recipe_request' }),
       note({ id: 2, type: 'request_fulfilled', recipe_id: 9, subject: 'Adobo' }),

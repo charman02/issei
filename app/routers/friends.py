@@ -377,13 +377,18 @@ def report_user(
        retaliate is the person most likely to be reported. Same reasoning that keeps a block
        silent and a keep anonymous: the app doesn't manufacture contact nobody asked for.
 
-    3. **One OPEN report per reporter per person.** A second tap while one is still open is
-       accepted and thrown away rather than stored, so the table can't be flooded and a
-       moderator sees one row per grievance. Deduped in Python rather than by a UNIQUE
-       constraint, because the rule has a state predicate in it (`state == "open"`) and a
-       constraint can't express that — the same reason `notify()` dedupes here rather than in
-       the schema. A report filed after the first was CLOSED is a new report, correctly: it
-       means it happened again.
+    3. **One OPEN report per reporter per person — which ACCUMULATES rather than discarding.**
+       A second submission while one is still open appends its words to that row instead of
+       creating a new one: still one case for whoever reads it, still impossible to flood, but
+       nothing a reporter typed is thrown away. That last part was a real bug in the first
+       version — with no way to close a report, a genuinely new incident three weeks later was
+       silently dropped while the UI said "we'll take a look" about it. The original account is
+       never overwritten (new text goes after it) and the later reason is stamped inline, since
+       "spam" escalating to "harassment" is the most important thing a second report can say.
+       Deduped in Python rather than by a UNIQUE constraint, because the rule has a state
+       predicate in it (`state == "open"`) that a constraint can't express — the same reason
+       `notify()` dedupes here rather than in the schema. A report filed after the first was
+       CLOSED is a new row, correctly: that is a settled case and a fresh one.
 
     404 for an unknown user id, matching `/friends/profile/{id}`. 400 for reporting yourself —
     not a 404, because there is nothing to hide about your own existence and a silent success
@@ -396,8 +401,9 @@ def report_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    already = (
-        db.query(Report.id)
+    note = (body.note or "").strip() or None
+    open_report = (
+        db.query(Report)
         .filter(
             Report.reporter_id == current_user.id,
             Report.reported_user_id == body.user_id,
@@ -405,8 +411,8 @@ def report_user(
         )
         .first()
     )
-    if already is None:
-        note = (body.note or "").strip() or None
+
+    if open_report is None:
         db.add(
             Report(
                 reporter_id=current_user.id,
@@ -415,10 +421,31 @@ def report_user(
                 note=note,
             )
         )
-        db.commit()
-    # Either way the caller gets the same 204. Whether this was their first report or their
-    # fifth is not information the UI needs, and "you already reported this person" is a
-    # sentence that makes someone doubt the first one landed.
+    elif note is not None:
+        # A SECOND REPORT APPENDS RATHER THAN DISAPPEARING. The first version of this threw the
+        # new submission away, which review caught as worse than a silent no-op: three weeks
+        # later the same person escalates, the reporter types a detailed account of the NEW
+        # incident, and the app answers "Thanks — we'll take a look" about something it just
+        # discarded. In the one flow where a user's trust in the response is the entire reason
+        # they will use it.
+        #
+        # So: still ONE ROW per (reporter, target) — a moderator reads one case, not a thread,
+        # and repeated taps still can't flood the table — but the row accumulates. The original
+        # account is never overwritten (the new text goes AFTER it), and the later reason is
+        # recorded inline, since "spam" escalating to "harassment" is the most important thing
+        # a second report can say.
+        stamp = f"[later — {body.reason}]"
+        combined = f"{open_report.note}\n\n{stamp} {note}" if open_report.note else f"{stamp} {note}"
+        # Bounded, because appending is exactly the flooding the dedupe existed to stop: past
+        # this, the row stops growing and the earliest accounts are the ones kept. 8000 is four
+        # notes at the 1000-char input ceiling plus room; nothing here is a display surface.
+        open_report.note = combined[:8000]
+    # Otherwise: a duplicate with no new words. Nothing to add, nothing to store.
+
+    db.commit()
+    # Every path returns the same 204. Whether this was their first report or their fifth is not
+    # information the UI needs, and "you already reported this person" is a sentence that makes
+    # someone doubt the first one landed.
     return None
 
 

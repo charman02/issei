@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, get_args
 
 from pydantic import BaseModel, StringConstraints
 
@@ -18,7 +18,10 @@ ReportReason = Literal[
     "other",
 ]
 
-REPORT_REASONS = ("harassment", "spam", "inappropriate", "impersonation", "other")
+# DERIVED, not retyped. This started as a hand-written tuple beside the Literal, which meant a
+# sixth reason added to one and not the other would be accepted by the API and never exercised —
+# `test_every_reason_in_the_vocabulary_is_accepted` iterates this.
+REPORT_REASONS = get_args(ReportReason)
 
 
 class ReportUserIn(BaseModel):

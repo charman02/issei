@@ -92,7 +92,7 @@ describe('PasteRecipe — the say/type toggle', () => {
 // and this screen's live status must use the same "Dictating…" vocabulary the
 // rest of the app does.
 describe('PasteRecipe — claims no audio, ever', () => {
-  const BANNED = /record|recording|\bvoice\b|audio|in their own words|listen/i
+  const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
   const allText = (container) => {
     const attrs = ['aria-label', 'title', 'alt', 'placeholder']
     const named = [...container.querySelectorAll('*')].flatMap((el) =>

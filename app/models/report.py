@@ -35,16 +35,22 @@ class Report(Base):
        that keeps a block silent (`services/blocks`), and the same reasoning that makes a keep
        notification anonymous (#96) — the app doesn't create contact nobody asked for.
 
-    3. **One open report per person per target.** A second report from the same reporter while
-       one is still `open` is accepted and discarded rather than stored, so the table can't be
-       flooded by repeated taps and a moderator sees one row per grievance. Enforced in the
-       router rather than by a UNIQUE constraint, because a constraint over a nullable column
-       set can't express "one OPEN one" — the same reason `notify()` dedupes in Python.
+    3. **One open report per reporter per target, which ACCUMULATES.** A second report while one
+       is still `open` appends its words to that row rather than creating another, so repeated
+       taps can't flood the table and whoever reads them sees one case per grievance instead of a
+       thread. It does NOT discard — that was the first version, and it was a real bug: nothing
+       can move a report out of `open`, so a genuinely new incident weeks later was thrown away
+       while the UI answered "we'll take a look" about it. The original account is never
+       overwritten and the later reason is stamped inline. Enforced in the router rather than by a
+       UNIQUE constraint, because a constraint can't express the `state == "open"` predicate —
+       the same reason `notify()` dedupes in Python.
 
-    `state` is `open` until someone reviews it, then `closed`. There is no moderation UI yet
-    and deliberately no endpoint to read these back: that would need an admin role, which this
-    app has no concept of, and inventing one to avoid opening a database console would be the
-    larger mistake. Rows are read directly from Postgres for now.
+    `state` is `open` until someone reviews it, then `closed` — though nothing can currently SET
+    it to closed, which is the one real gap here and is recorded in TECHDEBT. There is no
+    moderation queue and deliberately no endpoint to read these back: that would need an admin
+    role, which this app has no concept of, and inventing one to avoid opening a database console
+    would be the larger mistake. Rows are read directly from Postgres for now — so claim the
+    mechanism to users, never a response (POSITIONING says this explicitly).
 
     No `post_id`/`recipe_id` column yet. Reporting a specific meal or recipe is a real thing to
     want and will need one, but there is no UI for it today, and a nullable column nothing
@@ -53,11 +59,22 @@ class Report(Base):
 
     __tablename__ = "reports"
     __table_args__ = (
-        # The query a moderator actually runs: the open ones, newest first.
+        # The one query there is: the open ones, newest first.
         Index("ix_reports_state_created", "state", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Both FKs CASCADE, and the second one is a DECISION rather than a default (settled at
+    # review, 2026-09-09). If the REPORTED person deletes their account, every report against
+    # them goes too — and yes, that means someone can erase their own record with their own
+    # password and register again. Accepted anyway, for now, on three grounds: there is no
+    # moderation surface, so nothing is acting on those rows to be undermined; keeping reports
+    # about a deleted person means retaining accusations about someone who has exercised
+    # deletion, which is the harder position to defend; and a report is a live case about a
+    # PAIR of people, so with one gone there is nobody to follow it up with. Revisit alongside
+    # any real moderation queue — changing FK behaviour later is a data migration, so this is
+    # written down rather than assumed.
+    #
     # Who reported. CASCADE: if they delete their account the report goes with it — it was
     # their account of what happened, and nobody can follow it up without them.
     reporter_id: Mapped[int] = mapped_column(
@@ -72,7 +89,7 @@ class Report(Base):
     # deploy, not a migration.
     reason: Mapped[str] = mapped_column(nullable=False)
     # The reporter's own words, optional. The most useful field on the row and the one a
-    # moderator reads first, which is why it's allowed to be long-ish (1000 in the schema).
+    # reader reaches for first, which is why it's allowed to be long-ish (1000 in the schema).
     note: Mapped[Optional[str]] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(server_default="open", nullable=False)
     created_at: Mapped[datetime] = mapped_column(

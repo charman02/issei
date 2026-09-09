@@ -547,12 +547,14 @@ export default function RecipeForm({
                 type="text"
                 placeholder="e.g. “Adobo”"
                 value={name}
+                maxLength={120}
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="field pr-11"
               />
               <DictateButton
                 value={name}
+                maxLength={120}
                 onChange={setName}
                 what="the dish name"
                 onDone={() => focusFieldById('recipe-source')}
@@ -604,6 +606,7 @@ export default function RecipeForm({
             <SuggestField
               id="recipe-source"
               value={sourceName}
+              maxLength={80}
               onChange={setSourceName}
               suggestions={sourcePool}
               placeholder="e.g. Lola Remedios"
@@ -647,6 +650,7 @@ export default function RecipeForm({
               <SuggestField
                 id="recipe-cuisine"
                 value={cuisine}
+                maxLength={60}
                 onChange={setCuisine}
                 suggestions={cuisinePool}
                 placeholder="Filipino"
@@ -683,12 +687,14 @@ export default function RecipeForm({
                 id="recipe-description"
                 placeholder="What is this dish?"
                 value={description}
+                maxLength={500}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
                 className="field resize-none pr-11"
               />
               <DictateButton
                 value={description}
+                maxLength={500}
                 onChange={setDescription}
                 what="the description"
                 bottomClass="bottom-3.5"
@@ -715,6 +721,7 @@ export default function RecipeForm({
               id="recipe-story"
               placeholder={storyCopy.placeholder}
               value={story}
+              maxLength={4000}
               onChange={(e) => setStory(e.target.value)}
               rows={3}
               className="field resize-none pr-11"
@@ -723,6 +730,7 @@ export default function RecipeForm({
                 needs whole sentences, and it's where a tester stopped. */}
             <DictateButton
               value={story}
+              maxLength={4000}
               onChange={setStory}
               what="the story"
               bottomClass="bottom-3.5"
@@ -768,6 +776,7 @@ export default function RecipeForm({
                   id={`ingredient-name-${idx}`}
                   index={idx}
                   value={ing.name}
+                  maxLength={120}
                   suggestions={suggestions}
                   placeholder="e.g. soy sauce"
                   onChange={(v) => updateIngredient(idx, 'name', v)}
@@ -797,6 +806,7 @@ export default function RecipeForm({
                     enterKeyHint="next"
                     placeholder="1/2 cup · a dash · to taste"
                     value={ing.quantity}
+                    maxLength={60}
                     onChange={(e) =>
                       updateIngredient(idx, 'quantity', e.target.value)
                     }
@@ -813,6 +823,7 @@ export default function RecipeForm({
                   />
                   <DictateButton
                     value={ing.quantity}
+                    maxLength={60}
                     onChange={(v) => updateIngredient(idx, 'quantity', v)}
                     what={`the amount for ingredient ${idx + 1}`}
                     // Same move Enter makes on this field: open the next
@@ -836,6 +847,7 @@ export default function RecipeForm({
                 <AmountUnitChips
                   index={idx}
                   value={ing.quantity}
+                  maxLength={60}
                   onPick={(v) => updateIngredient(idx, 'quantity', v)}
                   onDone={() =>
                     focusIngredientField(idx, '[data-ingredient-qty]')
@@ -903,6 +915,7 @@ export default function RecipeForm({
                     enterKeyHint="next"
                     placeholder="Describe this step…"
                     value={step.content}
+                    maxLength={2000}
                     onChange={(e) => updateStep(idx, 'content', e.target.value)}
                     onKeyDown={(e) =>
                       advanceOnEnter(e, {
@@ -920,6 +933,7 @@ export default function RecipeForm({
                       five-step method never needs the keyboard. */}
                   <DictateButton
                     value={step.content}
+                    maxLength={2000}
                     onChange={(v) => updateStep(idx, 'content', v)}
                     what={`step ${idx + 1}`}
                     bottomClass="bottom-3.5"
@@ -941,6 +955,7 @@ export default function RecipeForm({
                     type="text"
                     placeholder={'“don\'t rush the onions”'}
                     value={step.voice_note || ''}
+                    maxLength={2000}
                     onChange={(e) => updateStep(idx, 'voice_note', e.target.value)}
                     className="field bg-plum/[0.06] pr-11"
                   />

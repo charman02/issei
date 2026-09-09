@@ -2,8 +2,9 @@
 
 Not "a generous one" — none at all. No `max_length` in the schema, and no length on the column
 either (`Mapped[str] = mapped_column()` infers an unlimited VARCHAR), so one request could store
-a megabyte in a dish name and then every card in Browse would try to render it. Posts and user
-names were already bounded (120 / 500 / 80); recipes were the hole.
+a megabyte in a dish name and then every card in Browse would try to render it. A post's
+dish name and description were bounded (120 / 500) and so were user names (80) — but a post's
+PHOTO URL was not, which the docs audit caught after the first pass of this file went in.
 
 The caps are deliberately generous. They exist to refuse abuse and protect the layout, not to
 edit anyone, so these tests are written as PAIRS: the largest realistic value must be accepted,
@@ -209,3 +210,111 @@ def test_the_fields_that_already_had_caps_still_do(client, make_user):
     assert client.post(
         "/recipes/parse", json={"text": "x" * 8001}, headers=h
     ).status_code == 422
+
+
+# --- the two URL fields the first pass missed (caught by the docs audit) ---
+
+
+def test_a_posts_photo_url_is_bounded(client, make_user):
+    """The caps landed on `schemas/recipe.py` and this file's URL was left as it was — so a
+    recipe's cover was capped while a post's photo, rendered to every friend, was not."""
+    _, h = make_user()
+
+    def post_with(url):
+        return client.post(
+            "/posts", json={"photo_url": url, "dish_name": "Adobo"}, headers=h
+        ).status_code
+
+    assert post_with("https://img.test/" + "x" * 470) == 201
+    assert post_with("https://img.test/" + "x" * 490) == 422
+    # And "" is still refused, as before — a post is a photo plus a name.
+    assert post_with("") == 422
+
+
+def test_an_avatar_url_is_bounded_as_well_as_host_checked(client, make_user):
+    """`PATCH /auth/me` pinned the HOST but nothing pinned the LENGTH, so a megabyte of string
+    beginning "https://x.cloudinary.com/" passed every check that existed."""
+    _, h = make_user()
+    ok = "https://res.cloudinary.com/demo/image/upload/" + "a" * 400
+    too_long = "https://res.cloudinary.com/demo/image/upload/" + "a" * 500
+    assert client.patch("/auth/me", json={"photo_url": ok}, headers=h).status_code == 200
+    assert client.patch("/auth/me", json={"photo_url": too_long}, headers=h).status_code == 422
+    # Clearing it back to the monogram still works — no min_length was added.
+    assert client.patch("/auth/me", json={"photo_url": ""}, headers=h).status_code == 200
+
+
+# --- the fields the FIRST pass of this file missed, and review proved were storing 500KB ---
+
+
+def test_quantity_type_is_a_vocabulary_not_a_free_string(client, make_user):
+    """It was a bare `str`, so it took 100,000 characters — verified stored, in review.
+
+    A `Literal` closes two holes with one change, which is why this isn't just another Text
+    alias: `services/scaling.py` branches on exactly these three values, so an unrecognised one
+    silently fell through to whatever the last branch was.
+    """
+    _, h = make_user()
+
+    def ing(qt):
+        return _create(
+            client, h, ingredients=[{"name": "Salt", "position": 1, "quantity_type": qt}]
+        ).status_code
+
+    for good in ("precise", "imprecise", "unmeasured"):
+        assert ing(good) == 201, good
+    assert ing("x" * 1000) == 422
+    assert ing("approximate") == 422  # plausible, and not one of the three
+
+
+def test_a_handoff_note_and_recipient_email_are_bounded(client, make_user):
+    """The handoff route was the other door into the same file, and both fields were bare."""
+    _, h = make_user()
+    rid = _create(client, h).json()["id"]
+
+    def handoff(**body):
+        return client.post(f"/recipes/{rid}/handoff", json=body, headers=h).status_code
+
+    assert handoff(note="x" * 2000) in (200, 201)
+    assert handoff(note="x" * 2001) == 422
+    # And to_email is an address now, not any string at all — it is later compared against a
+    # signing-up user's email to auto-accept the grant, so 500KB of junk was never meaningful.
+    assert handoff(to_email="lola@example.com") in (200, 201)
+    assert handoff(to_email="x" * 300) == 422
+    assert handoff(to_email="not-an-address") == 422
+
+
+def test_a_position_cannot_overflow_an_int4(client, make_user):
+    """`position: int` accepted 10**19 — a Postgres NumericValueOutOfRange (a 500) that passes
+    silently on SQLite. Same shape of prod-only bug as #97's unvalidated `through_post_id`."""
+    _, h = make_user()
+    assert _create(client, h, steps=[{"content": "Cook", "position": 10**19}]).status_code == 422
+    assert _create(
+        client, h, ingredients=[{"name": "Salt", "position": 10**19}]
+    ).status_code == 422
+    assert _create(client, h, steps=[{"content": "Cook", "position": -1}]).status_code == 422
+
+
+def test_editing_language_to_null_is_a_422_not_a_500(client, make_user):
+    """The column is NOT NULL with a server_default, so create can omit it — but an EXPLICIT
+    null on update reached setattr and blew up on the IntegrityError."""
+    _, h = make_user()
+    rid = _create(client, h).json()["id"]
+    assert client.patch(f"/recipes/{rid}", json={"language": None}, headers=h).status_code == 422
+    # Omitting it entirely still leaves it alone, and a real value still works.
+    assert client.patch(f"/recipes/{rid}", json={"name": "Renamed"}, headers=h).status_code == 200
+    assert client.patch(f"/recipes/{rid}", json={"language": "tl"}, headers=h).status_code == 200
+
+
+def test_the_PARSE_response_cannot_hand_back_something_unsubmittable(client, make_user):
+    """`POST /recipes/parse` is the app's primary capture route, and its response schema was
+    uncapped — so it could return a step the create endpoint then refuses, dead-ending the paste
+    flow. The response model carries the same ceilings as the create model now."""
+    from app.schemas.recipe import ParsedRecipe, ParsedStep
+    import pydantic
+    import pytest
+
+    # A ceiling on the RESPONSE model is what makes the round trip safe.
+    with pytest.raises(pydantic.ValidationError):
+        ParsedStep(content="x" * 2001)
+    with pytest.raises(pydantic.ValidationError):
+        ParsedRecipe(name="x" * 121)
