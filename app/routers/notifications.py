@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import secrets
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,7 +21,7 @@ from app.schemas.push import (
     PushSubscriptionRotate,
     VapidKeyResponse,
 )
-from app.services import push
+from app.services import prompt, push
 from app.services.notifications import ANONYMOUS_TYPES, mark_read, unread_count
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -291,3 +293,42 @@ def rotate_subscription(
     )
     db.commit()
     return None
+
+
+@router.post("/run-daily-prompt")
+def run_daily_prompt_endpoint(
+    x_issei_cron_key: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Trigger the daily prompt run. Called by a scheduler, not by a person (#89).
+
+    NOT a user route: there is no `get_current_user` here because there is no user — the caller is
+    a cron job acting for everybody. Authenticated by a shared secret in a header instead, compared
+    with `secrets.compare_digest` so the check doesn't leak the secret's length or prefix through
+    timing.
+
+    DISABLED WHEN THE SECRET IS UNSET, which is the part worth being deliberate about. The
+    tempting shape is `if settings.cron_secret and given != settings.cron_secret: raise` — and that
+    reads fine until you notice it makes the route WIDE OPEN on any deploy where the secret is
+    missing. An unconfigured deploy 404s instead. Same reasoning as `push.is_configured()`:
+    unconfigured means "off", never "unguarded".
+
+    404 rather than 401/403 for both a wrong key and an unset one, so probing tells you nothing
+    about whether this route exists on this deploy.
+
+    WHY AN ENDPOINT RATHER THAN A SCHEDULED TASK. The deploy pipeline never runs `cdk`, and the CDK
+    task-definition family is byte-identical to the one the pipeline re-renders — so a `cdk deploy`
+    to add an EventBridge rule would also replace the running prod image with whatever is checked
+    out on the operator's machine. An endpoint plus a GitHub Actions cron needs no infrastructure
+    change at all and ships with the repo. It also means the trigger is swappable later (EventBridge
+    hitting this same URL) without touching anything here.
+
+    Cron drift is handled in `services/prompt.is_due`, which asks "has their hour passed today and
+    have they not been sent" rather than "is it exactly their hour" — so a run 40 minutes late still
+    catches everyone, and `prompt_sends`' UNIQUE (user, local_date) is what makes that safe.
+    """
+    if not settings.cron_secret or not secrets.compare_digest(
+        x_issei_cron_key, settings.cron_secret
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    return prompt.run_daily_prompt(db)

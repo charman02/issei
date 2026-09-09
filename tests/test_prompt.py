@@ -230,14 +230,16 @@ def test_the_tz_database_is_actually_present():
     assert ZoneInfo("America/Los_Angeles") is not None
 
 
-def test_due_only_at_their_own_hour(db_session, make_user):
+def test_not_due_BEFORE_their_hour(db_session, make_user):
+    """The half of the hour check that survived catch-up. Being due once the hour has PASSED is
+    covered by test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it, which explains why."""
     me, _ = make_user()
     me.timezone = "Asia/Manila"
     me.notify_hour = 18
     db_session.commit()
     assert prompt.is_due(me, _local("Asia/Manila", 18)) is True
     assert prompt.is_due(me, _local("Asia/Manila", 17)) is False
-    assert prompt.is_due(me, _local("Asia/Manila", 19)) is False
+    assert prompt.is_due(me, _local("Asia/Manila", 9)) is False
 
 
 def test_the_same_hour_in_two_timezones_is_two_different_moments(db_session, make_user):
@@ -287,3 +289,192 @@ def test_the_people_switch_does_not_affect_the_daily_nudge(db_session, make_user
     me.notify_people = False
     db_session.commit()
     assert prompt.is_due(me, _local("Asia/Manila", 18)) is True
+
+
+# --- catch-up semantics: what makes an unreliable trigger acceptable ---
+
+
+def test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it(db_session, make_user):
+    """The decision that makes a GitHub Actions cron a defensible trigger.
+
+    Exact-hour matching quietly requires the job to run inside the right hour, every hour, forever
+    — and nothing can promise that: Actions cron drifts 5-30 minutes and drops runs under load,
+    EventBridge is at-least-once rather than on-time, and any tick misses an hour during a deploy.
+    Under exact-hour, a late run means that timezone gets NOTHING that day and nobody finds out,
+    because the failure is an absence.
+    """
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_hour = 18
+    db_session.commit()
+
+    assert prompt.is_due(me, _local("Asia/Manila", 17)) is False, "not yet"
+    assert prompt.is_due(me, _local("Asia/Manila", 18)) is True, "on time"
+    assert prompt.is_due(me, _local("Asia/Manila", 19)) is True, "40 min late still catches"
+    assert prompt.is_due(me, _local("Asia/Manila", 21)) is True, "hours late still catches"
+
+
+def test_catch_up_still_STOPS_at_quiet_hours(db_session, make_user):
+    """Quiet hours now do real work: someone missed at 18:00 is not caught up at 23:00 if 22:00 is
+    their boundary. They get nothing that day, which is the correct outcome — and the reason the
+    two settings have to be separate."""
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_hour = 18
+    me.quiet_from = 22
+    me.quiet_to = 8
+    db_session.commit()
+    assert prompt.is_due(me, _local("Asia/Manila", 21)) is True
+    assert prompt.is_due(me, _local("Asia/Manila", 22)) is False
+    assert prompt.is_due(me, _local("Asia/Manila", 23)) is False
+
+
+# --- the runner ---
+
+
+def _sub(db, user, endpoint="https://push.example/a"):
+    from app.models.push_subscription import PushSubscription
+
+    s = PushSubscription(
+        user_id=user.id, endpoint=endpoint, p256dh="pubkey", auth="authsecret"
+    )
+    db.add(s)
+    db.commit()
+    return s
+
+
+def _due_user(db, make_user, tz="Asia/Manila"):
+    """A user who is due right now: notify_hour 0 so any local hour has passed, and quiet hours
+    disabled by equal bounds so the test does not depend on what time it happens to run."""
+    u, _ = make_user()
+    u.timezone = tz
+    u.notify_hour = 0
+    u.quiet_from = 9
+    u.quiet_to = 9
+    db.commit()
+    return u
+
+
+def test_the_runner_sends_once_and_records_the_day(db_session, make_user, monkeypatch):
+    from app.models.prompt_send import PromptSend
+
+    calls = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 3)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
+
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 1
+    assert len(calls) == 1
+    rows = db_session.query(PromptSend).filter(PromptSend.user_id == me.id).all()
+    assert len(rows) == 1
+    assert rows[0].friend_count == 3
+
+
+def test_a_SECOND_run_the_same_day_sends_NOTHING(db_session, make_user, monkeypatch):
+    """The whole reason `prompt_sends` exists. A re-triggered cron, an overlapping deploy, an
+    at-least-once schedule — none of them can double-send, because the database refuses the
+    duplicate rather than this function remembering to check."""
+    calls = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 2)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
+
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+
+    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+    second = prompt.run_daily_prompt(db_session)
+    assert second["sent"] == 0
+    assert second["skipped"] == 1
+    assert len(calls) == 1, "sent twice"
+
+
+def test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day(db_session, make_user, monkeypatch):
+    """Deliberately not recorded as sent: if a friend posts later today this person should still be
+    reachable. Recording it would mean an empty feed at 18:00 costs them the whole evening."""
+    from app.models.prompt_send import PromptSend
+
+    calls = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
+
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+
+    assert prompt.run_daily_prompt(db_session)["sent"] == 0
+    assert calls == []
+    assert db_session.query(PromptSend).count() == 0, "the day must stay claimable"
+
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+
+
+def test_a_user_with_no_timezone_is_never_a_candidate(db_session, make_user, monkeypatch):
+    calls = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
+    me, _ = make_user()
+    _sub(db_session, me)
+    assert prompt.run_daily_prompt(db_session)["candidates"] == 0
+    assert calls == []
+
+
+def test_the_nudge_switch_excludes_them_in_SQL(db_session, make_user, monkeypatch):
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    me = _due_user(db_session, make_user)
+    me.notify_prompt = False
+    db_session.commit()
+    assert prompt.run_daily_prompt(db_session)["candidates"] == 0
+
+
+def test_a_DEAD_subscription_is_pruned(db_session, make_user, monkeypatch):
+    from app.models.push_subscription import PushSubscription
+
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 410)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+    prompt.run_daily_prompt(db_session)
+    assert db_session.query(PushSubscription).count() == 0
+
+
+def test_a_BAD_KEY_does_not_prune_anything(db_session, make_user, monkeypatch):
+    """401/403 mean OUR key is wrong, not that the device is gone. Pruning on those would empty the
+    whole table on the first botched rotation — and a subscription can only be recreated by the user
+    re-granting permission on that device, so there is no recovery path."""
+    from app.models.push_subscription import PushSubscription
+
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 403)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+    summary = prompt.run_daily_prompt(db_session)
+    assert db_session.query(PushSubscription).count() == 1, "pruned on the wrong status"
+    assert summary["failed"] == 1
+
+
+def test_all_of_a_users_devices_get_it(db_session, make_user, monkeypatch):
+    sent_to = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr(
+        "app.services.push.send",
+        lambda endpoint, *a, **k: sent_to.append(endpoint) or 201,
+    )
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me, "https://push.example/phone")
+    _sub(db_session, me, "https://push.example/laptop")
+    prompt.run_daily_prompt(db_session)
+    assert sorted(sent_to) == ["https://push.example/laptop", "https://push.example/phone"]
+
+
+def test_a_due_user_with_NO_devices_is_not_an_error(db_session, make_user, monkeypatch):
+    """Preferences on, zero subscriptions — someone who has not installed it anywhere. The day is
+    still claimed, because they were genuinely due and nothing here can install an app for them."""
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
+    _due_user(db_session, make_user)
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 0
+    assert summary["failed"] == 1

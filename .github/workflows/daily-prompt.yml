@@ -1,0 +1,65 @@
+# The daily "post something" nudge (#89).
+#
+# WHY A GITHUB ACTIONS CRON AND NOT AN EVENTBRIDGE RULE.
+#
+# Adding a scheduled construct to the CDK stack would need a manual `npx cdk deploy`, because the
+# deploy pipeline never runs `cdk` at all. And that deploy has a side effect worth naming: the CDK
+# task definition's Family is byte-identical to the one `deploy.yml` re-renders, so `cdk deploy`
+# registers its own revision of the SAME family, built from the operator's local working tree, and
+# points the live service at it. Running it merely to add a cron rule would replace the running
+# production image with whatever happened to be checked out. This file needs no infrastructure
+# change at all and ships with the repo.
+#
+# The trade is that Actions cron is unreliable about TIME: 5-30 minutes of drift is routine and
+# scheduled runs are dropped entirely when GitHub is busy. That is fine here, and deliberately so —
+# `services/prompt.is_due` asks "has their hour passed today, and have they not been sent yet?"
+# rather than "is it exactly their hour", so a late run still catches everyone and a dropped run is
+# caught by the next one. `prompt_sends`' UNIQUE (user, local_date) is what makes that safe, so a
+# manual re-run of this workflow cannot double-send either.
+#
+# Swappable later without touching the app: point EventBridge at the same URL.
+#
+# ONE OPERATIONAL GOTCHA: GitHub DISABLES scheduled workflows on a repository with no pushes for 60
+# days, and it emails the owner when it does. If notifications silently stop, check that first.
+
+name: Daily prompt
+
+on:
+  schedule:
+    # Hourly, on the half hour. Hourly because users are in every timezone and each needs their own
+    # local hour; :30 because the top of the hour is when everyone else's cron runs, and GitHub's
+    # queue is measurably worse there.
+    - cron: "30 * * * *"
+  # So a run can be triggered by hand — to test the wiring, or to catch up after GitHub drops a
+  # window. Safe to press twice: the UNIQUE index refuses the second send.
+  workflow_dispatch:
+
+# Never two at once. A run that overlaps its successor would have both trying to claim the same
+# (user, local_date) rows — the database would refuse the duplicate, but there is no reason to make
+# it work for nothing.
+concurrency:
+  group: daily-prompt
+  cancel-in-progress: false
+
+jobs:
+  prompt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send the daily prompt
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_KEY: ${{ secrets.CRON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_KEY:-}" ] || [ -z "${API_URL:-}" ]; then
+            echo "CRON_KEY or API_URL secret is not set — nothing to do."
+            exit 0
+          fi
+          # --fail-with-body so a 4xx/5xx fails the step AND shows what the server said. Without
+          # the body, a 404 (wrong key, or the secret unset on the server) is indistinguishable
+          # from a routing problem.
+          response=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            -X POST "${API_URL}/notifications/run-daily-prompt" \
+            -H "X-Issei-Cron-Key: ${CRON_KEY}")
+          echo "$response"

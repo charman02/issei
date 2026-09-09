@@ -39,6 +39,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.post import Post
+# Imported at MODULE level, not inside the function that uses them. A model reached only by a
+# lazy import is never registered on `Base.metadata`, so `create_all` silently omits its table
+# and every test touching it fails with "no such table" — which is exactly how this was found.
+from app.models.prompt_send import PromptSend
+from app.models.push_subscription import PushSubscription
 from app.models.user import User
 from app.services.blocks import blocked_ids
 from app.services.friends import friend_ids
@@ -74,20 +79,32 @@ def local_now(user: User) -> Optional[datetime]:
 def is_due(user: User, now_local: Optional[datetime]) -> bool:
     """Should this person be nudged at this moment?
 
-    Four gates, and the order is only for readability — all four must pass:
-      - they have a timezone at all (so we know what "18:00 their time" means)
-      - the daily nudge is switched on
-      - it is their hour
-      - it is not inside their quiet window
+    CATCH-UP, NOT EXACT-HOUR — and this is the decision that makes the whole thing robust.
 
-    Quiet hours are checked even though the send is already local, because a person's day is not
-    the same as their timezone's: someone who works nights inverts the default. It also makes the
-    two settings compose honestly — a user whose `notify_hour` sits inside their own quiet window
-    is never nudged, which is a coherent thing to have configured and not a bug to route around.
+    The obvious test is `now_local.hour == user.notify_hour`, and it quietly requires the job to
+    run inside the right hour, every hour, forever. Nothing we can trigger it with promises that:
+    GitHub Actions cron routinely drifts 5-30 minutes and drops runs entirely under load,
+    EventBridge is at-least-once rather than on-time, and any hourly tick misses an hour during a
+    deploy. Under exact-hour, a late run means that timezone gets NOTHING that day, and nobody
+    finds out — the failure is an absence.
+
+    So the question is "has their hour PASSED today, and have they not been sent yet?" A run at
+    19:40 still catches the 18:00 people. A run that never happens catches them next time. The
+    trigger becomes a liveness concern rather than a correctness one, which is the only sane place
+    for it to be.
+
+    "Not sent yet" is `prompt_sends`, whose UNIQUE (user, local_date) is what makes catch-up safe:
+    without it, this reading would nudge someone every hour from 18:00 until midnight.
+
+    Quiet hours are still checked, and now they do real work: someone missed at 18:00 will not be
+    caught up at 23:00 if 22:00 is their quiet boundary — they simply get nothing that day, which
+    is the correct outcome and the reason the two settings are separate. It also means a
+    `notify_hour` sitting inside a user's own quiet window is a coherent "not for now" rather than
+    a bug to route around.
     """
     if now_local is None or not user.notify_prompt:
         return False
-    if now_local.hour != user.notify_hour:
+    if now_local.hour < user.notify_hour:
         return False
     return not in_quiet_hours(now_local.hour, user.quiet_from, user.quiet_to)
 
@@ -161,3 +178,96 @@ def prompt_payload(count: int) -> Optional[dict]:
         # pile of near-identical lines.
         "tag": "daily-prompt",
     }
+
+
+def run_daily_prompt(db: Session) -> dict:
+    """Send the daily nudge to everyone who is due. Returns a summary for the caller's logs.
+
+    ONE PASS OVER USERS WHO COULD POSSIBLY BE DUE, then a per-user check. Not one clever query:
+    the timezone predicate would have to be `now() AT TIME ZONE u.timezone`, which is
+    Postgres-only, so the selection itself would be untestable on SQLite and would first run for
+    real against Neon. This repo has already lost time to exactly that shape of prod-only bug, so
+    the arithmetic stays in Python where a test can see it.
+
+    Every send is recorded BEFORE it is attempted, and the ordering is deliberate: if the row is
+    written after, a crash between send and record means the next run sends again. A recorded
+    send that then fails to deliver is the better failure — the person misses one nudge, rather
+    than getting two.
+
+    IDEMPOTENT BY THE DATABASE, not by this function. The insert is what fails on a duplicate, so
+    two concurrent runs (a manually re-triggered cron, an overlapping deploy) cannot both send.
+    Checking first and inserting after would leave exactly the window this exists to close.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.push import DEAD_SUBSCRIPTION_CODES, send
+
+    sent = skipped = failed = 0
+    # Only users who could be due at all. `timezone IS NOT NULL` and the switch are cheap SQL
+    # predicates that need no clock arithmetic, so they belong here rather than in Python.
+    candidates = (
+        db.query(User)
+        .filter(User.timezone.isnot(None), User.notify_prompt.is_(True))
+        .all()
+    )
+
+    for user in candidates:
+        now_local = local_now(user)
+        if not is_due(user, now_local):
+            skipped += 1
+            continue
+
+        count = friends_who_posted(user, db)
+        payload = prompt_payload(count)
+        if payload is None:
+            # Nothing worth saying. Deliberately NOT recorded as sent: if a friend posts later
+            # today, this person should still be reachable — recording it would mean an empty
+            # feed at 18:00 costs them the whole evening.
+            skipped += 1
+            continue
+
+        # Claim the day first. A duplicate here means another run already has it.
+        try:
+            db.add(
+                PromptSend(
+                    user_id=user.id,
+                    local_date=now_local.date(),
+                    friend_count=count,
+                )
+            )
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            skipped += 1
+            continue
+
+        subs = (
+            db.query(PushSubscription)
+            .filter(PushSubscription.user_id == user.id)
+            .all()
+        )
+        delivered = False
+        for sub in subs:
+            status = send(sub.endpoint, sub.p256dh, sub.auth, payload)
+            if status in DEAD_SUBSCRIPTION_CODES:
+                # The browser has moved on. ONLY these two codes — 401/403 mean our key is wrong,
+                # and pruning on those would empty the table on the first botched rotation.
+                db.delete(sub)
+            elif status in (200, 201):
+                sub.last_sent_at = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+                delivered = True
+        db.commit()
+
+        if delivered:
+            sent += 1
+        else:
+            failed += 1
+
+    summary = {
+        "candidates": len(candidates),
+        "sent": sent,
+        "skipped": skipped,
+        "failed": failed,
+    }
+    log.info("prompt: daily run %s", summary)
+    return summary

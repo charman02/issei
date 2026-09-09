@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # The "sub" claim in the VAPID JWT — a mailto: or https: URL a push service can contact if
     # our sends misbehave. Required by RFC 8292 whenever a key is configured.
     vapid_subject: str = "mailto:hello@issei.app"
+    # The shared secret the daily-prompt cron presents (#89). Defaults to "" and, when empty, the
+    # route is DISABLED rather than open — an unset secret must never mean "no authentication
+    # required", which is the failure mode of every `if secret and secret != given` check ever
+    # written. Set it in SSM + the task definition alongside the VAPID keys.
+    cron_secret: str = ""
 
     model_config = ConfigDict(env_file=".env", extra="ignore")
 

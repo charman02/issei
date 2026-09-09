@@ -327,3 +327,57 @@ def test_a_preference_is_NOT_stored_client_side(client, make_user):
     # A brand-new client with no storage at all still sees the stored preference.
     fresh = client.get("/auth/me", headers=h).json()
     assert fresh["notify_people"] is False
+
+
+# --- the cron endpoint: authenticated by a shared secret, not a user ---
+
+
+def test_the_cron_route_is_DISABLED_when_no_secret_is_set(client):
+    """The part worth being deliberate about. The tempting shape is
+    `if settings.cron_secret and given != settings.cron_secret: raise` — which reads fine until you
+    notice it leaves the route WIDE OPEN on any deploy where the secret is missing. Unconfigured
+    means off, never unguarded. Same rule as push.is_configured()."""
+    assert client.post("/notifications/run-daily-prompt").status_code == 404
+    assert client.post(
+        "/notifications/run-daily-prompt", headers={"X-Issei-Cron-Key": "anything"}
+    ).status_code == 404
+
+
+def test_a_wrong_key_is_a_404_not_a_401(client, monkeypatch):
+    """404 for a wrong key AND for an unset one, so probing tells you nothing about whether this
+    route exists on this deploy."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
+    r = client.post(
+        "/notifications/run-daily-prompt", headers={"X-Issei-Cron-Key": "wrong"}
+    )
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Not found"
+
+
+def test_the_right_key_runs_it_and_returns_a_summary(client, monkeypatch):
+    """A summary rather than 204, because the caller is a log: a cron run that says
+    "candidates 40, sent 12, skipped 28" is diagnosable, and one that says nothing is not."""
+    from app.config import settings
+    from app.services import prompt
+
+    monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
+    monkeypatch.setattr(
+        prompt, "run_daily_prompt", lambda db: {"candidates": 2, "sent": 1, "skipped": 1, "failed": 0}
+    )
+    r = client.post(
+        "/notifications/run-daily-prompt", headers={"X-Issei-Cron-Key": "the-real-secret"}
+    )
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+
+
+def test_a_signed_in_USER_cannot_trigger_it(client, make_user, monkeypatch):
+    """Not a user route. A bearer token is not the credential here and must not be mistaken for
+    one — this acts on behalf of everybody, so it needs the operator's secret, not a person's."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
+    _, h = make_user()
+    assert client.post("/notifications/run-daily-prompt", headers=h).status_code == 404
