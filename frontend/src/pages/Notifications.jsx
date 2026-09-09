@@ -143,7 +143,11 @@ export default function Notifications() {
                   <Avatar name={n.actor_first_name || '?'} photoUrl={n.actor_photo_url} size="sm" />
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block font-display text-[14px] text-ink leading-snug">
+                  {/* Clamped for the same reason a feed card is: the dish name inside this
+                      sentence can be 120 characters, and one inbox row four lines tall pushes
+                      the rest of someone's inbox off the screen. The name is at the TAIL of
+                      every one of these sentences, so a clamp costs the least-important part. */}
+                  <span className="block font-display text-[14px] text-ink leading-snug line-clamp-3">
                     {lineFor(n)}
                   </span>
                   <span className="block font-display italic text-[12px] text-ink-soft mt-0.5">

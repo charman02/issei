@@ -3,7 +3,7 @@
 Written to be reread before an interview. Verified against the code on 2026-09-09, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 59 endpoints · 15 tables · 21 migrations · 475 backend tests · 730 frontend
+**Scale:** 60 endpoints · 16 tables · 22 migrations · 510 backend tests · 745 frontend
 tests · 6,560 lines of Python under `app/` (excluding tests and migrations), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
 
@@ -46,7 +46,7 @@ data engineer will respect:
 
 ---
 
-## 3. Data model (15 tables)
+## 3. Data model (16 tables)
 
 ```
 users
@@ -63,7 +63,8 @@ users
         └── recipe_saves         (user_id, recipe_id — a bookmark; UNIQUE(user,recipe), one recipe FK)
   ├── recipe_requests            (post_id, requester_id — an ask on a post; UNIQUE(post,requester), state pending|fulfilled)
   ├── notifications              (user_id, actor_id + nullable post_id/recipe_id, both SET NULL so a line outlives its subject)
-  └── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
+  ├── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
+  └── reports                     (reporter_id, reported_user_id, reason, note, state — #87; both FKs CASCADE, no unique constraint)
 feedback                          (standalone)
 ```
 

@@ -48,14 +48,16 @@ export default function RecipeCard({ recipe, onClick, variant = 'grid' }) {
         )}
       </div>
       <div className="px-0.5 pt-2.5">
-        {/* A FIXED two-line slot for the title. Two cards side by side used to fall out of
-            alignment as soon as one dish name wrapped: the photos stayed level (they're at the
-            top of each cell) but the byline under a two-line title sat a line lower than its
-            neighbour's, so the text blocks read as misaligned.
-            `min-h` reserves both lines whether or not the name needs them, and `line-clamp-2`
-            stops a very long name taking a third and reintroducing the problem. The photo boxes
-            never move — only the title fills more of a space that was already there. */}
-        <p className="font-display font-black text-[19px] leading-[1.04] text-ink line-clamp-2 min-h-[calc(2*1.04*19px)]">
+        {/* The byline sits DIRECTLY under the title, however many lines the title takes.
+            This was briefly a fixed two-line slot, so that two cards side by side kept their
+            bylines on the same line as each other. It looked worse: a one-line dish name got a
+            blank line under it and then the name, which reads as a layout mistake rather than
+            as alignment. The photo boxes are in their own block above this one and stay level
+            regardless, which was the actual complaint — so the text below is free to be as
+            tall as its own title needs.
+            `line-clamp-2` stays: a third line would start pushing cards to visibly different
+            heights, and two lines is enough for any dish name worth putting on a card. */}
+        <p className="font-display font-black text-[19px] leading-[1.04] text-ink line-clamp-2">
           {recipe.name}
         </p>
         {byline && (

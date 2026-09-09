@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import PostCard from './PostCard'
@@ -240,5 +240,48 @@ describe('PostCard — asking for the recipe', () => {
     setMe()
     renderCard(somebodyElses())
     expect(document.body.textContent).not.toMatch(/\blike\b|\bheart\b|favourite|favorite/i)
+  })
+})
+
+// A feed is SCANNED; a permalink is READ. Neither of these was clamped, and with a
+// 500-character description (the schema ceiling) one post shoved the next person's photo clean
+// off the screen — so the cost of someone writing at length was paid by everyone below them.
+describe('PostCard — long text on a card', () => {
+  const LONG = 'x'.repeat(500)
+
+  it('clamps the description rather than letting it run the length of the card', () => {
+    renderCard(post({ description: LONG }))
+    const line = screen.getByText(LONG)
+    // The full text IS in the DOM — clamping is visual, so the text stays selectable and
+    // searchable and nothing is silently truncated server-side.
+    expect(line).toBeInTheDocument()
+    expect(line.className).toMatch(/line-clamp-3/)
+  })
+
+  it('clamps a very long dish name to two lines', () => {
+    const NAME = 'y'.repeat(120) // the schema ceiling for a dish name
+    renderCard(post({ dish_name: NAME }))
+    expect(screen.getByText(NAME).className).toMatch(/line-clamp-2/)
+  })
+
+  it('makes the text itself the way to read the rest, when the card can open', () => {
+    // Rather than a "more" link, which would put a second control beside the card's one
+    // deliberate action. Tapping what you were already reading opens the post.
+    const onOpen = vi.fn()
+    render(
+      <MemoryRouter>
+        <PostCard post={post({ description: LONG })} onOpen={onOpen} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByText(LONG))
+    expect(onOpen).toHaveBeenCalled()
+  })
+
+  it('still renders the text when there is nowhere to open (no onOpen)', () => {
+    // The non-tappable branch has to keep the same clamps; a card with no onOpen is a
+    // display-only card, not a broken one.
+    renderCard(post({ description: LONG }))
+    expect(screen.getByText(LONG)).toBeInTheDocument()
+    expect(screen.getByText('Adobo').className).toMatch(/line-clamp-2/)
   })
 })

@@ -203,6 +203,24 @@ add another; the count is a floor, not a fixed number.)
 Internal identifiers (`voice_note`, `soul_count`) may keep their names; **user-facing
 and recruiter-facing text may not**.
 
+### A report is silent, and a block never hides anyone from being reported
+
+Two claims that must stay true in copy and in code (#87).
+
+The app never tells someone they have been reported — not in the inbox, not on their profile,
+not by any change they could notice. Never write copy that implies otherwise ("we'll let them
+know", "they'll be notified"): a report that announces itself is an escalation trigger, and the
+person most likely to retaliate is the person most likely to be reported. The confirmation the
+REPORTER sees says so explicitly, because "will they find out?" is the first thing anyone
+wonders and the answer is the reason they'll use it at all.
+
+And reporting is never gated on blocking. Someone who has blocked you can still be reported by
+you; that is the case the feature exists for. See TESTING.md invariant 12.
+
+Also don't describe reporting as moderation. There is no moderation queue, no review SLA and no
+automated action — a report is a row in a table that a person reads. "We'll take a look" is
+true. "Reviewed within 24 hours" would not be.
+
 ### Never claim a lineage, family tree, or generational graph
 
 Removed in commit `8a3b734`. Gone: the tree model, `parent_recipe_id`,
@@ -392,7 +410,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **59 routes**, **15 models**,
-**475 backend tests**, **730 frontend tests in 51 files**. Endpoint and test counts have
+**510 backend tests**, **745 frontend tests in 51 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

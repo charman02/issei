@@ -1,13 +1,56 @@
-from typing import Optional, Literal
+from typing import Annotated, Optional, Literal
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+
+# ---------------------------------------------------------------------------
+# CEILINGS. Every recipe field was unbounded until now — no `max_length` in the
+# schema and no length on the column either (`Mapped[str] = mapped_column()`
+# infers an unlimited VARCHAR), so a single request could store a megabyte in a
+# dish name and every card in Browse would try to render it.
+#
+# These are deliberately GENEROUS: they exist to refuse abuse and protect the
+# layout, not to edit anyone. No cook writing a real recipe will meet one, and
+# there are no character counters in the UI — hitting a wall produces an honest
+# error through `toUserMessage`, not a nagging countdown while you type.
+#
+# Two rules held to:
+#   - Maxima only. Nothing here makes a field newly REQUIRED; `OriginIn.name`
+#     accepts "" today and a test depends on that. Tightening a minimum is a
+#     separate decision with a different blast radius.
+#   - Match what already exists rather than inventing a parallel scale. A dish
+#     name is 120 because a post's `dish_name` is 120 and they name the same
+#     thing; `source` is 80 because it holds a person's name and `first_name`
+#     is 80.
+# ---------------------------------------------------------------------------
+Text40 = Annotated[str, StringConstraints(max_length=40)]
+Text60 = Annotated[str, StringConstraints(max_length=60)]
+Text80 = Annotated[str, StringConstraints(max_length=80)]
+Text120 = Annotated[str, StringConstraints(max_length=120)]
+Text300 = Annotated[str, StringConstraints(max_length=300)]
+Text500 = Annotated[str, StringConstraints(max_length=500)]
+Text2000 = Annotated[str, StringConstraints(max_length=2000)]
+Text4000 = Annotated[str, StringConstraints(max_length=4000)]
+# A URL the client has already uploaded to Cloudinary. Real ones run ~120 chars;
+# 500 is slack, and the point is that an unbounded string field rendered into an
+# `<img src>` is a place to hide a payload.
+Url500 = Annotated[str, StringConstraints(max_length=500)]
+
+# How MANY child rows one recipe may carry. Length caps alone don't stop the
+# other shape of abuse: 100,000 ingredients of one character each. A recipe with
+# more than a hundred of either is not a recipe.
+MAX_INGREDIENTS = 100
+MAX_STEPS = 100
+MAX_SECTIONS = 30
 
 
 class OriginIn(BaseModel):
-    name: str
-    place: Optional[str] = None
-    year: Optional[str] = None
-    memory: Optional[str] = None
+    # No min_length: "" is accepted here today and the router treats a blank name
+    # as "no origin given" (see `_origin_attribution`). Deliberately unchanged.
+    name: Text120
+    place: Optional[Text120] = None
+    year: Optional[Text40] = None
+    memory: Optional[Text2000] = None
 
 
 # Step schemas
@@ -15,13 +58,17 @@ class OriginIn(BaseModel):
 
 class StepCreate(BaseModel):
     position: int
-    content: str
-    section_header: Optional[str] = None
-    voice_note: Optional[str] = None
+    # 2000 for a step and its note. A step is one instruction — the form's own copy
+    # says "one step per box" — but people do write a paragraph, and a note carrying
+    # the knowledge an ingredient list can't hold is exactly where someone should be
+    # allowed to run on.
+    content: Text2000
+    section_header: Optional[Text120] = None
+    voice_note: Optional[Text2000] = None
     # An already-uploaded photo for this step (POST /upload/recipe-photo returns
     # the URL). Same contract as the recipe's cover_photo_url: the client uploads
     # first and sends back a URL, so recipe writes stay JSON.
-    photo_url: Optional[str] = None
+    photo_url: Optional[Url500] = None
 
 
 class StepResponse(BaseModel):
@@ -39,12 +86,15 @@ class StepResponse(BaseModel):
 
 
 class IngredientCreate(BaseModel):
-    name: str
-    quantity_text: Optional[str] = None
+    name: Text120
+    # The amount as the person wrote it — "3 soup spoons", "a good splash", "about a
+    # kilo". 60 is roomy for any of those and this field is never normalized, so it
+    # has to survive verbatim whatever it holds.
+    quantity_text: Optional[Text60] = None
     quantity_value: Optional[float] = None
-    unit: Optional[str] = None
+    unit: Optional[Text40] = None
     quantity_type: str = "precise"
-    notes: Optional[str] = None
+    notes: Optional[Text300] = None
     position: int
 
 
@@ -129,9 +179,9 @@ class FieldSuggestions(BaseModel):
 
 
 class IngredientSectionCreate(BaseModel):
-    name: str
+    name: Text120
     position: int
-    ingredients: list[IngredientCreate] = []
+    ingredients: list[IngredientCreate] = Field(default=[], max_length=MAX_INGREDIENTS)
 
 
 class IngredientSectionResponse(BaseModel):
@@ -147,17 +197,23 @@ class IngredientSectionResponse(BaseModel):
 
 
 class RecipeCreate(BaseModel):
-    name: str
-    cover_photo_url: Optional[str] = None
-    description: Optional[str] = None
-    story: Optional[str] = None
-    servings: Optional[int] = None
-    prep_time_minutes: Optional[int] = None
-    cuisine: Optional[str] = None
-    diet: Optional[str] = None
-    source: Optional[str] = None
-    notes: Optional[str] = None
-    language: str = "en"
+    # The dish. 120 to match a post's `dish_name` — the two name the same thing, and a
+    # recipe written from the meal composer (#81) carries that value straight across, so
+    # a tighter cap here would reject something the composer just accepted.
+    name: Text120
+    cover_photo_url: Optional[Url500] = None
+    description: Optional[Text500] = None
+    # The person's story about the dish, and the owner's private notes. The two longest
+    # fields in the app on purpose: this is the knowledge an ingredient list can't hold.
+    story: Optional[Text4000] = None
+    servings: Optional[int] = Field(default=None, ge=0, le=1000)
+    prep_time_minutes: Optional[int] = Field(default=None, ge=0, le=100000)
+    cuisine: Optional[Text60] = None
+    diet: Optional[Text60] = None
+    # A PERSON — "from Lola". 80, the same ceiling as `User.first_name`.
+    source: Optional[Text80] = None
+    notes: Optional[Text2000] = None
+    language: Optional[Text40] = "en"
     # Concrete: "public" (anyone/Browse) | "friends" (accepted friends only) | "private"
     # (only me + grantees). The create form auto-selects the default from the author's
     # profile — "public" on a public profile, "friends" on a private one — but the value
@@ -165,15 +221,20 @@ class RecipeCreate(BaseModel):
     # Schema default "friends" is the safe fallback if the client omits it. (The DB
     # column server_default stays "private" for rows inserted outside the app.)
     visibility: Literal["public", "friends", "private"] = "friends"
-    ingredient_sections: list[IngredientSectionCreate] = []
-    ingredients: list[IngredientCreate] = []
-    steps: list[StepCreate] = []
+    # Collection ceilings. Without these, per-field caps are trivially defeated by
+    # sending a hundred thousand one-character ingredients — the request body is the
+    # only thing that would have stopped it.
+    ingredient_sections: list[IngredientSectionCreate] = Field(
+        default=[], max_length=MAX_SECTIONS
+    )
+    ingredients: list[IngredientCreate] = Field(default=[], max_length=MAX_INGREDIENTS)
+    steps: list[StepCreate] = Field(default=[], max_length=MAX_STEPS)
     origin: Optional[OriginIn] = None
 
 
 class CookIn(BaseModel):
-    photo_url: Optional[str] = None
-    note: Optional[str] = None
+    photo_url: Optional[Url500] = None
+    note: Optional[Text2000] = None
 
 
 class RecipeResponse(BaseModel):
@@ -315,23 +376,31 @@ class InvitePreview(BaseModel):
 
 
 class RecipeUpdate(BaseModel):
-    name: Optional[str] = None
-    cover_photo_url: Optional[str] = None
-    description: Optional[str] = None
-    story: Optional[str] = None
-    servings: Optional[int] = None
-    prep_time_minutes: Optional[int] = None
-    cuisine: Optional[str] = None
-    diet: Optional[str] = None
-    source: Optional[str] = None
-    notes: Optional[str] = None
-    language: Optional[str] = None
+    # Same ceilings as RecipeCreate, field for field. They have to match: an edit that
+    # accepted more than a create would be a way in, and one that accepted LESS would
+    # make an already-saved recipe unsavable — you'd open the edit form on your own
+    # recipe and be unable to submit it.
+    name: Optional[Text120] = None
+    cover_photo_url: Optional[Url500] = None
+    description: Optional[Text500] = None
+    story: Optional[Text4000] = None
+    servings: Optional[int] = Field(default=None, ge=0, le=1000)
+    prep_time_minutes: Optional[int] = Field(default=None, ge=0, le=100000)
+    cuisine: Optional[Text60] = None
+    diet: Optional[Text60] = None
+    source: Optional[Text80] = None
+    notes: Optional[Text2000] = None
+    language: Optional[Text40] = None
     visibility: Optional[Literal["public", "friends", "private"]] = None
     # When provided, these fully replace the recipe's existing children.
     # Omit them to leave the collections untouched (scalar-only update).
-    ingredient_sections: Optional[list[IngredientSectionCreate]] = None
-    ingredients: Optional[list[IngredientCreate]] = None
-    steps: Optional[list[StepCreate]] = None
+    ingredient_sections: Optional[list[IngredientSectionCreate]] = Field(
+        default=None, max_length=MAX_SECTIONS
+    )
+    ingredients: Optional[list[IngredientCreate]] = Field(
+        default=None, max_length=MAX_INGREDIENTS
+    )
+    steps: Optional[list[StepCreate]] = Field(default=None, max_length=MAX_STEPS)
     # Editing the "passed down from" attribution. Sent as a structured OriginIn
     # (same as create) and flattened to origin_attribution in the router. A null
     # name clears the byline; omitting the field entirely leaves it untouched.

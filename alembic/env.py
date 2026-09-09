@@ -33,6 +33,7 @@ from app.models.recipe_save import RecipeSave  # noqa: F401
 from app.models.recipe_request import RecipeRequest  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.block import Block  # noqa: F401
+from app.models.report import Report  # noqa: F401
 
 target_metadata = Base.metadata
 

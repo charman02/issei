@@ -85,6 +85,19 @@ describe('PostPage (#71)', () => {
     expect(await screen.findByText('author profile')).toBeInTheDocument()
   })
 
+  it('shows the WHOLE description — a permalink is where you read it', async () => {
+    // The other half of PostCard's clamp, and the reason the clamp is acceptable there: a feed
+    // is scanned, so a long line is trimmed and the card opens; this page is the destination, so
+    // nothing is trimmed. If someone ever adds a line-clamp here, tapping through from the feed
+    // would stop being a way to read the rest and the truncation would have nowhere to resolve.
+    const LONG = 'x'.repeat(500) // the schema ceiling for a post description
+    getPost.mockResolvedValue({ data: postData({ description: LONG }) })
+    renderPost()
+    const line = await screen.findByText(LONG)
+    expect(line.className).not.toMatch(/line-clamp/)
+    expect(line.className).not.toMatch(/truncate/)
+  })
+
   it('shows a not-available message on a 404 (a post you may not see, or gone)', async () => {
     getPost.mockRejectedValue({ response: { status: 404 } })
     renderPost()

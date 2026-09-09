@@ -13,6 +13,7 @@ from app.models.post import Post
 from app.models.handoff import Handoff
 from app.models.friendship import Friendship
 from app.models.block import Block
+from app.models.report import Report
 from app.schemas.friend import (
     BlockRequestIn,
     BlockedPerson,
@@ -22,6 +23,7 @@ from app.schemas.friend import (
     FriendSuggestion,
     ProfileResponse,
 )
+from app.schemas.report import ReportUserIn
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.friends import existing_friendship, friend_ids
 from app.services.notifications import ANONYMOUS_TYPES, notify
@@ -348,6 +350,76 @@ def friend_suggestions(
             )
         )
     return out
+
+
+@router.post("/reports", status_code=status.HTTP_204_NO_CONTENT)
+def report_user(
+    body: ReportUserIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Report a person for review (#87). The other half of blocking.
+
+    A block is something you do FOR YOURSELF and it works instantly; a report goes to whoever
+    runs the app and works when a human looks. Only having the first leaves someone free to move
+    on to the next person, which is why both exist and why they live side by side in the UI.
+    It's also a hard App Store requirement (Guideline 1.2) for an app carrying user content.
+
+    THREE THINGS HERE ARE DELIBERATE, and each looks wrong from one angle:
+
+    1. **No block check, in either direction.** Every other route in this file consults
+       `is_blocked`; this one must not. Otherwise someone harasses you, blocks you, and becomes
+       permanently unreportable — the block becoming cover for the person who earned it. That is
+       the single most important case this endpoint serves, so it is pinned by a test.
+
+    2. **204, and the reported person is never told.** No notification, nothing. Telling them
+       turns a safety mechanism into an escalation trigger, and the person most likely to
+       retaliate is the person most likely to be reported. Same reasoning that keeps a block
+       silent and a keep anonymous: the app doesn't manufacture contact nobody asked for.
+
+    3. **One OPEN report per reporter per person.** A second tap while one is still open is
+       accepted and thrown away rather than stored, so the table can't be flooded and a
+       moderator sees one row per grievance. Deduped in Python rather than by a UNIQUE
+       constraint, because the rule has a state predicate in it (`state == "open"`) and a
+       constraint can't express that — the same reason `notify()` dedupes here rather than in
+       the schema. A report filed after the first was CLOSED is a new report, correctly: it
+       means it happened again.
+
+    404 for an unknown user id, matching `/friends/profile/{id}`. 400 for reporting yourself —
+    not a 404, because there is nothing to hide about your own existence and a silent success
+    would be a worse answer than an honest refusal.
+    """
+    if body.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You can’t report yourself")
+
+    target = db.query(User).filter(User.id == body.user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    already = (
+        db.query(Report.id)
+        .filter(
+            Report.reporter_id == current_user.id,
+            Report.reported_user_id == body.user_id,
+            Report.state == "open",
+        )
+        .first()
+    )
+    if already is None:
+        note = (body.note or "").strip() or None
+        db.add(
+            Report(
+                reporter_id=current_user.id,
+                reported_user_id=body.user_id,
+                reason=body.reason,
+                note=note,
+            )
+        )
+        db.commit()
+    # Either way the caller gets the same 204. Whether this was their first report or their
+    # fifth is not information the UI needs, and "you already reported this person" is a
+    # sentence that makes someone doubt the first one landed.
+    return None
 
 
 @router.get("/blocks", response_model=list[BlockedPerson])

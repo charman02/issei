@@ -232,6 +232,33 @@ Two model constraints break separately and each has its own test:
 - **Not a foreign key.** A FK to `posts.id` would `SET NULL` when that post is deleted, resetting
   the user to "never looked" and resurfacing their whole feed as new. It is a watermark.
 
+### Invariant 12 — a block must never hide someone from being REPORTED
+
+Every people-returning route in `routers/friends.py` consults `is_blocked`. `report_user` (#87)
+deliberately does not, in either direction, and that asymmetry is the whole point: gate it and
+someone harasses you, blocks you, and becomes permanently unreportable — the block turning into
+cover for the person who earned it. It looks like an oversight sitting next to five routes that
+do check, which is exactly why it is pinned.
+→ `tests/test_reports.py::test_you_can_report_someone_who_has_BLOCKED_YOU`,
+`test_you_can_report_someone_YOU_have_blocked`.
+
+Two more properties of a report, both of which would be easy to "improve" into a bug:
+
+- **Silent.** The reported person is never told, by any channel. Telling them turns a safety
+  mechanism into an escalation trigger, and the person most likely to retaliate is the person
+  most likely to be reported. Same reasoning as the silent block and the anonymous keep.
+  → `test_reporting_notifies_NOBODY`, `test_nothing_the_reported_person_can_read_changes`, and
+  `frontend/src/pages/UserProfile.test.jsx` — "never says the reported person will hear about it".
+- **One OPEN report per reporter per person**, deduped in Python because the rule has a state
+  predicate a UNIQUE constraint can't express. A repeat while one is open is accepted and
+  discarded (the FIRST account is kept — a later duplicate must not overwrite what someone
+  originally said), and the caller gets the same 204 either way, because "you already reported
+  this person" makes someone doubt the first one landed. A report filed after the first was
+  CLOSED is a NEW report: it means it happened again.
+  → `test_a_second_report_while_the_first_is_OPEN_is_not_stored`,
+  `test_a_report_after_the_first_was_CLOSED_is_a_new_report`,
+  `test_the_caller_cannot_tell_a_duplicate_from_a_first_report`.
+
 ### Invariant 11 — a keeper count is the cook's alone, and a keeper's NAME is nobody's
 
 Two separable claims, and the second is the one to guard hardest.

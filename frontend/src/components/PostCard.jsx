@@ -125,15 +125,39 @@ export default function PostCard({ post, onOpen }) {
         />
       )}
 
-      {/* Dish name + optional line. */}
+      {/* Dish name + optional line, both CLAMPED on a card.
+          A feed is scanned; a permalink is read. Neither of these was clamped, and with a
+          500-character description (the schema ceiling) one post pushed the next person's photo
+          clean off the screen — so the cost of someone writing at length was paid by everyone
+          below them in the feed. Two lines for the dish name, three for the line under it, and
+          the browser's own ellipsis is the "there's more" signal; the post page shows the whole
+          thing unclamped.
+          Wrapped in the same tap target as the photo (when there is one), so the way to read the
+          rest is to tap what you were already reading — rather than a "more" link, which would
+          put a second control next to the card's one deliberate action. */}
       <div className="px-3.5 py-3">
-        <h3 className="font-display font-black text-[18px] text-ink leading-tight">
-          {post.dish_name}
-        </h3>
-        {post.description && (
-          <p className="font-display text-[14px] text-ink-soft leading-snug mt-1">
-            {post.description}
-          </p>
+        {onOpen ? (
+          <button onClick={onOpen} className="block w-full text-left">
+            <h3 className="font-display font-black text-[18px] text-ink leading-tight line-clamp-2">
+              {post.dish_name}
+            </h3>
+            {post.description && (
+              <p className="font-display text-[14px] text-ink-soft leading-snug mt-1 line-clamp-3">
+                {post.description}
+              </p>
+            )}
+          </button>
+        ) : (
+          <>
+            <h3 className="font-display font-black text-[18px] text-ink leading-tight line-clamp-2">
+              {post.dish_name}
+            </h3>
+            {post.description && (
+              <p className="font-display text-[14px] text-ink-soft leading-snug mt-1 line-clamp-3">
+                {post.description}
+              </p>
+            )}
+          </>
         )}
         {/* The action row. A post whose recipe you CAN read links through to it; one you
             can't gets the ask. Exactly one of the two, because `recipe_id` arrives nulled

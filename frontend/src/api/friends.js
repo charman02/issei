@@ -35,3 +35,16 @@ export const unblockUser = (userId) => client.delete(`/friends/blocks/${userId}`
 // Only people YOU have blocked — never who has blocked you. This list is the ONLY way to
 // unblock: once blocked, their profile 404s, so the control can't live there.
 export const getBlocks = () => client.get('/friends/blocks')
+
+// Reporting (#87) — the other half of blocking, and a different act. A block is something you
+// do FOR YOURSELF and it takes effect instantly; a report goes to whoever runs the app and takes
+// effect when a human looks. Only having the block leaves someone free to move on to the next
+// person. It's also required to ship an app with user content to the App Store.
+//
+// `reason` is one of harassment | spam | inappropriate | impersonation | other; `note` is the
+// reporter's own words and optional. Answers 204 — the reported person is never told, and the
+// caller can't tell a first report from a duplicate (deliberate: "you already reported them"
+// makes someone doubt the first one landed). NOT gated on blocking in either direction, so you
+// can still report someone who has blocked you.
+export const reportUser = (userId, reason, note) =>
+  client.post('/friends/reports', { user_id: userId, reason, note: note || null })

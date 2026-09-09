@@ -98,6 +98,21 @@ strangers arrive. Security/privacy first.
   flagged:* it's a performance optimization that can become a leak if used carelessly. *Where:*
   `app/services/sharing.py`; callers in `app/routers/posts.py`, `recipes.py`, `friends.py`.
 
+- **Reports go into a table nobody can read from inside the app.** (#87)
+  `POST /friends/reports` stores the row; there is no endpoint, page or notification to get it
+  back out, because reading other people's reports needs an admin role this app has no concept
+  of and inventing one to avoid opening a database console would have been the larger mistake.
+  Consequence: a report is only acted on if someone remembers to query Postgres. That is
+  honest for one operator and an obvious failure at any scale — and it is worth being precise
+  that the App Store gate asks for a way for USERS to report, which this satisfies, not for a
+  demonstrated review process. *Fix:* an owner-only surface (the simplest honest version is a
+  `GET` gated on a single admin user id in config) plus a way to mark a report `closed`, which
+  the dedupe already depends on — today nothing can move a report out of `open`, so a second
+  report from the same person about a genuinely new incident is silently dropped forever.
+  *Why flagged:* the dedupe rule and the missing close action interact, and that interaction is
+  a data-loss path, not just a gap. *Where:* `app/routers/friends.py::report_user`,
+  `app/models/report.py`.
+
 - **A profile grid now has TWO ceilings, and "Show all" only lifts one.** (#98)
   `ProfileContent` previews six items per tab behind a "Show all N" button, but the endpoints
   behind it cap at 30 server-side (`PROFILE_GRID_LIMIT`, `FEED_PAGE`). So the button reveals

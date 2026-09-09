@@ -11,6 +11,7 @@ vi.mock('../api/friends', () => ({
   getFriends: vi.fn(() => Promise.resolve({ data: [] })),
   getFriendRequests: vi.fn(() => Promise.resolve({ data: [] })),
   blockUser: vi.fn(() => Promise.resolve({})),
+  reportUser: vi.fn(() => Promise.resolve({})),
 }))
 vi.mock('../api/client', () => ({ default: {}, toUserMessage: (e, f) => f }))
 // UserProfile now renders <ProfileContent>, which loads the person's recipes + posts.
@@ -22,7 +23,7 @@ vi.mock('../api/sharing', () => ({
 vi.mock('../api/posts', () => ({
   getUserPosts: vi.fn(() => Promise.resolve({ data: [] })),
 }))
-import { getUserProfile, requestFriend, blockUser } from '../api/friends'
+import { getUserProfile, requestFriend, blockUser, reportUser } from '../api/friends'
 import { getUserRecipes } from '../api/sharing'
 import UserProfile from './UserProfile'
 
@@ -151,20 +152,63 @@ describe('UserProfile', () => {
 
 // Blocking (#85). Deliberately two taps, and secondary without being faint: it's a safety control, it
 // deletes the friendship, and it can't be undone from here — once blocked this profile 404s.
-describe('UserProfile — blocking', () => {
-  it('offers a small block chip, not a control competing with Add friend', async () => {
+// Both safety acts now live behind a ⋯ at the bottom of the page. The menu is the point: a red
+// "Block" button sitting in the open reads as the page SUGGESTING something about a person you
+// were only looking at, and an unlabelled ⋯ is not the same thing as a faint control — it's a
+// universally understood affordance, one tap from either option.
+const openMenu = async () => {
+  await userEvent.click(await screen.findByRole('button', { name: /more options for lola/i }))
+}
+
+describe('UserProfile — the safety menu', () => {
+  it('shows only a ⋯ at rest — neither option is on the page', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    const link = await screen.findByRole('button', { name: /^block$/i })
-    expect(link).toBeInTheDocument()
-    // The primary action stays the social one.
+    expect(
+      await screen.findByRole('button', { name: /more options for lola/i }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^block lola$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^report lola$/i })).toBeNull()
+    // The primary action on the page is still the social one.
     expect(screen.getByRole('button', { name: /add friend/i })).toBeInTheDocument()
   })
 
+  it('opens to both options, each naming the person', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openMenu()
+    // Named, so neither can be tapped without knowing who it lands on.
+    expect(screen.getByRole('button', { name: /^report lola$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^block lola$/i })).toBeInTheDocument()
+  })
+
+  it('closes again without doing anything', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+    expect(
+      await screen.findByRole('button', { name: /more options for lola/i }),
+    ).toBeInTheDocument()
+    expect(blockUser).not.toHaveBeenCalled()
+    expect(reportUser).not.toHaveBeenCalled()
+  })
+
+  it('never offers any of it on your own profile', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 2 }))
+    getUserProfile.mockResolvedValue({ data: profile({ user_id: 2 }) })
+    renderAt('2')
+    await screen.findByText(/Lola/)
+    expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
+  })
+})
+
+describe('UserProfile — blocking', () => {
   it('asks first, and names every consequence before doing it', async () => {
     getUserProfile.mockResolvedValue({ data: profile({ friend_state: 'accepted' }) })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /^block lola$/i }))
     // Not a bare "are you sure?" — it says what happens.
     expect(screen.getByText(/won.t see each other anywhere/i)).toBeInTheDocument()
     expect(screen.getByText(/can.t ask you for a\s+recipe/i)).toBeInTheDocument()
@@ -176,19 +220,23 @@ describe('UserProfile — blocking', () => {
     expect(blockUser).not.toHaveBeenCalled()
   })
 
-  it('backing out does nothing at all', async () => {
+  it('backing out of the confirm does nothing at all', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /^block lola$/i }))
     await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
     expect(blockUser).not.toHaveBeenCalled()
-    expect(await screen.findByRole('button', { name: /^block$/i })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: /more options for lola/i }),
+    ).toBeInTheDocument()
   })
 
   it('blocks, then leaves — this profile is a 404 for us now', async () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /^block lola$/i }))
     await userEvent.click(screen.getByRole('button', { name: /block them/i }))
     await waitFor(() => expect(blockUser).toHaveBeenCalledWith(2))
     // Staying would render an error screen, so it navigates away.
@@ -199,17 +247,100 @@ describe('UserProfile — blocking', () => {
     getUserProfile.mockResolvedValue({ data: profile() })
     blockUser.mockRejectedValueOnce(new Error('offline'))
     renderAt()
-    await userEvent.click(await screen.findByRole('button', { name: /^block$/i }))
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /^block lola$/i }))
     await userEvent.click(screen.getByRole('button', { name: /block them/i }))
     expect(await screen.findByText(/couldn.t block them just now/i)).toBeInTheDocument()
     expect(screen.queryByText('friends page')).not.toBeInTheDocument()
   })
+})
 
-  it('never offers to block yourself', async () => {
-    localStorage.setItem('issei_user', JSON.stringify({ id: 2 }))
-    getUserProfile.mockResolvedValue({ data: profile({ user_id: 2 }) })
-    renderAt('2')
-    await screen.findByText(/Lola/)
-    expect(screen.queryByRole('button', { name: /block/i })).not.toBeInTheDocument()
+describe('UserProfile — reporting (#87)', () => {
+  const openReport = async () => {
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: /^report lola$/i }))
+  }
+
+  it('says where the report goes, and that it is not a block', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    // The two things someone actually wonders, answered before they send it.
+    expect(screen.getByText(/goes to us, not to them/i)).toBeInTheDocument()
+    expect(screen.getByText(/doesn.t hide either of you from the other/i)).toBeInTheDocument()
+  })
+
+  it('sends a reason with no note — a reason alone is a valid report', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await waitFor(() => expect(reportUser).toHaveBeenCalledWith(2, 'harassment', ''))
+  })
+
+  it('sends the chosen reason and what you typed', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.selectOptions(screen.getByLabelText(/what.s wrong/i), 'spam')
+    await userEvent.type(screen.getByLabelText(/anything you want to add/i), 'same link 40 times')
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await waitFor(() =>
+      expect(reportUser).toHaveBeenCalledWith(2, 'spam', 'same link 40 times'),
+    )
+  })
+
+  it('confirms afterwards that the person was NOT told', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    expect(await screen.findByText(/we.ll take a look/i)).toBeInTheDocument()
+    // The reassurance that matters: reporting is silent, and nothing about your account moved.
+    expect(screen.getByText(/hasn.t been told/i)).toBeInTheDocument()
+  })
+
+  it('offers the block as the obvious next step, without doing it', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /block them too/i }))
+    // It opens the confirm; it does not block on one tap.
+    expect(screen.getByText(/won.t see each other anywhere/i)).toBeInTheDocument()
+    expect(blockUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps what you typed when sending fails', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    reportUser.mockRejectedValueOnce(new Error('offline'))
+    renderAt()
+    await openReport()
+    await userEvent.type(screen.getByLabelText(/anything you want to add/i), 'it happened twice')
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    expect(await screen.findByText(/couldn.t send that just now/i)).toBeInTheDocument()
+    // Retyping an account of something upsetting is the last thing to ask of someone.
+    expect(screen.getByLabelText(/anything you want to add/i)).toHaveValue('it happened twice')
+  })
+
+  it('backing out of the report does nothing', async () => {
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+    expect(reportUser).not.toHaveBeenCalled()
+    expect(
+      await screen.findByRole('button', { name: /more options for lola/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('never says the reported person will hear about it', async () => {
+    // A report that announces itself is an escalation trigger. The copy must never imply one.
+    getUserProfile.mockResolvedValue({ data: profile() })
+    renderAt()
+    await openReport()
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await screen.findByText(/we.ll take a look/i)
+    expect(document.body.textContent).not.toMatch(/they.ll be notified|we.ll tell them|has been told/i)
   })
 })
