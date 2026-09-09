@@ -88,6 +88,17 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             # Same reason — the cached user drives the You-box avatar; a re-login that
             # dropped it would blank the photo back to the monogram until the next edit.
             "photo_url": user.photo_url,
+            # Notification settings (#89). THIS DICT IS HAND-BUILT AND HAS TO BE KEPT IN STEP
+            # WITH `UserResponse` — the identical omission has shipped twice, and it fails only
+            # in the window between login and the first `reconcile()`, so it passes every backend
+            # test and every component test with a seeded cache. A settings screen would render a
+            # switch as `undefined` (reading as off) for exactly one page load.
+            "timezone": user.timezone,
+            "notify_hour": user.notify_hour,
+            "notify_prompt": user.notify_prompt,
+            "notify_people": user.notify_people,
+            "quiet_from": user.quiet_from,
+            "quiet_to": user.quiet_to,
         },
     }
 
@@ -188,6 +199,31 @@ def update_me(
         db.query(Post).filter(Post.user_id == current_user.id).update(
             {Post.visibility: target}, synchronize_session=False
         )
+
+    # Notification settings (#89). Applied last and plainly: each is independent, none needs a
+    # password (they change nothing anyone else can see and nothing that can't be undone), and
+    # `None` means unchanged like everywhere else here.
+    #
+    # `timezone` arrives on LOGIN and SIGNUP too, not just from a settings screen — a user who
+    # never opens settings still has to be reachable at a sane hour, and it is the client that
+    # knows the answer (Intl.DateTimeFormat().resolvedOptions().timeZone). It is also the one
+    # field here a user does not consciously set, which is why it is not rendered as a control.
+    #
+    # No cross-field validation: `quiet_from == quiet_to` means "no quiet hours" rather than a
+    # 24-hour blackout (see `services/push.in_quiet_hours`), and a `notify_hour` that lands inside
+    # someone's own quiet window is a coherent configuration meaning "not for now" — refusing
+    # either would be the app second-guessing a choice it can't actually read the intent of.
+    for field in (
+        "timezone",
+        "notify_hour",
+        "notify_prompt",
+        "notify_people",
+        "quiet_from",
+        "quiet_to",
+    ):
+        value = getattr(update, field)
+        if value is not None:
+            setattr(current_user, field, value)
 
     db.commit()
     db.refresh(current_user)

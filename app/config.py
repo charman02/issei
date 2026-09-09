@@ -29,6 +29,27 @@ class Settings(BaseSettings):
     sender_email: str = ""
     # Frontend URL used to build the reset link in the email.
     app_url: str = "https://issei.app"
+    # Web Push / VAPID (#89). Both DEFAULT TO "" and that is load-bearing, not laziness: CI
+    # sets only DATABASE_URL and JWT_SECRET, and the container build runs
+    # `python -c "import app.main"` with just those two — a required field here would raise at
+    # import and break the deploy before anything reached prod. With them empty,
+    # `services/push.is_configured()` is False and every send is a logged no-op, so the app
+    # behaves exactly as it did before push existed.
+    #
+    # The keypair is a P-256 ECDSA key, generated once (see infra/RUNBOOK.md) and stored as
+    # base64url of the raw 32-byte private scalar. The PUBLIC key is not secret — the browser
+    # needs it to subscribe, so it is served to the client — but it lives here rather than in
+    # the frontend bundle so a rotation is a deploy and not a rebuild.
+    #
+    # ADDING THESE TO PROD MEANS FOUR EDITS AND ONLY ONE OF THEM SHIPS: the SSM parameter,
+    # `ssmParams` in infra/lib/issei-stack.ts, `secrets[]` in .aws/task-definition.json (this is
+    # the one the pipeline actually renders), and this class. Miss the task-definition entry and
+    # the variable is simply absent in prod while the stack file looks correct.
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
+    # The "sub" claim in the VAPID JWT — a mailto: or https: URL a push service can contact if
+    # our sends misbehave. Required by RFC 8292 whenever a key is configured.
+    vapid_subject: str = "mailto:hello@issei.app"
 
     model_config = ConfigDict(env_file=".env", extra="ignore")
 

@@ -40,6 +40,21 @@ class UserResponse(UserBase):
     profile_visibility: str = "private"
     # Cloudinary URL of the profile picture, or None → the UI shows the monogram.
     photo_url: Optional[str] = None
+    # Notification settings (#89). SERVER-OWNED, unlike every other settings toggle in this app,
+    # which lives in the client's `issei_prefs` localStorage bag. That difference is the whole
+    # point: a push is delivered with the browser closed, by a server that cannot read
+    # localStorage — so a preference stored there would look correct in every test and in local
+    # use, while a user who switched notifications OFF kept receiving them.
+    #
+    # Safe to expose on read: all five are NOT NULL with server_defaults, so no stored row can
+    # violate the type (the same reasoning that puts `profile_visibility` here). `timezone` is
+    # nullable because every account predating #89 has none.
+    timezone: Optional[str] = None
+    notify_hour: int = 18
+    notify_prompt: bool = True
+    notify_people: bool = True
+    quiet_from: int = 22
+    quiet_to: int = 8
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -79,3 +94,21 @@ class AccountUpdate(BaseModel):
     # which nothing did — a megabyte of string beginning "https://x.cloudinary.com/" passed
     # every check that existed. No min_length, because "" is how you remove the photo.
     photo_url: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+    # Notification settings (#89). All optional, `None` = unchanged, like everything else here.
+    #
+    # `timezone` is sent by the CLIENT from Intl.DateTimeFormat().resolvedOptions().timeZone —
+    # on login and on signup, not just from a settings screen, because a user who never opens
+    # settings still needs to be reachable at a sane hour. Bounded but NOT checked against the tz
+    # database: an unknown zone degrades to "never due" with a log in
+    # `services/prompt.local_now()`, which is better than 422ing someone whose browser reports a
+    # zone this Python build hasn't heard of.
+    #
+    # The hours are bounded 0-23, and that is not a validation nicety: the scheduler compares
+    # `notify_hour` against a real clock hour, so an out-of-range value means a user who is never
+    # due again — a silent opt-out they didn't ask for.
+    timezone: Optional[Annotated[str, StringConstraints(max_length=64)]] = None
+    notify_hour: Optional[int] = Field(default=None, ge=0, le=23)
+    notify_prompt: Optional[bool] = None
+    notify_people: Optional[bool] = None
+    quiet_from: Optional[int] = Field(default=None, ge=0, le=23)
+    quiet_to: Optional[int] = Field(default=None, ge=0, le=23)

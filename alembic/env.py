@@ -41,6 +41,8 @@ from app.models.report import Report  # noqa: F401
 # would have written into a migration, and `main` runs migrations against Neon on push.
 # Every model belongs here, whether or not anything else in this file mentions it.
 from app.models.password_reset import PasswordResetToken  # noqa: F401
+from app.models.push_subscription import PushSubscription  # noqa: F401
+from app.models.prompt_send import PromptSend  # noqa: F401
 
 target_metadata = Base.metadata
 

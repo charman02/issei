@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth import get_current_user
+from app.config import settings
 from app.models.user import User
+from app.models.push_subscription import PushSubscription
 from app.models.post import Post
 from app.models.recipe import Recipe
 from app.models.notification import Notification
@@ -12,6 +14,12 @@ from app.schemas.notification import (
     NotificationList,
     NotificationResponse,
 )
+from app.schemas.push import (
+    PushSubscriptionIn,
+    PushSubscriptionRotate,
+    VapidKeyResponse,
+)
+from app.services import push
 from app.services.notifications import ANONYMOUS_TYPES, mark_read, unread_count
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -122,3 +130,164 @@ def read_notifications(
     """
     mark_read(db, current_user.id, body.ids if body else None)
     return list_notifications(before_id=None, current_user=current_user, db=db)
+
+
+# --- Web Push subscriptions (#89) -----------------------------------------------------------
+#
+# THREE routes, and the shape of each is decided by where the CALLER runs.
+#
+# `GET /notifications/vapid-key`   a page, before subscribing
+# `POST /notifications/subscribe`  a page, after the user grants permission (authenticated)
+# `POST /notifications/subscribe/rotate`  a SERVICE WORKER, with no user and no token
+#
+# Subscriptions are PER DEVICE and preferences are PER PERSON (on `users`), so these endpoints are
+# deliberately independent of the preference ones: a user can legitimately have notifications
+# switched on and zero subscriptions — that is exactly someone who hasn't installed the app
+# anywhere yet.
+
+
+@router.get("/vapid-key", response_model=VapidKeyResponse)
+def vapid_key():
+    """The public key a browser needs in order to subscribe at all.
+
+    UNAUTHENTICATED, and that's correct: this value is handed to every client by design (it is the
+    application server's public identity), and requiring a token would mean the service worker
+    couldn't read it either.
+
+    `configured` is the honest half. With no keypair set, this returns an empty key and False
+    rather than 404ing, so the client can show "notifications aren't available" instead of
+    subscribing against an empty string — which would mint a subscription that can never be
+    delivered to and looks fine from the browser's side.
+    """
+    return VapidKeyResponse(
+        public_key=settings.vapid_public_key, configured=push.is_configured()
+    )
+
+
+@router.post("/subscribe", status_code=status.HTTP_204_NO_CONTENT)
+def subscribe(
+    body: PushSubscriptionIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Register this device to receive pushes.
+
+    IDEMPOTENT ON THE ENDPOINT, which the browser mints — so re-granting permission, or a second
+    visit from the same install, updates the existing row rather than adding a duplicate. Without
+    that, a user who reinstalls a few times receives the same notification several times.
+
+    Re-subscribing MOVES a row between accounts rather than refusing. Two people sharing a device
+    is a real case (a family phone, exactly the audience this app is for), and the browser gives
+    the same endpoint to whoever is signed in — so the last person to grant permission is the one
+    who should receive it. Refusing would silently deliver one person's notifications to another,
+    which is the worse failure by a distance.
+
+    204: there is nothing to tell the caller. The row is a fact about their device, not content.
+    """
+    existing = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.endpoint == body.endpoint)
+        .first()
+    )
+    if existing is not None:
+        existing.user_id = current_user.id
+        existing.p256dh = body.p256dh
+        existing.auth = body.auth
+        existing.user_agent = body.user_agent
+    else:
+        db.add(
+            PushSubscription(
+                user_id=current_user.id,
+                endpoint=body.endpoint,
+                p256dh=body.p256dh,
+                auth=body.auth,
+                user_agent=body.user_agent,
+            )
+        )
+    db.commit()
+    return None
+
+
+@router.delete("/subscribe", status_code=status.HTTP_204_NO_CONTENT)
+def unsubscribe(
+    body: PushSubscriptionIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Stop pushing to THIS device. Only ever the caller's own row.
+
+    Scoped to `user_id` as well as endpoint, so presenting someone else's endpoint deletes nothing
+    — and 204 either way, so a caller can't use this to discover whether an endpoint belongs to
+    another account.
+
+    Takes the whole subscription object rather than just an endpoint because that is what the
+    browser has in hand (`registration.pushManager.getSubscription()`), and asking a client to
+    pick one field apart is how a mismatch gets introduced.
+    """
+    db.query(PushSubscription).filter(
+        PushSubscription.endpoint == body.endpoint,
+        PushSubscription.user_id == current_user.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return None
+
+
+@router.post("/subscribe/rotate", status_code=status.HTTP_204_NO_CONTENT)
+def rotate_subscription(
+    body: PushSubscriptionRotate,
+    db: Session = Depends(get_db),
+):
+    """Replace a subscription the browser rotated. NO AUTHENTICATION, deliberately.
+
+    Chrome fires `pushsubscriptionchange` inside the service worker: no page, no localStorage, no
+    JWT — the axios interceptor that adds the bearer token isn't even loaded, because there is no
+    axios. A route that required auth here would mean a rotated endpoint silently stops receiving
+    anything, forever, with no signal to either side. That is a worse failure than the one below.
+
+    THE OLD ENDPOINT IS THE CREDENTIAL. It is a long unguessable URL that only the browser and this
+    server ever held, so presenting it is evidence of holding the previous subscription — the same
+    reasoning as the invite token being the capability (see `claim_invite`). What it buys an
+    attacker who somehow obtains one: the ability to redirect that device's notifications to
+    another endpoint they control. That is a real cost, and it is bounded — they learn nothing about
+    the account, cannot read anything, and cannot discover the endpoint from any surface here.
+    A 404 for an unknown old endpoint is the same answer as for one belonging to someone else.
+
+    The user_id is carried over from the row being replaced, never taken from the request, so this
+    cannot be used to attach a device to an arbitrary account.
+    """
+    old = (
+        db.query(PushSubscription)
+        .filter(PushSubscription.endpoint == body.old_endpoint)
+        .first()
+    )
+    if old is None:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+
+    owner_id = old.user_id
+    new = body.subscription
+    if new.endpoint == body.old_endpoint:
+        # A rotation that didn't rotate. Update the keys in place — the browser may have changed
+        # only those — rather than deleting and re-inserting the same row.
+        old.p256dh = new.p256dh
+        old.auth = new.auth
+        old.user_agent = new.user_agent
+        db.commit()
+        return None
+
+    # The new endpoint may already exist (a race, or a browser that pre-registered it). Replace it
+    # rather than colliding with the UNIQUE constraint.
+    db.query(PushSubscription).filter(
+        PushSubscription.endpoint == new.endpoint
+    ).delete(synchronize_session=False)
+    db.delete(old)
+    db.add(
+        PushSubscription(
+            user_id=owner_id,
+            endpoint=new.endpoint,
+            p256dh=new.p256dh,
+            auth=new.auth,
+            user_agent=new.user_agent,
+        )
+    )
+    db.commit()
+    return None

@@ -43,6 +43,20 @@ MarkupSafe==3.0.3          # via Mako
 # --- AWS SES email (direct: boto3) ---
 boto3                          # (direct) password-reset emails via SES
 
+# --- timezone database (direct: tzdata) — #89 ---
+# NOT optional, and not a convenience. The daily prompt fires at a fixed hour in each user's
+# LOCAL time, so `zoneinfo.ZoneInfo("Asia/Manila")` has to resolve — and `zoneinfo` reads the
+# SYSTEM tz database, which python:3.13-slim does not ship. Without this package every lookup
+# raises ZoneInfoNotFoundError, `services/prompt.local_now()` returns None for everyone, and
+# NOBODY IS EVER DUE: push notifications would be fully built and silently send nothing.
+#
+# Found the honest way — it failed locally first, because Windows has no system tz database
+# either, so the same bug is reproducible on a dev box. CI (ubuntu-latest) DOES have tzdata, so
+# a CI-only check would have passed and this would have shipped.
+#
+# Pure data, no transitive dependencies, ~700KB.
+tzdata==2026.3                 # (direct) required by zoneinfo for local-time sending
+
 # --- outbound HTTP: OpenRouter + Cloudinary (direct: httpx, cloudinary) ---
 httpx==0.28.1
 httpcore==1.0.9            # via httpx
