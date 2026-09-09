@@ -381,3 +381,89 @@ def test_a_signed_in_USER_cannot_trigger_it(client, make_user, monkeypatch):
     monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
     _, h = make_user()
     assert client.post("/notifications/run-daily-prompt", headers=h).status_code == 404
+
+
+# --- the two review findings on this surface ---
+
+
+def test_an_endpoint_must_be_an_https_PUBLIC_url(client, make_user):
+    """`endpoint` is not like the two keys beside it: it is a URL the server DIALS from inside the
+    VPC, on an hourly schedule. Review confirmed the unvalidated version accepted the cloud metadata
+    address, loopback and file:// — an authenticated SSRF primitive.
+
+    The repo already set the opposite precedent: PATCH /auth/me validates an avatar down to a
+    Cloudinary HTTPS host.
+    """
+    _, h = make_user()
+    hostile = [
+        "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+        "http://127.0.0.1:8000/health",
+        "https://127.0.0.1/x",
+        "file:///etc/passwd",
+        "not-a-url",
+        "https://localhost/x",  # single-label host
+        "https://10.0.0.5/x",
+        "https://192.168.1.1/x",
+        "https://172.17.0.1/x",
+    ]
+    for url in hostile:
+        assert (
+            client.post(
+                "/notifications/subscribe", json=_sub(endpoint=url), headers=h
+            ).status_code
+            == 422
+        ), url
+
+    # And every real push service still works — a check that rejected a browser's own host would
+    # break the feature rather than protect it.
+    for url in [
+        "https://fcm.googleapis.com/fcm/send/abc123",
+        "https://web.push.apple.com/QQAA-Bcdef",
+        "https://updates.push.services.mozilla.com/wpush/v2/xyz",
+        "https://wns2-par02p.notify.windows.com/w/?token=abc",
+    ]:
+        assert (
+            client.post(
+                "/notifications/subscribe", json=_sub(endpoint=url), headers=h
+            ).status_code
+            == 204
+        ), url
+
+
+def test_a_non_ascii_cron_key_is_a_404_not_a_500(monkeypatch):
+    """`compare_digest` on two `str` raises TypeError the moment either holds a non-ASCII character,
+    and Starlette latin-1-decodes header bytes — so one 0x80-0xFF byte in this header was an
+    unauthenticated 500 on demand. Worse: a 500 where a wrong key gives 404 is exactly the oracle
+    this route's docstring claims does not exist. It revealed that the deploy HAS a cron secret.
+
+    CALLED DIRECTLY rather than through the TestClient, and that is not laziness — httpx refuses to
+    encode a non-ASCII header value on the CLIENT side, so no test routed through TestClient can
+    reproduce this at all, while curl or any raw socket sends the byte happily. Reaching for the
+    handler is the only way to pin behaviour a real caller can actually reach.
+    """
+    from fastapi import HTTPException
+
+    from app.config import settings
+    from app.routers.notifications import run_daily_prompt_endpoint
+
+    monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
+
+    # A latin-1-decoded high byte is exactly what Starlette hands the handler.
+    non_ascii = bytes([0x73, 0xE9, 0x63]).decode("latin-1")
+    for key in (non_ascii, "wrong-but-ascii", ""):
+        try:
+            run_daily_prompt_endpoint(x_issei_cron_key=key, db=None)
+        except HTTPException as exc:
+            assert exc.status_code == 404, repr(key)
+            assert exc.detail == "Not found", repr(key)
+        else:
+            raise AssertionError("accepted: %r" % key)
+
+    # Unset secret: the same input gets the same answer, so there is no oracle in either direction.
+    monkeypatch.setattr(settings, "cron_secret", "", raising=False)
+    try:
+        run_daily_prompt_endpoint(x_issei_cron_key=non_ascii, db=None)
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("accepted with no secret configured")

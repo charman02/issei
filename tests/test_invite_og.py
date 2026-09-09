@@ -67,11 +67,17 @@ class TestBuildInviteMetaRealRecipe:
 
 
 class TestBuildInviteMetaNotFound:
-    def test_says_expired_only_when_server_answered(self):
-        # A confirmed miss (token really gone) → honest "expired".
+    def test_never_says_EXPIRED_because_a_token_cannot_expire(self):
+        # This test used to assert the copy said "expired or moved", and its own name claimed that
+        # was the honest answer. It wasn't: `Handoff` has no `expires_at` and nothing sweeps
+        # handoffs, so a token cannot expire — the true states are "deleted" or "never existed".
+        # The docstring in invite_og.py said so six lines above the string that said otherwise.
+        # POSITIONING: nothing in issei expires.
         m = build_invite_meta(None, reached=True, **CTX)
         assert m["found"] is False
-        assert "expired or moved" in m["description"]
+        assert "isn't here" in m["description"]
+        for word in ("expired", "expire", "moved", "no longer available"):
+            assert word not in m["description"].lower(), word
         assert m["image"] == "https://issei.app/og.png"
         assert m["url"] == "https://issei.app/invite/tok123"
 

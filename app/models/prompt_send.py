@@ -35,6 +35,13 @@ class PromptSend(Base):
     send decision, and a duplicate raises IntegrityError, which is the signal to skip. A SELECT
     first would leave the window between the check and the insert open to exactly the concurrent
     tick this table exists to defend against.
+
+    KNOWN AND ACCEPTED: the key moves if the USER moves. Someone whose client updates `timezone`
+    from Asia/Manila to America/Los_Angeles mid-trip crosses back over a local date they have
+    already been sent for, so they get a second prompt within hours; travelling the other way can
+    skip a day. Harmless at this scale, genuinely ambiguous at any scale (which day is "today" for
+    someone on a plane?), and the alternative — keying on UTC — is wrong for everybody all the time
+    rather than for one person twice a year. Worth knowing rather than worth solving.
     """
 
     __tablename__ = "prompt_sends"

@@ -13,7 +13,7 @@ So a recipe here is attributed to a **person** — the dish is the title, the pe
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling that refuses to invent precision, photo upload (with automatic iPhone HEIC → JPEG conversion), and a capability-token sharing system layered over a concrete visibility model. A profile is public or private (private by default); each recipe or post is set to "Everyone" (public), "Friends only" (friends), or "Only me" (private) — new items default to "Friends only", or "Everyone" on a public profile. The chosen value is stored literally and fixed once chosen, so a label never silently changes if the profile later changes.
 
-**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 65 endpoints, 18 data models, 1345 automated tests (594 pytest + 751 Vitest).
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 65 endpoints, 18 data models, 1351 automated tests (600 pytest + 751 Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -30,7 +30,7 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 
 **python-jose** JWT creation and verification for stateless authentication. Tokens are signed with a secret key and include expiry - no server-side session storage needed.
 
-**pytest** - backend tests (594) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
+**pytest** - backend tests (600) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
 
 **Vitest + React Testing Library** - frontend unit/component tests (751 in 51 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
 

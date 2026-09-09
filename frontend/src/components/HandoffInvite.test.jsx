@@ -23,7 +23,7 @@ describe('HandoffInvite', () => {
     // Clear the seeded default first, then type — the note field is pre-filled with
     // the default invitation message now (see the "default invitation message"
     // block), so a raw type() would append to it.
-    const note = screen.getByPlaceholderText(/a note in your words/i)
+    const note = screen.getByPlaceholderText(/say something with it/i)
     await userEvent.clear(note)
     await userEvent.type(note, 'your adobo')
     await userEvent.click(screen.getByRole('button', { name: /get a link to send/i }))
@@ -186,7 +186,7 @@ describe('HandoffInvite', () => {
           onSkip={() => {}}
         />,
       )
-      expect(screen.getByPlaceholderText(/a note in your words/i)).toHaveValue(
+      expect(screen.getByPlaceholderText(/say something with it/i)).toHaveValue(
         'Here’s my Adobo recipe — I wanted you to have it 💛',
       )
     })
@@ -195,7 +195,7 @@ describe('HandoffInvite', () => {
       // recipeName defaults to the literal string "this recipe" for prose; it must
       // not leak into the message as if it were a dish name.
       render(<HandoffInvite recipeId={7} onSent={() => {}} onSkip={() => {}} />)
-      expect(screen.getByPlaceholderText(/a note in your words/i)).toHaveValue(
+      expect(screen.getByPlaceholderText(/say something with it/i)).toHaveValue(
         'Here’s my recipe — I wanted you to have it 💛',
       )
     })
@@ -209,7 +209,7 @@ describe('HandoffInvite', () => {
           onSkip={() => {}}
         />,
       )
-      const note = screen.getByPlaceholderText(/a note in your words/i)
+      const note = screen.getByPlaceholderText(/say something with it/i)
       await userEvent.clear(note)
       await userEvent.type(note, 'made this for you, tita')
       expect(note).toHaveValue('made this for you, tita')

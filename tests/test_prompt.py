@@ -360,6 +360,7 @@ def test_the_runner_sends_once_and_records_the_day(db_session, make_user, monkey
 
     calls = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 3)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
 
     me = _due_user(db_session, make_user)
@@ -379,6 +380,7 @@ def test_a_SECOND_run_the_same_day_sends_NOTHING(db_session, make_user, monkeypa
     duplicate rather than this function remembering to check."""
     calls = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 2)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
 
     me = _due_user(db_session, make_user)
@@ -398,6 +400,7 @@ def test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day(db_session, make_
 
     calls = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
 
     me = _due_user(db_session, make_user)
@@ -408,12 +411,14 @@ def test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day(db_session, make_
     assert db_session.query(PromptSend).count() == 0, "the day must stay claimable"
 
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     assert prompt.run_daily_prompt(db_session)["sent"] == 1
 
 
 def test_a_user_with_no_timezone_is_never_a_candidate(db_session, make_user, monkeypatch):
     calls = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: calls.append(a) or 201)
     me, _ = make_user()
     _sub(db_session, me)
@@ -423,6 +428,7 @@ def test_a_user_with_no_timezone_is_never_a_candidate(db_session, make_user, mon
 
 def test_the_nudge_switch_excludes_them_in_SQL(db_session, make_user, monkeypatch):
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
     me = _due_user(db_session, make_user)
     me.notify_prompt = False
@@ -434,6 +440,7 @@ def test_a_DEAD_subscription_is_pruned(db_session, make_user, monkeypatch):
     from app.models.push_subscription import PushSubscription
 
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 410)
     me = _due_user(db_session, make_user)
     _sub(db_session, me)
@@ -448,6 +455,7 @@ def test_a_BAD_KEY_does_not_prune_anything(db_session, make_user, monkeypatch):
     from app.models.push_subscription import PushSubscription
 
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 403)
     me = _due_user(db_session, make_user)
     _sub(db_session, me)
@@ -459,6 +467,7 @@ def test_a_BAD_KEY_does_not_prune_anything(db_session, make_user, monkeypatch):
 def test_all_of_a_users_devices_get_it(db_session, make_user, monkeypatch):
     sent_to = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr(
         "app.services.push.send",
         lambda endpoint, *a, **k: sent_to.append(endpoint) or 201,
@@ -474,7 +483,91 @@ def test_a_due_user_with_NO_devices_is_not_an_error(db_session, make_user, monke
     """Preferences on, zero subscriptions — someone who has not installed it anywhere. The day is
     still claimed, because they were genuinely due and nothing here can install an app for them."""
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     _due_user(db_session, make_user)
     summary = prompt.run_daily_prompt(db_session)
     assert summary["sent"] == 0
     assert summary["failed"] == 1
+
+
+# --- the review findings, each with the failure it reproduced ---
+
+
+def test_the_cap_cannot_SUPPRESS_the_prompt(db_session, make_user):
+    """Review reproduced this: five friends post normally, ONE chatty friend then posts 30 private
+    meals, and the count came back ZERO — no push that evening or any evening until the person
+    opened the feed, because a zero is deliberately not recorded so every retry recomputed it.
+
+    The cause was applying the 30-row cap in SQL BEFORE the Python visibility filter, which is
+    exactly the bug this module's docstring says it exists to avoid: an SQL-side truncation the
+    filter cannot see past. The exclusions live in the SQL now, so the cap only ever drops rows
+    that would have counted.
+    """
+    me, _ = make_user()
+    visible_friends = []
+    for i in range(5):
+        f, _ = make_user()
+        _befriend(db_session, me, f)
+        _post(db_session, f, dish=f"Real meal {i}")
+        visible_friends.append(f)
+
+    chatty, _ = make_user()
+    _befriend(db_session, me, chatty)
+    for i in range(prompt.PROMPT_SCAN_LIMIT + 5):
+        _post(db_session, chatty, visibility="private", dish=f"Private {i}")
+
+    assert prompt.friends_who_posted(me, db_session) == 5
+
+
+def test_the_cap_cannot_be_swamped_by_a_BLOCKED_persons_posts(db_session, make_user):
+    """Same shape, other exclusion. A blocked author whose friendship row survived is the state
+    `test_it_does_NOT_count_a_BLOCKED_persons_post` establishes is reachable."""
+    me, _ = make_user()
+    friend, _ = make_user()
+    _befriend(db_session, me, friend)
+    _post(db_session, friend, dish="the one that counts")
+
+    blocked, _ = make_user()
+    _befriend(db_session, me, blocked)
+    for i in range(prompt.PROMPT_SCAN_LIMIT + 5):
+        _post(db_session, blocked, visibility="public", dish=f"Noise {i}")
+    db_session.add(Block(blocker_id=me.id, blocked_id=blocked.id))
+    db_session.commit()
+
+    assert prompt.friends_who_posted(me, db_session) == 1
+
+
+def test_one_chatty_friend_does_not_hide_the_others(db_session, make_user):
+    """The milder, likelier form of the same bug: it kept the copy true but undercounted, so it
+    would never have been noticed."""
+    me, _ = make_user()
+    chatty, _ = make_user()
+    _befriend(db_session, me, chatty)
+    for i in range(prompt.PROMPT_SCAN_LIMIT):
+        _post(db_session, chatty, dish=f"Chatter {i}")
+    for i in range(5):
+        f, _ = make_user()
+        _befriend(db_session, me, f)
+        _post(db_session, f, dish=f"Quiet {i}")
+    assert prompt.friends_who_posted(me, db_session) == 6
+
+
+def test_an_UNCONFIGURED_deploy_does_not_burn_everyones_day(db_session, make_user, monkeypatch):
+    """The day is claimed BEFORE the send is attempted, which is right for a transient failure (one
+    missed nudge) and wrong for a configuration one that persists across every run.
+
+    Without the is_configured() guard, the first deploy that has timezones but not keys would claim
+    a prompt_sends row for every due user, send nothing, and spend that local date permanently.
+    """
+    from app.models.prompt_send import PromptSend
+    from app.services import push
+
+    assert push.is_configured() is False
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 3)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 0
+    assert summary.get("configured") is False
+    assert db_session.query(PromptSend).count() == 0, "claimed a day it could not deliver"

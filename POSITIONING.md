@@ -190,12 +190,15 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). EIGHT test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). NINE test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
-`pages/InviteLanding.test.jsx`, `components/RecipeForm.test.jsx` (both mic states) and
-`pages/Notifications.test.jsx`. (This list previously named `pages/PlantRecipe.test.jsx`,
+`pages/InviteLanding.test.jsx`, `components/RecipeForm.test.jsx` (both mic states),
+`pages/Notifications.test.jsx` and `pages/UserProfile.test.jsx`. The regex is also WIDER than the
+form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
+"in your own words" on a new surface and the `their`-only version let it through every guard at
+once. If you widen it again, widen it in all four files — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -419,7 +422,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **65 routes**, **18 models**,
-**594 backend tests**, **751 frontend tests in 51 files**. Endpoint and test counts have
+**600 backend tests**, **751 frontend tests in 51 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

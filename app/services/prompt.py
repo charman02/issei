@@ -36,7 +36,7 @@ from datetime import datetime, timezone as dt_timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.models.post import Post
 # Imported at MODULE level, not inside the function that uses them. A model reached only by a
@@ -109,46 +109,62 @@ def is_due(user: User, now_local: Optional[datetime]) -> bool:
     return not in_quiet_hours(now_local.hour, user.quiet_from, user.quiet_to)
 
 
+# How many recent posts to look at when counting. The count is a sentence, not a statistic, so
+# this only needs to be big enough that the number is right for any plausible day. Matches the
+# feed's own page size. Defined ABOVE its only caller, which the first version got wrong.
+PROMPT_SCAN_LIMIT = 30
+
+
 def friends_who_posted(user: User, db: Session) -> int:
     """How many DISTINCT friends have posted something this person hasn't seen.
 
-    Deliberately not one clever aggregate. Rows are fetched and then re-gated through
-    `can_view_post`, exactly as `GET /posts/feed` does, because that gate is where the feed's
-    correctness lives — see the module docstring for the two bugs the aggregate version has.
+    THE CAP HAS TO COME AFTER THE EXCLUSIONS, NOT BEFORE. The first version fetched the newest 30
+    unseen posts in SQL and only then filtered them through `can_view_post` — and review reproduced
+    what that costs: one chatty friend posts 30 PRIVATE meals, five other friends each post a
+    normal one, and the count comes back ZERO. No push at all, and because a zero is deliberately
+    not recorded, every hourly retry recomputes the same zero. The prompt is suppressed that
+    evening and every evening until the person opens the feed.
 
-    Bounded by the same page size as the feed, because the answer is a sentence: "3 friends" and
-    "30 friends" are the same message, and nobody needs an exact count of a backlog they will
-    scroll rather than read.
+    It is precisely the bug the module docstring says this function exists to avoid: an SQL-side
+    truncation the Python filter cannot see past. The milder and far more likely form just
+    undercounts — one friend with 30 unseen posts reads as "1 friend posted" when six did.
+
+    So the two cheap predicates move INTO the SQL, where they can shrink the candidate set before
+    the cap applies:
+      - `visibility IN ('public','friends')` — a friend can read those two and not `private`.
+      - the author is not in the caller's block set.
+    Both are exactly what `can_view_post` would decide for a friend, so nothing new is being
+    asserted here; the Python re-gate below is kept as defence-in-depth, and it is now a no-op
+    rather than the thing doing the work. That ordering is what makes the cap safe: the rows it
+    drops are rows that would have counted.
     """
     mark = user.last_feed_seen_post_id
     friends = set(friend_ids(user.id, db))
     if not friends:
         return 0
 
-    q = (
-        db.query(Post)
-        .options(selectinload(Post.user))
-        .filter(Post.user_id.in_(friends))
+    hidden = blocked_ids(user.id, db)
+    q = db.query(Post).filter(
+        Post.user_id.in_(friends),
+        # A friend sees `public` and `friends`; `private` is the owner's alone.
+        Post.visibility.in_(("public", "friends")),
     )
+    if hidden:
+        q = q.filter(Post.user_id.notin_(hidden))
     if mark is not None:
         q = q.filter(Post.id > mark)
-    # Newest first and capped: a person with a thousand unseen posts gets the same sentence as one
-    # with fifty, so reading a thousand rows to say "50+" would be work for nothing.
+    # Newest first and capped — safe now, because every row that reaches here is one that counts.
     posts = q.order_by(Post.id.desc()).limit(PROMPT_SCAN_LIMIT).all()
 
-    hidden = blocked_ids(user.id, db)
+    # Belt and braces: the single read rule still gets the last word, so a future visibility value
+    # can't slip through the SQL above. No `selectinload` — this gate reads only `post.user_id`,
+    # and eager-loading the author was one extra query per due user per hour for nothing.
     authors = {
         p.user_id
         for p in posts
         if can_view_post(p, user, db, is_friend=True, blocked=p.user_id in hidden)
     }
     return len(authors)
-
-
-# How many recent posts to look at when counting. The count is a sentence, not a statistic, so
-# this only needs to be big enough that the number is right for any plausible day. Matches the
-# feed's own page size.
-PROMPT_SCAN_LIMIT = 30
 
 
 def prompt_payload(count: int) -> Optional[dict]:
@@ -200,7 +216,19 @@ def run_daily_prompt(db: Session) -> dict:
     """
     from sqlalchemy.exc import IntegrityError
 
+    from app.services import push as push_service
     from app.services.push import DEAD_SUBSCRIPTION_CODES, send
+
+    # NOTHING CONFIGURED, NOTHING CLAIMED. Without this the unconfigured case is not merely inert:
+    # the day is recorded BEFORE the send is attempted (deliberately — see below), so every due
+    # user would have their `prompt_sends` row claimed, `send()` would return 0, and that local
+    # date would be permanently spent on a notification that never left the building. Record-before-
+    # send is right for a TRANSIENT failure, where the cost is one missed nudge; it is wrong for a
+    # configuration failure that persists across every run. This is the difference between "push
+    # isn't switched on yet" and "everyone silently loses today".
+    if not push_service.is_configured():
+        log.info("prompt: VAPID not configured, daily run is a no-op")
+        return {"candidates": 0, "sent": 0, "skipped": 0, "failed": 0, "configured": False}
 
     sent = skipped = failed = 0
     # Only users who could be due at all. `timezone IS NOT NULL` and the switch are cheap SQL

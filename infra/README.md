@@ -6,7 +6,7 @@ container platform for the FastAPI backend: networking, load balancer, a Fargate
 service, secrets, logging, TLS, and a keyless CI/CD role — all versioned here, no
 click-ops.
 
-- **[`lib/issei-stack.ts`](lib/issei-stack.ts)** — the whole stack (~260 lines).
+- **[`lib/issei-stack.ts`](lib/issei-stack.ts)** — the whole stack (~332 lines).
 - **[`bin/issei.ts`](bin/issei.ts)** — entry point + configuration (region, domain).
 - **[`RUNBOOK.md`](RUNBOOK.md)** — exact deploy → verify → destroy commands.
 - **[`../Dockerfile`](../Dockerfile)** — the container image (ARM64, non-root, pinned).
@@ -98,7 +98,10 @@ a larger blast radius than a private one. In a compliance context I'd pay for th
 and go private; here the SG is the right-sized control.
 
 ### 4. Secrets in SSM Parameter Store (SecureString), injected by the task
-Six secrets (DB URL, JWT secret, Cloudinary ×3, OpenRouter key) live in SSM as
+Six REQUIRED secrets (DB URL, JWT secret, Cloudinary ×3, OpenRouter key) live in SSM as
+SecureStrings, plus four OPTIONAL ones for push notifications (#89: VAPID ×3 and CRON_SECRET —
+unset means notifications are OFF rather than broken, so the stack runs fine without them; see
+RUNBOOK Step 1b). All of them live as
 encrypted SecureStrings under `/issei/*`. The task definition references them by
 ARN, so ECS injects them as environment variables at container start — **they are
 never in the image, the repo, the task-def JSON, or CloudFormation output.** Standard

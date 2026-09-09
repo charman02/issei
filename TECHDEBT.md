@@ -98,6 +98,36 @@ strangers arrive. Security/privacy first.
   flagged:* it's a performance optimization that can become a leak if used carelessly. *Where:*
   `app/services/sharing.py`; callers in `app/routers/posts.py`, `recipes.py`, `friends.py`.
 
+- **`notify_people` is an API-visible switch that nothing consults.** (#89)
+  The column exists, `UserResponse` exposes it, login returns it, `PATCH /auth/me` writes it — and
+  no code reads it, because person-to-person pushes are not wired: `services/notifications.py`'s
+  `notify()` is untouched by #89 and does not import `services/push.py`. The owner's decision was
+  "every notification type pushes"; only the daily prompt does. So the client half can render a
+  "notifications from people" switch that does nothing, and no test fails if whoever wires the
+  pushes forgets to consult it — the only test touching the field asserts it has NO effect on the
+  daily nudge. *Why it's a ledger entry and not a fix:* wiring it properly needs a decision about
+  WHERE, and the seam is genuinely awkward — `notify()` deliberately does not commit, so a push
+  sent from inside it can fire for a row whose transaction then rolls back, and pushing after each
+  caller's commit means touching every call site. *The trap to remember when it is wired:*
+  `recipe_kept` is ANONYMOUS (#96), and the actor IS in hand at `notify()` time — the router is
+  what strips it today, so a payload built at notify() time would carry the keeper's name straight
+  onto a lock screen. That anonymity has to be re-enforced at the push boundary, which is a second
+  place, not the same one. *Where:* `app/models/user.py`, `app/services/notifications.py`.
+
+- **The daily prompt can repeat the same sentence forever.** (#89)
+  `last_feed_seen_post_id` only advances via `POST /posts/feed/seen`, which the client calls when
+  the friends feed renders. So a person who never opens Home gets "3 friends posted since you last
+  looked" on day 1 and the identical line on day 30. `prompt_sends` bounds it to once per local day
+  and the `daily-prompt` tag collapses them on-device, so it is not a flood — but the message never
+  changes and never stops. Literally true, and arguably the point (nudging the person who isn't
+  looking is the feature), yet `prompt_payload`'s own docstring argues against "asking for attention
+  without offering anything", and an unchanged sentence on day 30 is closer to that than to a fresh
+  signal. *Fix, when someone decides:* the cheap version is refusing to repeat an identical count on
+  consecutive days, using the `friend_count` already stored on the previous row — no migration
+  needed. Deliberately not done unilaterally: it is a product call about how insistent this app is
+  allowed to be, and nothing can reach a real inbox until the client half and the secrets exist.
+  *Where:* `app/services/prompt.py`, `app/models/prompt_send.py`.
+
 - **Reports go into a table nobody can read from inside the app.** (#87)
   `POST /friends/reports` stores the row; there is no endpoint, page or notification to get it
   back out, because reading other people's reports needs an admin role this app has no concept

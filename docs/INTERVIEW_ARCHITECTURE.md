@@ -3,8 +3,8 @@
 Written to be reread before an interview. Verified against the code on 2026-09-09, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 65 endpoints · 18 tables · 23 migrations · 594 backend tests · 751 frontend
-tests · 7878 lines of Python under `app/` (excluding tests and migrations), deployed
+**Scale:** 65 endpoints · 18 tables · 23 migrations · 600 backend tests · 751 frontend
+tests · 8,137 lines of Python under `app/` (excluding tests and migrations), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
 
 ---
@@ -64,7 +64,9 @@ users
   ├── recipe_requests            (post_id, requester_id — an ask on a post; UNIQUE(post,requester), state pending|fulfilled)
   ├── notifications              (user_id, actor_id + nullable post_id/recipe_id, both SET NULL so a line outlives its subject)
   ├── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
-  └── reports                     (reporter_id, reported_user_id, reason, note, state — #87; both FKs CASCADE, no unique constraint)
+  ├── reports                     (reporter_id, reported_user_id, reason, note, state — #87; both FKs CASCADE, no unique constraint)
+  ├── push_subscriptions          (user_id, endpoint UNIQUE, p256dh, auth — #89; one BROWSER on one device, so a phone and a laptop are two rows)
+  └── prompt_sends                (user_id, local_date — #89; UNIQUE(user, LOCAL date): the at-most-once record for the daily nudge)
 feedback                          (standalone)
 ```
 

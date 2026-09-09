@@ -53,7 +53,7 @@ def build_invite_meta(recipe, *, site_origin, token, reached=True):
     name = getattr(recipe, "name", None) if recipe is not None else None
     if not recipe or not name:
         description = (
-            "This recipe link has expired or moved. issei is how someone sends you a dish they cook."
+            "This recipe link isn't here. issei is how someone sends you a dish they cook."
             if reached
             else "Open this recipe on issei — how someone sends you a dish they cook."
         )

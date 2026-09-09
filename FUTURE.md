@@ -11,7 +11,7 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 594
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 600
 backend tests, 751 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
@@ -266,12 +266,26 @@ carries notifications with it; family sharing was cut; language translation move
 1. **The iOS app, with notifications as its point** (#89) — one project, not two. Safari on iOS only
    permits Web Push for a site added to the home screen as a PWA, so "regular prompts to post"
    and "be a real app" are the same piece of work; building them apart means building the
-   notification layer twice. Note what exists today is an in-app inbox only — nothing reaches
-   a device. The **feed read-mark (#97) shipped the count that prompt is made of**: "3 friends
-   posted since you last looked" was not computable before it. What remains on the backend is
-   subscription storage, the scheduler, the sender, quiet hours and preferences. The BACKEND half (subscription storage, a scheduler, the sender, quiet hours,
-   preferences) is identical whichever shell wins, so it can be built before the shell is
-   chosen. Bring swipe-back to web first.
+   notification layer twice.
+
+   **THE BACKEND HALF SHIPPED (2026-09-09.)** Per-device subscription storage, the VAPID sender
+   (RFC 8292 + 8291, on `cryptography` and `httpx` — no new dependency), the two preference
+   switches, quiet hours, the at-most-once send log, the "N friends posted" count, and an hourly
+   GitHub Actions cron. It was built before the shell because none of it depends on which shell
+   wins.
+
+   Correcting an earlier claim here: #97 shipped the **watermark** the count is derived from
+   (`users.last_feed_seen_post_id`), not the count itself — the count is new, and getting it right
+   meant NOT reusing the feed's SQL, whose correctness lives in a Python `can_view_post` filter
+   rather than in the query.
+
+   **What genuinely remains:** (a) the PWA shell — a web manifest and a service worker, which is
+   what makes iOS possible at all, plus the client-side subscribe call and the settings UI; (b)
+   five secrets, which nothing works without and everything degrades cleanly around — until they
+   are set, `is_configured()` is False, every send is a logged no-op and the cron route 404s; (c)
+   two ledgered decisions in TECHDEBT (person-to-person pushes are not wired, so `notify_people` is
+   inert; and the prompt can repeat the same sentence indefinitely for someone who never opens
+   Home). Bring swipe-back to web first.
 2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report

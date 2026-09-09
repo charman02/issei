@@ -306,7 +306,12 @@ export default function PasteRecipe({
               show, so an untouched say-mode screen stays about the mic. */}
           {text.trim() && (
             <div className="mt-5">
-              <p className="section-label mb-1.5">What we heard — fix anything</p>
+              {/* "What we heard" claimed the app HEARD something. It didn't: dictation is the browser
+                  turning speech into text on the device, and everything downstream is a string. The
+                  comment 28 lines above this one says the status must read "Dictating…", never
+                  "Listening…", for precisely this reason — and the guard test pinned that line while
+                  this label sat here saying the same forbidden thing louder. */}
+              <p className="section-label mb-1.5">What came through — fix anything</p>
               <textarea
                 value={text}
                 onChange={(e) => update(e.target.value)}

@@ -252,7 +252,16 @@ def rotate_subscription(
     attacker who somehow obtains one: the ability to redirect that device's notifications to
     another endpoint they control. That is a real cost, and it is bounded — they learn nothing about
     the account, cannot read anything, and cannot discover the endpoint from any surface here.
-    A 404 for an unknown old endpoint is the same answer as for one belonging to someone else.
+
+    BE PRECISE ABOUT THE 404, because the first version of this comment was not. It claimed the
+    answer for an unknown endpoint matches the answer for one belonging to someone else — but there
+    IS no "someone else" case: this route has no caller identity, so any KNOWN endpoint is rotated
+    whoever owns it. The 404 is therefore an existence oracle; it distinguishes a real endpoint from
+    an invented one. That is accepted rather than hidden, on the same grounds the invite token rests
+    on (an endpoint is a long unguessable URL, so confirming one you already hold reveals nothing you
+    didn't have) — but it is not the property the old comment described, and a comment asserting a
+    security property that doesn't hold is worse than no comment, because the next person reasons
+    from it.
 
     The user_id is carried over from the row being replaced, never taken from the request, so this
     cannot be used to attach a device to an arbitrary account.
@@ -327,8 +336,13 @@ def run_daily_prompt_endpoint(
     have they not been sent" rather than "is it exactly their hour" — so a run 40 minutes late still
     catches everyone, and `prompt_sends`' UNIQUE (user, local_date) is what makes that safe.
     """
-    if not settings.cron_secret or not secrets.compare_digest(
-        x_issei_cron_key, settings.cron_secret
-    ):
+    # Compared as BYTES. `compare_digest` on two `str`s raises TypeError the moment either holds a
+    # non-ASCII character — and Starlette latin-1-decodes header bytes, so one 0x80-0xFF byte in
+    # this header reached the comparison as a non-ASCII str. That was an unauthenticated 500 on
+    # demand, and worse: a 500 where a wrong key gives 404 is exactly the oracle this route's
+    # docstring claims not to exist. It told you the deploy HAS a cron secret.
+    given = x_issei_cron_key.encode("utf-8", "surrogateescape")
+    expected = settings.cron_secret.encode("utf-8", "surrogateescape")
+    if not settings.cron_secret or not secrets.compare_digest(given, expected):
         raise HTTPException(status_code=404, detail="Not found")
     return prompt.run_daily_prompt(db)

@@ -260,6 +260,46 @@ Also pinned, because a repeatable act needs it: keep → unkeep → keep does no
 inbox (`test_keep_unkeep_keep_does_not_flood_the_inbox`), and re-keeping an already-kept recipe
 notifies nothing new — the endpoint is idempotent, so the notification is too.
 
+### Invariant 13 — the daily prompt's count must honour visibility AND blocks
+
+`services/prompt.friends_who_posted` deliberately re-checks every row through `can_view_post`
+instead of the obvious `SELECT COUNT(*) FROM posts WHERE user_id IN (friends) AND id > mark`. That
+aggregate mirrors the feed's own SQL, which is exactly the trap: the feed's correctness lives in
+the Python filter two lines AFTER its query. Collapsing this to the aggregate would put the
+existence of a friend's **private** post, and of a **blocked** person's post, into a push
+notification — and no other test in the suite would fail.
+→ `tests/test_prompt.py::test_it_does_NOT_count_a_friends_PRIVATE_post`,
+`test_it_does_NOT_count_a_BLOCKED_persons_post`,
+`test_it_does_NOT_count_a_post_from_someone_who_blocked_ME`.
+
+Two more properties of the same function, both of which were bugs first:
+
+- **The cap comes AFTER the exclusions.** Applying the 30-row scan limit in SQL before the Python
+  filter let one chatty friend's 30 private posts suppress the prompt entirely — zero count, no
+  push, recomputed identically every hour until the person opened the feed.
+  → `test_the_cap_cannot_SUPPRESS_the_prompt`, `test_the_cap_cannot_be_swamped_by_a_BLOCKED_persons_posts`.
+- **It counts PEOPLE, not posts.** The copy says "3 friends posted", so `COUNT(*)` makes the
+  sentence false when one friend posts three times — invisible in any fixture giving each friend a
+  single post, which is every other fixture here.
+  → `test_one_friend_posting_three_times_is_ONE_friend`.
+
+### Invariant 14 — the daily nudge is at-most-once per person per LOCAL day
+
+Enforced by `prompt_sends`' UNIQUE (user_id, local_date), not by the code that sends. That ordering
+is the point: no trigger is once-per-day on its own — an in-process tick double-fires during a
+rolling deploy, EventBridge is at-least-once by contract, and a GitHub Actions cron can be re-run
+by hand. So `is_due` can safely use CATCH-UP semantics ("has their hour passed today?") which is
+what stops cron drift silently skipping a timezone for the day.
+
+Two related rules: a zero count sends nothing AND does not claim the day (a friend posting later
+should still reach them), and an UNCONFIGURED deploy claims nothing at all — without that guard the
+first deploy with timezones but no VAPID keys would spend every user's slot on a notification that
+never left the building.
+→ `test_a_SECOND_run_the_same_day_sends_NOTHING`,
+`test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day`,
+`test_an_UNCONFIGURED_deploy_does_not_burn_everyones_day`,
+`test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it`.
+
 ### Invariant 12 — a block must never hide someone from being REPORTED
 
 Every people-returning route in `routers/friends.py` consults `is_blocked`. `report_user` (#87)

@@ -209,7 +209,7 @@ export default function HandoffInvite({
           replaces it in their own words. No starter chips — the default already
           carries the warm intent they'd have picked. */}
       <textarea
-        placeholder="A note in your words… (optional)"
+        placeholder="Say something with it… (optional)"
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={2}

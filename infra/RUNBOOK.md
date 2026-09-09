@@ -27,8 +27,13 @@ yours to execute and watch.
 - **Node 18+** and **Docker** (the CDK builds the container image locally to push).
   Docker Desktop must be running.
 - From `infra/`: `npm install` (already done in this worktree if `node_modules/` exists).
-- The 6 app secrets, available in the repo-root `.env` (DATABASE_URL, JWT_SECRET,
+- The 6 REQUIRED app secrets, available in the repo-root `.env` (DATABASE_URL, JWT_SECRET,
   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, OPENROUTER_API_KEY).
+- Plus 4 OPTIONAL ones for push notifications (#89): VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY,
+  VAPID_SUBJECT, CRON_SECRET. Every one defaults to `""`, and unset means OFF rather than
+  broken — `services/push.is_configured()` is False, each send is a logged no-op, and
+  `POST /notifications/run-daily-prompt` answers 404. So the stack deploys and runs fine
+  without them; see "Step 1b" below when you want notifications to actually fire.
 
 Set these once per shell session:
 ```bash
@@ -60,7 +65,7 @@ aws route53 list-hosted-zones-by-name --dns-name issei.app \
 
 ---
 
-## Step 1 — Put the 6 secrets in SSM Parameter Store (SecureString, free tier)
+## Step 1 — Put the 6 required secrets in SSM Parameter Store (SecureString, free tier)
 
 The task definition reads these at `/issei/<NAME>`. Source them from the
 repo-root `.env` so no secret is ever typed or committed. Run from the **repo root**:
@@ -89,6 +94,71 @@ aws ssm get-parameters-by-path --path /issei --region "$AWS_REGION" \
 > the `MIGRATION_DATABASE_URL` repo secret.
 
 ---
+
+## Step 1b — Push notifications (#89), when you want them ON
+
+Skip this entirely to ship with notifications off. Nothing breaks: all four settings default to
+`""`, `is_configured()` returns False, every send is a logged no-op, and the cron route 404s.
+
+**THE ORDER MATTERS AND IT IS THE OPPOSITE OF WHAT YOU MIGHT DO.** Create the SSM parameters
+FIRST. ECS resolves every `secrets[]` entry when a task starts, so a task definition that
+references `/issei/VAPID_PRIVATE_KEY` before that parameter exists fails to start — and the
+circuit breaker rolls the deploy back. Do not add the entries "ready for later".
+
+1. **Generate the keypair.** A P-256 ECDSA key, stored as base64url of the raw 32-byte private
+   scalar and the raw 65-byte uncompressed public point:
+   ```bash
+   python - <<'PY'
+   import base64
+   from cryptography.hazmat.primitives.asymmetric import ec
+   from cryptography.hazmat.primitives import serialization
+   k = ec.generate_private_key(ec.SECP256R1())
+   b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+   print("VAPID_PRIVATE_KEY=" + b64(k.private_numbers().private_value.to_bytes(32, "big")))
+   print("VAPID_PUBLIC_KEY=" + b64(k.public_key().public_bytes(
+       encoding=serialization.Encoding.X962,
+       format=serialization.PublicFormat.UncompressedPoint)))
+   PY
+   ```
+   The PUBLIC key is not a secret — it is served to every browser by `GET /notifications/vapid-key`,
+   because a client needs it to subscribe. It lives in SSM anyway so rotating the pair is a deploy
+   rather than a frontend rebuild.
+
+   **Rotating invalidates every existing subscription.** A subscription is minted against one
+   public key; after a rotation the push service answers 401/403, which the sender deliberately
+   does NOT treat as "dead" (only 404/410 prune a row), so nothing is deleted — but nobody
+   receives anything until each device re-subscribes. Rotate only if the private key leaks.
+
+2. **A cron secret**, any long random string: `openssl rand -hex 32`.
+
+3. **Put all four in SSM:**
+   ```bash
+   for NAME in VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_SUBJECT CRON_SECRET; do
+     aws ssm put-parameter --name "/issei/$NAME" --type SecureString \
+       --value "${!NAME}" --overwrite --region "$REGION"
+   done
+   ```
+   `VAPID_SUBJECT` is a `mailto:` or `https:` URL a push service can contact about our sends —
+   required by RFC 8292 whenever a key is configured.
+
+4. **Then wire them, in both places, because only one of them ships:**
+   - `ssmParams` in `infra/lib/issei-stack.ts` — used by `cdk deploy`.
+   - `secrets[]` in `.aws/task-definition.json` — **this is the one the GitHub Actions pipeline
+     actually renders on every push.** Miss it and the variables are simply absent in production
+     while the stack file looks correct, which is a silent no-op rather than an error.
+
+5. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs hourly:
+   - `CRON_KEY` — the same value as `/issei/CRON_SECRET`.
+   - `API_URL` — e.g. `https://api.issei.app` (no trailing slash).
+
+   The workflow exits 0 with "nothing to do" while either is unset. Set `CRON_KEY` only AFTER the
+   server has `CRON_SECRET`, or the route 404s, `curl --fail-with-body` exits non-zero, and the
+   workflow goes red every hour.
+
+6. **Verify:** `GET /notifications/vapid-key` should report `configured: true`, and a manual
+   `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404. Nothing
+   actually reaches a device until the PWA shell exists (manifest + service worker) — that is the
+   remaining half of #89.
 
 ## Step 2 — Bootstrap CDK (one-time per account/region)
 
@@ -262,7 +332,9 @@ Each of these is itself a "Dive Deep" story worth writing down.
 - The **GitHub Actions workflow** (`.github/workflows/deploy.yml`) is the *ongoing*
   image-update path — build → push → update the ECS service on pushes to main. It
   only works once the stack (and its OIDC deploy role) exists, and needs the
-  `AWS_ACCOUNT_ID` / `MIGRATION_DATABASE_URL` repo secrets set. Wire it up after the
+  `AWS_ACCOUNT_ID` / `MIGRATION_DATABASE_URL` repo secrets set. (A second workflow,
+  `daily-prompt.yml`, runs hourly for #89 and needs `CRON_KEY` / `API_URL` — see Step 1b.
+  It is self-disabling while either is unset, so it costs nothing until you want it.) Wire it up after the
   first successful manual `cdk deploy` if you want push-to-deploy; it's optional for
   the initial launch.
 - The `/health/ready` route in `app/main.py` is load-bearing behind the ALB target

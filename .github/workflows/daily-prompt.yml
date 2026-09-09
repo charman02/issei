@@ -41,6 +41,10 @@ concurrency:
   group: daily-prompt
   cancel-in-progress: false
 
+# Nothing here reads or writes the repo — it makes one authenticated HTTP call — so the job takes
+# no GITHUB_TOKEN scope at all rather than inheriting the repository default.
+permissions: {}
+
 jobs:
   prompt:
     runs-on: ubuntu-latest

@@ -61,12 +61,17 @@ def test_preview_uses_cover_photo_when_present(client, make_user):
     assert '<meta property="og:image" content="https://img.test/adobo.jpg" />' in body
 
 
-def test_unknown_token_returns_200_expired_card_not_500(client, make_user):
+def test_unknown_token_returns_200_with_an_honest_card_not_500(client, make_user):
     # A crawler must never get an error page — a bad token degrades to an honest card.
+    #
+    # "Honest" is load-bearing and this test used to get it wrong: it asserted the card said
+    # "expired or moved", which a handoff token cannot do (no `expires_at`, nothing sweeps them).
     make_user()
     r = client.get("/recipes/invite/not-a-real-token/preview")
     assert r.status_code == 200
-    assert "expired or moved" in r.text
+    # The apostrophe is HTML-escaped in the rendered card, so match a clause without one.
+    assert "issei is how someone sends you a dish" in r.text
+    assert "expired" not in r.text.lower()
     assert "og:image" in r.text  # still a valid card
 
 
