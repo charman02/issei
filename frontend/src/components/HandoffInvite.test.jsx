@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -222,5 +222,120 @@ describe('HandoffInvite', () => {
         note: 'made this for you, tita',
       })
     })
+  })
+})
+
+// THE DELIVERY HALF HAD NO TESTS AT ALL, which is how the message this component exists to compose
+// came to be dropped on three of its four paths. Everything below stubs the two browser APIs the
+// share stage depends on.
+describe('HandoffInvite — what actually leaves the app (#102)', () => {
+  async function reachShareStage() {
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: /get a link to send/i }))
+    await screen.findByText(/\/invite\/tok123/)
+  }
+
+  function stubClipboard() {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    return writeText
+  }
+
+  afterEach(() => {
+    delete navigator.share
+  })
+
+  it('shares the MESSAGE and the link together, not the link alone', async () => {
+    const share = vi.fn(() => Promise.resolve())
+    navigator.share = share
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /share the link/i }))
+
+    const { text } = share.mock.calls[0][0]
+    expect(text).toMatch(/Adobo recipe/)
+    expect(text).toContain('/invite/tok123')
+  })
+
+  it('copies the WHOLE message when the browser has no share sheet', async () => {
+    // Every desktop Firefox, and some desktop Safari. This path used to write the bare URL, so the
+    // sentence the compose stage exists to write never left the app for those senders.
+    const writeText = stubClipboard()
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /share the link/i }))
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    const copied = writeText.mock.calls[0][0]
+    expect(copied).toMatch(/Adobo recipe/)
+    expect(copied).toContain('/invite/tok123')
+  })
+
+  it('confirms on the button that was actually pressed', async () => {
+    // The only feedback used to appear on the OTHER button, so a sender tapped the primary control
+    // and got silence from it.
+    stubClipboard()
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /share the link/i }))
+
+    expect(await screen.findByRole('button', { name: /paste it in your message/i })).toBeInTheDocument()
+  })
+
+  it('a CANCELLED share sheet copies nothing and claims nothing', async () => {
+    // Cancelling rejects with AbortError. Treating that as a failure worth falling back from
+    // flashed "Copied ✓" at someone who had just decided not to send — which reads as "it went".
+    const abort = Object.assign(new Error('cancelled'), { name: 'AbortError' })
+    navigator.share = vi.fn(() => Promise.reject(abort))
+    const writeText = stubClipboard()
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /share the link/i }))
+
+    expect(writeText).not.toHaveBeenCalled()
+    expect(screen.queryByText(/copied/i)).toBeNull()
+  })
+
+  it('a REAL share failure still falls back to the clipboard', async () => {
+    // Safari rejects with NotAllowedError outside a user gesture. That one is a genuine failure and
+    // the clipboard is the right answer — the distinction from a cancel is the whole point.
+    navigator.share = vi.fn(() => Promise.reject(Object.assign(new Error('nope'), { name: 'NotAllowedError' })))
+    const writeText = stubClipboard()
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /share the link/i }))
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText.mock.calls[0][0]).toContain('/invite/tok123')
+  })
+
+  it('"Copy just the link" copies exactly that', async () => {
+    const writeText = stubClipboard()
+    await reachShareStage()
+
+    await userEvent.click(screen.getByRole('button', { name: /copy just the link/i }))
+
+    expect(writeText.mock.calls[0][0]).toMatch(/^https?:\/\/[^\s]*\/invite\/tok123$/)
+  })
+})
+
+describe('HandoffInvite — the Browse reassurance must match the recipe (#102)', () => {
+  it('does not tell a FRIENDS recipe that only the link opens it', async () => {
+    // `friends` is the default for every new recipe, and every accepted friend can already open it
+    // from the profile grid with no link at all — so the private-only line was false on the common
+    // path, and contradicted VisibilityControl one tap earlier.
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" recipeVisibility="friends" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.getByText(/your friends on issei can already open it/i)).toBeInTheDocument()
+    expect(screen.queryByText(/only someone with the link can open it/i)).toBeNull()
+  })
+
+  it('keeps the strong promise for a PRIVATE recipe', async () => {
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" recipeVisibility="private" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.getByText(/only someone with the link can open it/i)).toBeInTheDocument()
+  })
+
+  it('says nothing about Browse for a PUBLIC recipe, because it IS in Browse', async () => {
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" recipeVisibility="public" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.queryByText(/won.t put your recipe in Browse/i)).toBeNull()
   })
 })

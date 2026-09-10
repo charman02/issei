@@ -44,7 +44,8 @@ def build_invite_meta(recipe, *, site_origin, token, reached=True):
     is the dish's own byline ("Lola"), i.e. who the recipe is *from*.
 
     ``reached`` distinguishes two None-recipe cases the copy must NOT conflate:
-      · reached=True, no recipe → the token is genuinely unknown/expired, so say so.
+      · reached=True, no recipe → the token is unknown or the recipe was deleted, so say the
+        link isn't here. NEVER "expired": nothing in issei expires, and a test forbids the word.
       · reached=False → we couldn't load the recipe (a DB blip): the link may be
         perfectly valid, so a neutral "open on issei" card is honest where
         "this link expired" would be a lie (and could get cached).
@@ -66,7 +67,14 @@ def build_invite_meta(recipe, *, site_origin, token, reached=True):
             "found": False,
         }
 
-    byline = (getattr(recipe, "origin_attribution", None) or "").strip() or None
+    # The NAME only, mirroring `frontend/src/lib/sourceName.js`'s sourceNameOf(): an
+    # `origin_attribution` may carry "·"-separated place/year segments, and the invite page this
+    # card opens shows just "from Lola". The card said "from Lola · Manila · 1998" — the same
+    # recipe described two different ways one tap apart. Only legacy/API-written values carry the
+    # extra segments today; the current form cannot produce one.
+    byline = (
+        (getattr(recipe, "origin_attribution", None) or "").split("·")[0].strip() or None
+    )
     sender = (getattr(recipe, "from_name", None) or "").strip() or None
     # Title carries the dish and its byline — the app's "from {person}" convention.
     title = f"{name} — from {byline}" if byline else name
@@ -79,8 +87,15 @@ def build_invite_meta(recipe, *, site_origin, token, reached=True):
         description = (
             f"{who} the recipe for {name} on issei — read it and cook it, no account needed."
         )
-    image = getattr(recipe, "cover_photo_url", None) or f"{site_origin}{FALLBACK_IMAGE_PATH}"
-    image_alt = f"{name}, from {byline}" if byline else name
+    # The alt has to describe the image we ACTUALLY chose. A recipe with no cover photo gets the
+    # generic issei card, and calling that "Adobo, from Lola" describes a dish photo that isn't
+    # there — to precisely the person who can't see it.
+    cover = getattr(recipe, "cover_photo_url", None)
+    image = cover or f"{site_origin}{FALLBACK_IMAGE_PATH}"
+    if cover:
+        image_alt = f"{name}, from {byline}" if byline else name
+    else:
+        image_alt = "issei"
     return {
         "url": url,
         "title": title,
@@ -124,6 +139,6 @@ def render_invite_og_document(meta) -> str:
     <meta http-equiv="refresh" content="0; url={u}" />
   </head>
   <body>
-    <p>Opening {t} on issei&hellip; <a href="{u}">Tap here if it doesn&rsquo;t open.</a></p>
+    <p>Opening {t}&hellip; <a href="{u}">Tap here if it doesn&rsquo;t open.</a></p>
   </body>
 </html>"""

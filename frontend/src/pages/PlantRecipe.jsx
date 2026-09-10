@@ -281,9 +281,14 @@ export default function PlantRecipe() {
   if (!saved) return null
   return (
     <div className="min-h-screen bg-cream">
+      {/* recipeVisibility is NOT optional here in practice. Without it HandoffInvite falls back to
+          its 'private' default and tells the sender "only someone with the link can open it" — on a
+          recipe they may have just published to Browse. `saved` is the POST response, so it carries
+          the value the server actually stored. */}
       <HandoffInvite
         recipeId={saved.id}
         recipeName={saved.name}
+        recipeVisibility={saved.visibility}
         onSent={() => navigate(`/recipes/${saved.id}`)}
         onSkip={() => navigate(`/recipes/${saved.id}`)}
       />

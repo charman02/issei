@@ -8,6 +8,7 @@ route, so the string/escaping logic lives here now and is tested here.
 from types import SimpleNamespace
 
 from app.services.invite_og import (
+    FALLBACK_IMAGE_PATH,
     escape_html,
     build_invite_meta,
     render_invite_og_document,
@@ -115,3 +116,42 @@ class TestRenderDocument:
             build_invite_meta(None, reached=False, **CTX),
         ):
             assert not banned.search(render_invite_og_document(meta))
+
+
+class TestInviteCardSaysWhatItShows:
+    """#102 — three ways the card described something other than what it was showing."""
+
+    def test_the_body_does_not_say_on_issei_TWICE(self):
+        # Live on prod until 2026-09-10: the fallback title already ends in "on issei", and the
+        # visible body appended the clause again — "Opening A recipe on issei on issei…". Only the
+        # unknown-token and DB-blip cards were affected, since a real recipe's title is the dish.
+        for reached in (True, False):
+            meta = build_invite_meta(None, reached=reached, **CTX)
+            html = render_invite_og_document(meta)
+            assert "on issei on issei" not in html
+
+    def test_alt_text_describes_the_GENERIC_card_when_there_is_no_cover_photo(self):
+        # A recipe with no cover photo unfurls with the issei wordmark plate, and calling that
+        # "Adobo, from Lola" describes a dish photo that isn't there — to exactly the person who
+        # cannot see it.
+        meta = build_invite_meta(_recipe(cover_photo_url=None), **CTX)
+        assert meta["image"].endswith(FALLBACK_IMAGE_PATH)
+        assert meta["image_alt"] == "issei"
+
+    def test_alt_text_names_the_dish_when_there_IS_a_cover_photo(self):
+        meta = build_invite_meta(
+            _recipe(cover_photo_url="https://img.test/adobo.jpg", origin_attribution="Lola"),
+            **CTX,
+        )
+        assert meta["image_alt"] == "Adobo, from Lola"
+
+    def test_the_byline_is_the_NAME_not_the_whole_attribution(self):
+        # `origin_attribution` can carry "·"-separated place/year segments (legacy or API-written;
+        # the current form can't produce one). The invite page this card opens shows just
+        # "from Lola" via sourceNameOf(), so a card reading "from Lola · Manila · 1998" described
+        # the same recipe two different ways one tap apart.
+        meta = build_invite_meta(
+            _recipe(origin_attribution="Lola · Manila · 1998"), **CTX
+        )
+        assert meta["title"] == "Adobo — from Lola"
+        assert "Manila" not in meta["title"]

@@ -79,29 +79,42 @@ export default function HandoffInvite({
     }
   }
 
-  async function share() {
-    // The note is pre-seeded with the default message, so it's normally non-empty;
-    // if the sender cleared it, fall back to the same sender+dish default rather
-    // than a bare link.
+  // The exact string that goes out: the sender's sentence, then the link.
+  //
+  // The note is pre-seeded with the default message, so it's normally non-empty; if the sender
+  // cleared it, fall back to the same sender+dish default rather than a bare link.
+  function shareText() {
     const body = note.trim() || defaultMessage
-    const text = `${body}\n\n${inviteUrl}`
+    return `${body}\n\n${inviteUrl}`
+  }
+
+  async function share() {
     // Native share sheet where available (mobile); clipboard fallback elsewhere.
     if (navigator.share) {
       try {
-        await navigator.share({ title: `${recipeName} — issei`, text })
+        await navigator.share({ title: `${recipeName} — issei`, text: shareText() })
         return
-      } catch {
-        // user dismissed the sheet, or share failed — fall through to copy
+      } catch (err) {
+        // A DISMISSED SHEET IS NOT A FAILURE. Cancelling gives an AbortError, and treating that as
+        // "share didn't work, fall through to copy" flashed "Copied ✓" at someone who had just
+        // decided NOT to send — which reads as though it went anyway. Only a real failure falls
+        // through. (Safari also rejects with NotAllowedError outside a user gesture; that one is a
+        // genuine failure and the clipboard is the right answer for it.)
+        if (err && err.name === 'AbortError') return
       }
     }
-    copy()
+    // No share sheet at all (every desktop Firefox, some desktop Safari) — copy the WHOLE message,
+    // not just the URL, and say so on the button that was actually tapped.
+    copy(shareText(), 'message')
   }
 
-  async function copy() {
+  // `what` decides the confirmation wording, because the two callers copy different things and a
+  // single "Copied ✓" can't tell a sender which one they got.
+  async function copy(value = inviteUrl, what = 'link') {
     try {
-      await navigator.clipboard.writeText(inviteUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(value)
+      setCopied(what)
+      setTimeout(() => setCopied(false), 2400)
     } catch {
       setError('Could not copy. Select the link and copy it manually.')
     }
@@ -135,14 +148,17 @@ export default function HandoffInvite({
           {inviteUrl}
         </p>
 
+        {/* The confirmation lands on the button that was pressed. It used to live only on "Copy
+            link", so a sender on a browser with no share sheet tapped the PRIMARY button, got
+            silence there, and had to notice a tick appear on a different control. */}
         <button onClick={share} className="btn-primary">
-          Share the link
+          {copied === 'message' ? 'Copied — paste it in your message ✓' : 'Share the link'}
         </button>
         <button
-          onClick={copy}
+          onClick={() => copy()}
           className="w-full mt-3 py-2.5 rounded-full bg-cream border-2 border-ink text-ink font-display font-bold text-[14px] shadow-[0_3px_0_#2E3A24] transition-transform active:translate-y-[2px] active:shadow-[0_1px_0_#2E3A24]"
         >
-          {copied ? 'Copied ✓' : 'Copy link'}
+          {copied === 'link' ? 'Copied ✓' : 'Copy just the link'}
         </button>
 
         {error && (
@@ -197,12 +213,20 @@ export default function HandoffInvite({
           </p>
         </>
       )}
-      {/* The reassurance testers asked for — a private recipe stays out of Browse —
-          stated only as strongly as the backend backs up (handoff mints a grant and
-          leaves visibility alone). Private recipes only; false for a public one. */}
+      {/* The reassurance testers asked for — a private recipe stays out of Browse — stated only as
+          strongly as the backend backs up (handoff mints a grant and leaves visibility alone).
+          THREE-WAY, because two of the three values are not the same promise. "only someone with
+          the link can open it" was shown for `friends` too, and for a friends recipe it is simply
+          false: `GET /recipes/users/{id}` is can_view-gated so every accepted friend already opens
+          it from your profile grid with no link at all. It also contradicted `VisibilityControl`
+          one tap earlier on the same recipe ("Only the people you're friends with on issei can see
+          it"). `friends` is the DEFAULT for every new recipe, so the wrong branch was the common
+          one. */}
       {recipeVisibility !== 'public' && (
         <p className="font-display text-[12.5px] text-ink leading-snug bg-sage/40 border-2 border-ink rounded-[12px] px-3 py-2 mb-4 text-left">
-          This won’t put your recipe in Browse — only someone with the link can open it.
+          {recipeVisibility === 'friends'
+            ? 'This won’t put your recipe in Browse. Your friends on issei can already open it — the link is how you reach anyone else.'
+            : 'This won’t put your recipe in Browse — only someone with the link can open it.'}
         </p>
       )}
       {/* The note comes pre-filled with the default message; the sender edits or

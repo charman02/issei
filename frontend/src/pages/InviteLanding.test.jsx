@@ -171,11 +171,19 @@ describe('InviteLanding', () => {
   })
 
   it('makes no claim about voice or audio', async () => {
+    // THE WIDE FORM, matching the other guards. This page is the app's highest-traffic first
+    // impression — the one screen a stranger who has never heard of issei actually reads — and its
+    // guard was the weakest of the thirteen: it omitted `voice` entirely and the whole
+    // "in their/your own words" family, which is the phrase that has come back twice.
+    const BANNED =
+      /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
     renderAt('/invite/abc123')
     await waitFor(() =>
       expect(screen.getByText('Lola’s Adobo')).toBeInTheDocument(),
     )
-    expect(screen.queryByText(/recording|audio|listen/i)).not.toBeInTheDocument()
+    // Over the whole rendered screen, not a text query — a claim in a heading or an aria-label is
+    // just as false as one in a paragraph.
+    expect(document.body.textContent).not.toMatch(BANNED)
   })
 
   it('says the link is dead ONLY when the server says so (404)', async () => {

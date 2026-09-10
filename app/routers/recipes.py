@@ -950,7 +950,8 @@ def preview_invite_card(token: str, db: Session = Depends(get_db)):
                 .first()
             )
         # h is None, or the recipe was deleted → recipe stays None with reached=True
-        # → the builder shows the honest "expired or moved" card.
+        # → the builder shows the honest "this link isn't here" card. (Not "expired or moved":
+        #   that copy was removed because nothing in issei expires, and a test forbids the word.)
     except Exception:
         # A DB blip: we could NOT confirm the token is gone, so this is distinct from
         # a 404. reached=False makes the builder show a neutral 'open on issei' card

@@ -181,10 +181,15 @@ describe('Login', () => {
     ).toBeInTheDocument()
   })
 
-  it('claims the invite and skips the welcome — their recipe explains itself', async () => {
-    // A tutorial between this person and the dish they signed up for would be
-    // the app talking over the thing it is trying to explain. Home leads with
-    // their recipe instead.
+  it('claims the invite, skips the welcome, and LANDS ON THE RECIPE', async () => {
+    // A tutorial between this person and the dish they signed up for would be the app talking over
+    // the thing it is trying to explain — so /welcome is skipped.
+    //
+    // And the destination is the RECIPE, not '/'. This assertion used to expect '/', justified by
+    // "Home leads with their recipe" — true of the hero-deck Home that #67 replaced with the
+    // friends feed, which shows a brand-new account nothing of their own at all. The claim response
+    // carries recipe_id; using it is what makes the highest-intent moment in the product land on
+    // the dish someone signed up to keep.
     client.post.mockResolvedValue({
       data: { access_token: 'tok', user: { id: 1 }, recipe_id: 9 },
     })
@@ -212,9 +217,30 @@ describe('Login', () => {
       screen.getByPlaceholderText('Confirm password').closest('form'),
     )
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true }),
+      expect(mockNavigate).toHaveBeenCalledWith('/recipes/9', { replace: true }),
     )
     expect(client.post).toHaveBeenCalledWith('/recipes/invite/abc123/claim')
+  })
+
+
+  it('still signs in when the invite claim FAILS, just not onto a recipe', async () => {
+    // A dead token must not block sign-in. The claim throws, there is no recipe_id, and the person
+    // lands on Home rather than a broken route or an error screen.
+    client.post.mockImplementation((url) =>
+      url.includes('/claim')
+        ? Promise.reject(new Error('gone'))
+        : Promise.resolve({ data: { access_token: 'tok', user: { id: 1 } } }),
+    )
+    render(
+      <MemoryRouter initialEntries={['/login?invite=dead']}>
+        <Login />
+      </MemoryRouter>,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'pw123456' } })
+    fireEvent.submit(screen.getByPlaceholderText('Password').closest('form'))
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true }))
   })
 
   // --- Error rendering -----------------------------------------------------

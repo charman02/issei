@@ -202,7 +202,7 @@ assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHAR
 screen and was missed by three separate recounts of this list. The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all EIGHT files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all NINE files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js and — since #102 — InviteLanding, whose guard was the weakest of the thirteen on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -453,7 +453,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **65 routes**, **18 models**,
-**600 backend tests**, **826 frontend tests in 56 files**. Endpoint and test counts have
+**604 backend tests**, **840 frontend tests in 57 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

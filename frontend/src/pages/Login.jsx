@@ -85,21 +85,33 @@ export default function Login() {
         .then(({ data: me }) => patchUser(me))
         .catch(() => {})
     }
+    let claimedRecipeId = null
     if (inviteToken) {
-      // The token IS the authorization; claim the grant for this account, then
-      // land the user on the recipe they were invited to.
+      // The token IS the authorization; claim the grant for this account.
       try {
-        await claimInvite(inviteToken)
+        const { data } = await claimInvite(inviteToken)
+        // KEEP THE RESPONSE. It carries `recipe_id`, and throwing it away is what sent the
+        // recipient to the feed instead of the dish they came for — the single highest-intent
+        // moment in the product, and the one place the app should be most sure-footed. Someone
+        // taps "Keep this recipe →" on an invite page, signs up, and used to land on a feed that
+        // may be empty, with their recipe nowhere in sight.
+        claimedRecipeId = data?.recipe_id ?? null
       } catch {
-        // A bad/expired token shouldn't block sign-in; just proceed home.
+        // A bad token shouldn't block sign-in; fall through to the normal destination.
       }
     }
-    // An invite recipient is deliberately exempt even when brand new: they have
-    // just scrolled a real recipe on /invite/:token and signed up to keep that
-    // one dish. A tutorial standing between them and it would be the app talking
-    // over the thing it's trying to explain — and Home leads with their recipe,
-    // which teaches it better than any panel.
-    const destination = isNew && !inviteToken ? '/welcome' : '/'
+    // An invite recipient is deliberately exempt from /welcome even when brand new: they have just
+    // scrolled a real recipe on /invite/:token and signed up to keep that one dish. A tutorial
+    // standing between them and it would be the app talking over the thing it's trying to explain.
+    //
+    // (The old comment here justified sending them to '/' because "Home leads with their recipe".
+    // That was true of the hero-deck Home, which #67 replaced with the friends feed — a feed that
+    // shows a brand-new account nothing of their own at all. The rationale outlived the screen.)
+    const destination = claimedRecipeId
+      ? `/recipes/${claimedRecipeId}`
+      : isNew && !inviteToken
+        ? '/welcome'
+        : '/'
     // REPLACE, not push: a pushed entry leaves /login sitting behind Home, so the
     // first thing a new user does — swipe/press back — lands them on the sign-in
     // screen while already signed in. Replacing drops it from history entirely.

@@ -129,6 +129,17 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+// The routes that are deliberately readable WITHOUT a session. A 401 on one of these must clear the
+// stale token but must NOT redirect: the whole premise of `/invite/:token` is that the token is the
+// capability and no account is needed, so bouncing that reader to /login defeats the page with the
+// highest intent in the product — and the invite token is gone from the URL by the time they get
+// there. It only takes one stale `issei_token` in the recipient's browser (a week-old session, an
+// account since deleted) for `reconcile()` to 401 at app start and throw them off the recipe.
+//
+// A SET, not the single literal '/login' this used to compare against, so any future unauthenticated
+// surface is covered by adding it here rather than by rediscovering the bug.
+const NO_REDIRECT_ON_401 = ['/login', '/invite/', '/forgot-password', '/reset-password']
+
 // On any 401 (expired token, or token for a user that no longer exists), clear
 // the stale session and send the user to login. This keeps session expiry from
 // surfacing as a confusing error inside an unrelated feature.
@@ -139,7 +150,9 @@ client.interceptors.response.use(
     if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('issei_token')
       localStorage.removeItem('issei_user')
-      if (window.location.pathname !== '/login') {
+      const path = window.location.pathname
+      const staysPut = NO_REDIRECT_ON_401.some((p) => path === p || path.startsWith(p))
+      if (!staysPut) {
         window.location.assign('/login')
       }
     }

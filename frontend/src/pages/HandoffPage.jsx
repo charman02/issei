@@ -18,9 +18,29 @@ export default function HandoffPage() {
   useEffect(() => {
     client
       .get(`/recipes/${id}`)
-      .then((res) => setRecipe(res.data))
+      .then((res) => {
+        // OWNER-ONLY, checked here as well as on the server.
+        //
+        // `GET /recipes/{id}` is can_view-gated, so anyone who can READ this recipe loads it fine —
+        // a friend, someone holding a grant, anyone at all for a public one. But `handoff_recipe`
+        // filters on `Recipe.user_id == current_user.id`, so only the owner can actually mint a
+        // link. Without this check a non-owner got the entire send screen — the recipe's name in
+        // the header, "This won't put YOUR recipe in Browse", a compose box — and the only possible
+        // ending was a "Recipe not found" pill after they'd written a message. The backend leaked
+        // nothing; the page just promised something it could never deliver.
+        //
+        // Read is not write: that rule is enforced server-side, and this is the client agreeing
+        // with it instead of discovering it at submit time. RecipePage already gates the entry
+        // button on ownership, so this is reachable only by URL or a back-button return.
+        const me = JSON.parse(localStorage.getItem('issei_user') || '{}')
+        if (String(me.id) !== String(res.data.user_id)) {
+          navigate(`/recipes/${id}`, { replace: true })
+          return
+        }
+        setRecipe(res.data)
+      })
       .catch(() => setError('Recipe not found'))
-  }, [id])
+  }, [id, navigate])
 
   // Pop back to wherever we came from (usually the recipe page). Avoids pushing
   // a new entry that would create a back-and-forth history loop.
