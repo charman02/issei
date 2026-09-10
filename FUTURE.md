@@ -12,7 +12,7 @@ list of things the app does *not* do.
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
 + Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 600
-backend tests, 821 frontend tests** — re-count rather than quote.
+backend tests, 826 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than

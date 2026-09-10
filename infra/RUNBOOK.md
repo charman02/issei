@@ -135,11 +135,19 @@ circuit breaker rolls the deploy back. Do not add the entries "ready for later".
    ```bash
    for NAME in VAPID_PRIVATE_KEY VAPID_PUBLIC_KEY VAPID_SUBJECT CRON_SECRET; do
      aws ssm put-parameter --name "/issei/$NAME" --type SecureString \
-       --value "${!NAME}" --overwrite --region "$REGION"
+       --value "${!NAME}" --overwrite --region "$AWS_REGION"
    done
+
+   # Confirm all four landed, without printing their values:
+   aws ssm get-parameters-by-path --path /issei --region "$AWS_REGION" \
+     --query 'Parameters[].Name' --output text | tr '\t' '\n' | sort
    ```
    `VAPID_SUBJECT` is a `mailto:` or `https:` URL a push service can contact about our sends —
    required by RFC 8292 whenever a key is configured.
+
+   Note `$AWS_REGION`, **not** `$REGION` — this loop said `$REGION` until 2026-09-10, and that
+   variable is set nowhere in this file, so a copy-paste passed `--region ""`. Step 1's identical
+   loop always had it right.
 
 4. **Then wire them, in both places, because only one of them ships:**
    - `ssmParams` in `infra/lib/issei-stack.ts` — used by `cdk deploy`.
@@ -156,9 +164,19 @@ circuit breaker rolls the deploy back. Do not add the entries "ready for later".
    workflow goes red every hour.
 
 6. **Verify:** `GET /notifications/vapid-key` should report `configured: true`, and a manual
-   `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404. Nothing
-   actually reaches a device until the PWA shell exists (manifest + service worker) — that is the
-   remaining half of #89.
+   `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404.
+
+   **The PWA shell shipped 2026-09-10 (commit `91660ef`), so these four secrets are now the last
+   thing standing between the app and a real notification** — this step used to end by saying the
+   client half was still missing. After setting them, the end-to-end check needs a PHONE, because
+   nothing on the dev machine can do it (headless Chromium refuses `pushManager.subscribe` outright:
+   there is no push service behind it). On the phone: open `https://issei.app`, install it via
+   Share → "Add to Home Screen" — **required on iOS**, where Safari grants Web Push only to a
+   home-screen install and `window.PushManager` doesn't exist in a browser tab at all — then open
+   the app *from the home screen*, go to You → Notifications, turn on "Notify me on this device",
+   and allow the browser prompt. The daily nudge then fires at the hour set on that screen, on the
+   days a friend has posted since you last opened Home; a manual `workflow_dispatch` of "Daily
+   prompt" runs the identical code path without waiting.
 
 ## Step 2 — Bootstrap CDK (one-time per account/region)
 

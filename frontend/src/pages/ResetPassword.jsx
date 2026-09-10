@@ -1,8 +1,30 @@
 import { useState } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import client, { toUserMessage } from '../api/client'
 import IconField from '../components/IconField'
 import Wordmark from '../components/Wordmark'
+
+// The two ways off this page, shown in every state it can reach.
+//
+// "Send me a new link" comes first and is the emphasized one, because on a page that just refused a
+// reset link it is the action that actually solves the problem — "Back to sign in" only helps
+// someone who has remembered their password after all.
+function WayOut() {
+  return (
+    <p className="w-full max-w-sm text-center font-display text-[13px] text-ink-soft pt-5">
+      <Link
+        to="/forgot-password"
+        className="font-bold text-terra underline underline-offset-2"
+      >
+        Send me a new link
+      </Link>
+      <span className="px-2 text-line">·</span>
+      <Link to="/login" className="font-bold text-terra underline underline-offset-2">
+        Back to sign in
+      </Link>
+    </p>
+  )
+}
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams()
@@ -38,17 +60,33 @@ export default function ResetPassword() {
     }
   }
 
+  // EVERY STATE OF THIS PAGE NEEDS A WAY OUT, and for a while none of them had one.
+  //
+  // This screen is reached from an email, which means it is very often opened in a mail client's
+  // in-app browser with NO history — so the browser's Back button is not the escape hatch it looks
+  // like. Both failure states used to render two paragraphs and nothing else: the copy said
+  // "request a new one from the sign-in page" while offering no route to the sign-in page, so the
+  // only way onward was editing the URL by hand.
+  //
+  // The no-token state below is the one a prod check found, but the expensive one is the state
+  // further down: the token is valid for ONE HOUR, so anyone who opens the link later has a
+  // truthy token, fills in the form, submits, and is told the link expired — with, until now,
+  // nothing to tap. The person most locked out had the fewest ways forward.
+  //
+  // `ForgotPassword` has carried a "Back to sign in" link in both of its states all along; this is
+  // just the same affordance, plus a direct route to asking for a fresh link.
   if (!token) {
     return (
       <div className="min-h-screen bg-cream flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm sticker bg-peach px-5 py-6 text-center">
           <p className="font-display font-black text-[17px] text-ink mb-1">
-            Invalid reset link
+            This reset link isn&rsquo;t complete
           </p>
-          <p className="font-display text-[13.5px] text-ink-soft">
-            Request a new one from the sign-in page.
+          <p className="font-display text-[13.5px] text-ink-soft leading-snug">
+            Ask for a new one and we&rsquo;ll email it to you.
           </p>
         </div>
+        <WayOut />
       </div>
     )
   }
@@ -103,6 +141,11 @@ export default function ResetPassword() {
           </button>
         </form>
       </div>
+
+      {/* Shown even before anything fails. A reset token lives one hour, so the likeliest visitor to
+          this form is someone whose link died on the way — and finding that out only AFTER typing a
+          password twice, with no way onward, is the dead end this fixes. */}
+      <WayOut />
     </div>
   )
 }
