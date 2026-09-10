@@ -55,6 +55,25 @@ If a push is imminent and this hasn't run, run it first — do not push stale do
 root and `C:\Users\chissman\issei\CLAUDE.md` — they can diverge because the file is
 git-ignored) · `.env.example`, `frontend/.env.example` · `docs/**`.
 
+**And one document that is not in this repo at all: the owner's GitHub PROFILE README**
+(`github.com/charman02/charman02`). It is the most recruiter-facing text the project has, it
+quotes issei's numbers and links, and because it lives elsewhere nothing in a normal docs pass
+touches it — so it drifts silently. It went months linking "live app" at a stale `*.vercel.app`
+preview and "API docs" at a decommissioned Render host returning **503**.
+
+Treat it as part of every docs pass:
+
+1. The auditor clones it read-only and reports its stale claims like any other file (see its own
+   instructions for the two extra checks: **curl every URL**, and measure the commit count and
+   elapsed span, which no in-repo doc states).
+2. Applying the fixes is a commit and push to that OTHER repo — clone, edit, commit, push. The
+   same credential helper that pushes issei works there.
+3. **Only the issei-derived claims are yours to change.** That file is written in the first person
+   about someone's career; their job, their degrees and their other projects are not docs drift.
+   Keep their voice, and put the diff in front of them in your report.
+4. A **dead link outranks a wrong number** when you order the findings. A recruiter who clicks
+   through to a 503 forms a worse impression than one who reads a stale test count.
+
 ## Known drift to expect (as of this skill's writing — verify, don't trust)
 
 These have shipped and were often undocumented; the auditor will flag whichever are still

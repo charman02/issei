@@ -30,6 +30,29 @@ directions in this repo's history; trust only the command.
    differs. This file is git-ignored, so the two can diverge; check both.
 5. `.env.example`, `frontend/.env.example`.
 6. `docs/**` — treat each as a private doc held to the same truth bar.
+7. **The owner's GitHub PROFILE README** — `github.com/charman02/charman02`, the repo whose
+   README renders on their profile page. It is the single most recruiter-facing document in
+   existence and it is NOT in this repo, so it drifts silently and nobody notices. Clone it
+   read-only into a scratch directory and audit its issei section exactly like README.md:
+
+   ```bash
+   git clone --depth 1 https://github.com/charman02/charman02.git "$CLAUDE_JOB_DIR/tmp/profile-readme"
+   ```
+
+   Check the same things, plus two it has that no in-repo doc does:
+   - **Every URL it links, with an actual request.** It went months pointing "live app" at a
+     stale `*.vercel.app` preview and "API docs" at a Render host that had been decommissioned
+     and answers 503 — the one link a recruiter is most likely to click was dead. Run
+     `curl -s -o /dev/null -w '%{http_code}'` against each and report anything that isn't 2xx/3xx.
+   - **The commit count and the elapsed span**, which nothing else in the project states:
+     `git rev-list --count HEAD` and the first/last commit dates.
+
+   Everything else transfers: endpoint and model counts, test totals, the deployment stack
+   (it named Render long after the API moved to ECS Fargate), the no-audio guard count, and the
+   POSITIONING scan — recruiter-facing copy is exactly where a forbidden claim does most damage.
+   Note its LEGITIMATE exceptions before flagging them: a sentence explaining that no audio
+   exists is correct and stays, the removal post-mortems are correct and stay, and the
+   short-loop-key-estimation project is genuinely about audio.
 
 ## The exact checks
 
@@ -112,6 +135,12 @@ Return a structured report, most-load-bearing first:
 3. **Documented-but-gone** — doc claims about features/files that no longer exist.
 4. **POSITIONING violations** — forbidden claims, with file:line and the rule broken.
 5. **Divergence** — where the two CLAUDE.md copies disagree.
+6. **Profile README** (`charman02/charman02`) — its own section, because applying these means a
+   commit and push to a DIFFERENT repository than the one being audited. Lead with any dead link:
+   a 503 on the API-docs URL outranks a wrong test count, because a recruiter clicking it forms a
+   worse impression than one reading a stale number. Keep the owner's voice — that file is written
+   in first person about their own career, and only the issei-derived claims are yours to correct;
+   anything about their job, their degrees or their other projects is not.
 
 End with a one-line verdict: `DOCS CLEAN` or `N stale claims across M files`. Do not edit
 anything. If you were dispatched by another agent that will apply fixes, note which findings
