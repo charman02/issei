@@ -13,7 +13,7 @@ So a recipe here is attributed to a **person** — the dish is the title, the pe
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling that refuses to invent precision, photo upload (with automatic iPhone HEIC → JPEG conversion), and a capability-token sharing system layered over a concrete visibility model. A profile is public or private (private by default); each recipe or post is set to "Everyone" (public), "Friends only" (friends), or "Only me" (private) — new items default to "Friends only", or "Everyone" on a public profile. The chosen value is stored literally and fixed once chosen, so a label never silently changes if the profile later changes.
 
-**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 65 endpoints, 18 data models, 1351 automated tests (600 pytest + 751 Vitest).
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 65 endpoints, 18 data models, 1421 automated tests (600 pytest + 821 Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -32,11 +32,13 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 
 **pytest** - backend tests (600) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
 
-**Vitest + React Testing Library** - frontend unit/component tests (751 in 51 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
+**Vitest + React Testing Library** - frontend unit/component tests (821 in 55 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
 
 **Cloudinary** - hosts recipe photos and profile pictures uploaded through the `/upload` endpoint.
 
 **React + Vite + Tailwind CSS** - the frontend single-page app (`frontend/`), with **axios** for API calls and **React Router** for client-side routing. Mobile-first, talks to the backend over HTTP.
+
+**Web Push + a PWA shell** - notifications are delivered with hand-rolled **RFC 8292 (VAPID)** and **RFC 8291 (aes128gcm)** on top of `cryptography` and `httpx`, adding **no new dependency** — the obvious pick, `pywebpush`, hard-depends on `requests` while this codebase standardised on httpx. Because hand-rolled crypto fails silently, the test decrypts what the sender produces from the receiver's side; that round trip caught a real bug (the content key derived from a zero salt while the header carried the random one — a body no browser could have read). The app is installable via a web manifest and a **push-only service worker** (no offline caching, deliberately), which is not cosmetic: Safari on iOS grants Web Push *only* to a site added to the home screen, so the manifest is the precondition for notifications existing on that platform at all. Unset keys mean notifications are OFF, not broken — every send becomes a logged no-op and the scheduler's route 404s.
 
 **AWS ECS Fargate + Vercel** - the two deployment platforms. The FastAPI backend runs on **AWS ECS Fargate** behind an Application Load Balancer, served over HTTPS at `api.issei.app` (Route53 + ACM). The React SPA auto-deploys to **Vercel** on every push to `main`. The frontend reaches the backend via a build-time `VITE_API_URL` env var, and the backend's allowed CORS origins are env-driven — so hosts can change without a code edit. See [`infra/README.md`](infra/README.md) for the architecture.
 
@@ -73,7 +75,7 @@ A *lineage tree* modeled recipes as a generational graph (`parent_recipe_id`, a 
 | POST | /auth/forgot-password | No | Request password reset email. |
 | POST | /auth/reset-password | No | Set new password with reset token. |
 | GET | /auth/me | Yes | Returns the currently authenticated user. |
-| PATCH | /auth/me | Yes | Edits the account: name, email, password, profile picture (`photo_url`), and/or profile visibility (public/private). Email and password changes require the correct current password; a name, photo, or profile-visibility change doesn't. Also accepts `apply_visibility_to_all` (`public`/`friends`/`private`) — a bulk sweep that sets **every** one of the caller's recipes and posts to that concrete value in one action (the "make everything public" / "make everything friends-only" confirm dialog). Email must be unique. Returns the updated user. |
+| PATCH | /auth/me | Yes | Edits the account: name, email, password, profile picture (`photo_url`), and/or profile visibility (public/private). Email and password changes require the correct current password; a name, photo, or profile-visibility change doesn't. Also accepts `apply_visibility_to_all` (`public`/`friends`/`private`) — a bulk sweep that sets **every** one of the caller's recipes and posts to that concrete value in one action (the "make everything public" / "make everything friends-only" confirm dialog). Also accepts the six **notification settings** (#89), none of which needs a password because none exposes anything to anyone else and all are reversible: `timezone` (an IANA zone name — the client sends it from `Intl.DateTimeFormat().resolvedOptions().timeZone` on every login and signup, not from a settings screen, because the daily nudge fires at a fixed hour in the RECIPIENT'S local time and a user with no zone stored is never due for anything), `notify_hour` (0-23), `notify_prompt`, `notify_people` (accepted and stored but **read by nothing yet** — see TECHDEBT), `quiet_from` and `quiet_to` (0-23; equal values mean *no* quiet hours rather than a 24-hour blackout). No cross-field validation, deliberately: a `notify_hour` inside someone's own quiet window is a coherent "not for now" rather than an error. Email must be unique. Returns the updated user. |
 | DELETE | /auth/me | Yes | Delete account (requires password). |
 | POST | /recipes | Yes | Creates and returns a new recipe. |
 | GET | /recipes | Yes | Returns the current user's recipes. |
@@ -193,7 +195,7 @@ npm test
 ```
 
 ## Future Roadmap
-See [FUTURE.md](FUTURE.md) for planned features including multi-user family sharing, iOS mobile app, translation support, and richer photo/video support.
+See [FUTURE.md](FUTURE.md) for planned features including the iOS app (its notification half now shipped on the web), translation support, and richer photo/video support. Multi-user family sharing was **cut** — it is close to the collaborative-editing model POSITIONING rules out.
 
 ## Live Demo
 - **App (React frontend):** https://issei.app — sign up and it works end to end: create a recipe (with a photo), keep it in your kitchen, scale it, pass it on. The handoff link opens the full recipe with no account, which is the path worth trying.

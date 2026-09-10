@@ -3,7 +3,7 @@
 Written to be reread before an interview. Verified against the code on 2026-09-09, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 65 endpoints · 18 tables · 23 migrations · 600 backend tests · 751 frontend
+**Scale:** 65 endpoints · 18 tables · 23 migrations · 600 backend tests · 821 frontend
 tests · 8,137 lines of Python under `app/` (excluding tests and migrations), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
 
@@ -70,7 +70,7 @@ users
 feedback                          (standalone)
 ```
 
-The last three are the ones people ask about, so they belong in the picture rather than only
+`recipe_requests`, `notifications` and `blocks` are the ones people ask about, so they belong in the picture rather than only
 in §5's prose: `recipe_requests` is the ask that makes a handoff happen, `notifications` is the
 only place the app speaks first, and `blocks` is the row that outranks every visibility value.
 
@@ -183,7 +183,8 @@ be an uncapped channel into a blocker's kitchen.
 branch resolves against `are_friends(viewer, owner)`. The handoff grant is orthogonal —
 it's checked last and lets a grantee read the one recipe handed to them whatever the
 visibility says. Every read funnels through this: `get_recipe`, `/scale`, `/cook`,
-`/handoff`.
+`/handoff` — **correction: `handoff_recipe` gates on OWNERSHIP, not `can_view`**, which is the
+next paragraph's own point. Read and write are separate questions here.
 
 **The distinction to state precisely: read is not write.** `can_view` answers *read*
 only. Editing and deleting are owner-only, enforced separately by a `user_id` filter in
@@ -263,7 +264,7 @@ I know why it's a problem.
 | `recipes.deleted_at` | In every read's predicate |
 | `ingredients.recipe_id`, `steps.recipe_id` | The `IN (...)` of every selectinload |
 | `handoffs.token` (unique) | The capability lookup — one row by token |
-| `handoffs(to_user_id, recipe_id, state)` | Composite, added deliberately (migration `a1b2c3d4e5f6`) for the grant check in `can_view`, which runs on every non-owner read |
+| `handoffs(recipe_id, to_user_id, state)` | Composite, added deliberately (migration `a1b2c3d4e5f6`) for the grant check in `can_view`, which runs on every non-owner read |
 | `users.email` (unique) | Login, and it enforces the constraint |
 
 The composite one is the good answer to "have you ever added an index on purpose?" — it
@@ -287,7 +288,7 @@ delete rule encodes what the row *means*.
 
 ---
 
-## 10. The LLM layer (newest work)
+## 10. The LLM layer
 
 `POST /recipes/parse` → OpenRouter → structured JSON. Saves nothing.
 

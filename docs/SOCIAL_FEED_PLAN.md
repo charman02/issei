@@ -1,11 +1,13 @@
 # Implementation plan: the social presence feed (issei #62)
 
 > **HISTORICAL PLANNING RECORD — do not read the per-phase stamps below as current state.**
-> Last reconciled with the code 2026-09-09. Phases 0, 1a, 1b and 2 shipped (friend graph and
+> Last reconciled with the code 2026-09-10. Phases 0, 1a, 1b and 2 shipped (friend graph and
 > minimal profiles; posts and the friends feed, which became Home; concrete per-item
 > visibility; the request → fulfil loop with notifications), and so did work this plan never
-> anticipated: the Kept shelf (#57), blocking (#85), the people directory (#80), the feed
-> read-mark (#97) and post editing (#98).
+> anticipated: the Kept shelf (#57), blocking (#85), reporting (#87), the people directory (#80),
+> the feed read-mark (#97), post editing (#98), a cook-only keeper count (#96), field ceilings
+> (#100) — and **push notifications with a PWA shell (#89), which this plan repeatedly assigned to
+> "the native phase"**.
 >
 > Two things stamped "BUILT" below were later **UN-SHIPPED by #94** and must not be described
 > as features anywhere: the feed's **friends/everyone toggle** (#70) and Browse's **Meals tab**
@@ -78,13 +80,17 @@ line, the revision wins and the older text is annotated in place.
      visibility or friendship; it's checked only for recipes, and only after the visibility
      rule says no. `effective_visibility` returns the recipe's own concrete `visibility`
      unchanged; Browse shows recipes where `visibility == "public"`.
-3. **Feed friends/everyone toggle.** *(BUILT — shipped in #70.)* The feed gains a control
+3. **Feed friends/everyone toggle.** *(BUILT in #70 — then **UN-SHIPPED by #94**: the toggle is
+   gone and `everyone` survives only as the client's cold-start fall-through, rendered under
+   "While you find your people" and unreachable once one friend posts.)* The feed gains a control
    to show either just friends (the Phase-1a default) or everyone (public posts from
    non-friends). This revises the "friends-only feed, no public/global feed" constraint
    above. The "everyone" view is scoped to posts whose own `visibility` is `public` (per
    #2) — enforced in SQL — and excludes the caller's own and friends' posts, so it's pure
    discovery with no overlap with the friends scope.
-4. **Browse shows posts, not just recipes.** *(BUILT — shipped in #71.)* Browse gained a
+4. **Browse shows posts, not just recipes.** *(BUILT in #71 — then **UN-SHIPPED by #94**: the
+   Meals tab is gone, because Browse is an intent surface and nobody searches for a photo of
+   someone's dinner. `GET /posts/browse` still exists and is tested; no client calls it.)* Browse gained a
    **Recipes | Meals** tab switcher: Recipes is the existing recipe discovery; Meals is a
    grid of public posts (`GET /posts/browse`, `visibility == "public"` only), each opening
    a read-only `/posts/:id` page. The open "how to mix two result types" question was
@@ -212,6 +218,7 @@ alone delivers the "see what your friends are making / stay connected from afar"
   - `GET /posts/{id}` — single post (author or a friend of author only).
   - `DELETE /posts/{id}` — author-only (read-is-not-write, invariant 2).
   - `GET /users/{id}/posts` — a user's posts, for the profile grid (friend-or-public gated).
+    *(Shipped as `GET /posts/users/{user_id}` — kept under the posts router's own prefix.)*
 - **Post→recipe seeding** is a *frontend* concern (Phase 2 closes the loop); in Phase 1
   a post just optionally references an existing `recipe_id`.
 
@@ -259,7 +266,9 @@ the recipe auto-delivers it to everyone who asked. Requires a notification cente
   **Unique `(post_id, requester_id)`** — idempotent per user (mirrors handoff-grant
   idempotency). Register + migration.
 - **Model `Notification`** (`models/notification.py`): `id`, `user_id` FK (recipient),
-  `type` (`recipe_request | request_fulfilled | comment | friend_request | friend_accept`),
+  `type` (shipped as five names — `recipe_request | request_fulfilled | friend_request |
+  friend_accept | recipe_kept`; `comment` awaits Phase 3, and `recipe_kept` (#96) arrived instead
+  and is **anonymous at the API boundary**),
   `actor_id` FK (who caused it), `post_id?` / `recipe_id?` / `friendship?` refs,
   `read_at` nullable, `created_at`. Generic enough to serve Phases 2–3. Register +
   migration.
@@ -300,7 +309,8 @@ the recipe auto-delivers it to everyone who asked. Requires a notification cente
   is the low-friction demand→recipe path that is the whole point.
 - **`components/NotificationCenter`** — a bell in the header or a "You"-tab section;
   unread badge; list of notifications with deep links (request → your post; fulfilled →
-  the recipe). In-app only (no push — that's the native phase).
+  the recipe). In-app only (no push — that's the native phase). *(Superseded: web push shipped in #89 with a
+PWA shell, no native app. See FUTURE.md's roadmap item 1.)*
 - **A requests surface (user-requested 2026-08-19):** the author needs to see their
   incoming recipe-requests two ways — a TOTAL across all their posts, and a per-post
   count on each PostCard. Mirror the friend-requests pattern: a dedicated "Recipe
@@ -361,8 +371,10 @@ Phase 1, or immediately after Phase 0):
 `POSITIONING.md` was reworked with explicit sign-off. It now frames the feed and the
 handoff as **one product** (presence → the ask → the handoff), keeps the one-liner,
 adds a "social food feeds" competitor row, folds in the non-cook on-ramp, and bans
-claiming the unbuilt social layer (no "everyone" feed / profile visibility / posts in
-Browse / request action yet) and treating the friend graph as lineage. The
+treating the friend graph as lineage. *(The "unbuilt social layer" bans it carried at the time —
+no "everyone" feed, no profile visibility, no posts in Browse, no request action — are all obsolete:
+three shipped, and the everyone-feed and Meals tab were shipped then deliberately UN-shipped by #94,
+which is a different prohibition. See POSITIONING.md for the current list.)* The
 docs-auditor's POSITIONING scan is green against the new text.
 
 ## Backlog items this absorbs / closes

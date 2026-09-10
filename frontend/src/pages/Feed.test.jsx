@@ -17,9 +17,21 @@ vi.mock('../api/friends', () => ({
 vi.mock('../api/notifications', () => ({
   getNotifications: vi.fn(() => Promise.resolve({ data: { notifications: [], unread_count: 0 } })),
 }))
+// Feed also renders NotifyNudge (#89). WITHOUT this mock, jsdom has no PushManager, so
+// `pushAvailability()` answers 'unsupported' and the strip self-hides — meaning nobody would notice
+// if <NotifyNudge /> were deleted from this page. Stubbed to the state the strip exists for:
+// subscribable, nothing subscribed, permission not yet answered.
+vi.mock('../lib/push', () => ({
+  pushAvailability: () => 'ready',
+  permissionState: () => 'default',
+  isSubscribedHere: () => Promise.resolve(false),
+  primeVapidKey: () => Promise.resolve({ public_key: 'k', configured: true }),
+  enable: () => Promise.resolve({ ok: true }),
+}))
 import { getFeed } from '../api/posts'
 import { getFriends } from '../api/friends'
 import { getNotifications } from '../api/notifications'
+import { clearUser, setUser } from '../lib/currentUser'
 import Feed from './Feed'
 
 const post = (id, over = {}) => ({
@@ -49,7 +61,13 @@ function renderFeed() {
   )
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+  // Signed out by default, so the two one-time nudges (photo, notifications) stay out of every
+  // other test's rendered output. The tests that want one sign in explicitly.
+  clearUser()
+})
 
 describe('Feed (Home)', () => {
   it('renders friends’ posts newest-first as cards', async () => {
@@ -388,5 +406,21 @@ describe('Feed — the caught-up divider (#97)', () => {
     renderFeed()
     await screen.findByText('Dish 8')
     expect(screen.getAllByText(/you.re all caught up/i)).toHaveLength(1)
+  })
+})
+
+describe('Feed carries the notifications nudge (#89)', () => {
+  it('offers it on Home, which is the only place most people will find it', async () => {
+    // The setting itself lives three screens deep on the You page, under two other headings. This
+    // strip is the difference between a notification feature people have and one they don't — and
+    // being reachable is the whole point, so the wiring is worth a test of its own.
+    // The strip needs a signed-in user — an anonymous invite reader has nothing to be notified
+    // about — and it reads that through the shared identity store, not from props.
+    setUser({ id: 1, first_name: 'Ana', photo_url: 'https://img.test/me.jpg' })
+    getFeed.mockResolvedValue({ data: [] })
+    renderFeed()
+    expect(
+      await screen.findByText(/get a nudge when your friends have been cooking/i),
+    ).toBeInTheDocument()
   })
 })

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import client, { toUserMessage } from '../api/client'
-import { setUser } from '../lib/currentUser'
+import { patchUser, setUser } from '../lib/currentUser'
+import { localTimezone } from '../lib/push'
 import { claimInvite } from '../api/sharing'
 import IconField from '../components/IconField'
 import Wordmark from '../components/Wordmark'
@@ -63,6 +64,27 @@ export default function Login() {
   async function finishAuth(data, { isNew = false } = {}) {
     localStorage.setItem('issei_token', data.access_token)
     setUser(data.user)
+    // Tell the server what time zone this person is in (#89).
+    //
+    // HERE rather than in a settings screen, and that placement is the whole point: the daily
+    // prompt fires at a fixed hour in the RECIPIENT'S local time, so a user with no zone stored
+    // is never due for anything. Nobody opens settings to volunteer their time zone, and asking
+    // would be a question with an obvious answer the browser already knows.
+    //
+    // Only when it actually differs, so a returning user's sign-in isn't one extra write every
+    // time. NOT AWAITED: nothing below depends on it, and awaiting put a round trip between the
+    // tap and the destination — on the invite path it delayed `claimInvite` too. One caveat this
+    // deliberately does not hide: a 401 here is intercepted by `api/client.js` BEFORE the local
+    // catch, which clears the session and bounces to /login. That is vanishingly unlikely with a
+    // seconds-old token, but it is not the "ignored entirely" the first version of this comment
+    // claimed.
+    const tz = localTimezone()
+    if (tz && tz !== data.user?.timezone) {
+      client
+        .patch('/auth/me', { timezone: tz })
+        .then(({ data: me }) => patchUser(me))
+        .catch(() => {})
+    }
     if (inviteToken) {
       // The token IS the authorization; claim the grant for this account, then
       // land the user on the recipe they were invited to.

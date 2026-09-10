@@ -98,8 +98,9 @@ This is a large, multi-part feature. It adds, roughly in dependency order:
 - **Post** model (photo, dish name, optional caption, optional recipe_id) + a **feed**
 - **RecipeRequest** model + the fulfill→grant→notify loop
 - **Comment** model
-- **A notification system** — **BUILT (#79)**, in-app only; push waits for the native app. Requests and comments both need
-  one. Given no push infra and the "we don't email users" stance, this likely starts
+- **A notification system** — **BUILT (#79)** as an in-app inbox, and **PUSH SHIPPED 2026-09-09/10
+  (#89) on the WEB, with no native app** — see the correction under Tension 2. Requests and comments
+  both need one. Given no push infra and the "we don't email users" stance, this likely starts
   as an **in-app notification center**. (Cross-cutting; flag as its own sub-project.)
 
 ## Two tensions the design review surfaced (open product calls)
@@ -123,6 +124,19 @@ two-axes tension by unifying them: a recipe's audience *is* a visibility tier.
   "friends" visibility has no one to resolve against. It lands in Phase 0/1.
 
 ### Tension 2 — the "open it even when not cooking" magic leans on push (≈ native)
+
+> **RESOLVED 2026-09-09/10, and the premise below was wrong.** Push shipped on the web (#89): RFC
+> 8292 VAPID + RFC 8291 encryption on `cryptography` and `httpx`, a daily "N friends posted since
+> you last looked" nudge at a fixed hour in each person's local time, and a PWA shell. Web push was
+> not weak — but the iOS caveat is real and specific rather than general: **Safari grants Web Push
+> only to a site added to the home screen**, so the manifest and service worker were the
+> precondition, not the native app. "push ≈ native" was the one inference that didn't hold, and it
+> is the reason the iOS app sat at #1 on the roadmap for months. The remaining native case is
+> performance, camera and an App Store listing.
+>
+> One honest gap: no notification has yet been observed arriving on a real device — headless
+> Chromium refuses `pushManager.subscribe` because there is no push service behind it. See TECHDEBT.
+
 BeReal's habit loop is *"your friends just posted" → you open the app*. That pull needs
 push notifications, and web push (even iOS 16.4+) is weak/unreliable.
 - **Everything is buildable web-first** — posts, feed, requests, the fulfill loop,
@@ -130,6 +144,7 @@ push notifications, and web push (even iOS 16.4+) is weak/unreliable.
   **backend is identical** whether the client is web or native, so no work is wasted.
 - **What web-first does NOT give you** is the push that pulls people back: the
   notification center works on *open* (pull), not as a tap-on-the-shoulder (push).
+  *(Superseded — it did. See the note at the top of this tension.)*
 - **Plan:** build web-first through the phases to validate cheaply; treat **native iOS
   as a later amplifier, not a prerequisite** (user's call: not now). Nothing here
   blocks the native leap, and shipping web-first de-risks that investment by proving
@@ -151,8 +166,14 @@ You open the feed and it's empty because no friends have joined or posted. Mitig
 - Seed friend suggestions from the **handoff graph** (people you've already cooked for).
 - Make posting **one photo + one name** — dead simple, no recipe required.
 - A gentle "invite the people you've cooked for" prompt.
+- The feed itself is a distinct surface, but it **replaced Home at `/`** rather than becoming
+  another bottom-nav tab (see the "likely its own tab" line below — that's how it was drafted, not
+  how it shipped).
 - *Avoid* a public community feed as the empty-state filler — it reintroduces the
-  virality dynamic you're trying to keep out.
+  virality dynamic you're trying to keep out. *(Overruled, then narrowed: #70 shipped a
+  friends/everyone toggle, #94 removed the toggle and kept `everyone` as the COLD-START source
+  only — public posts appear under "While you find your people" and vanish the moment a friend
+  posts. The advice was right about a standing public feed and wrong about an empty screen.)*
 
 ## Suggested phasing (MVP first, ship value early)
 
@@ -176,7 +197,7 @@ request loop is the harder, higher-payoff build.
 ## Open questions for the build session
 
 1. Friends (symmetric) vs followers (asymmetric) — **decision needed** (rec: friends).
-2. Notification delivery — **RESOLVED: in-app only.**
+2. Notification delivery — **RESOLVED: in-app first (#79), then WEB PUSH (#89) — not native.**
 3. Is there any public/global feed, or strictly friends-only? (rec: friends-only.)
 4. Does posting a photo ever become the *primary* way recipes enter the app (demand-
    pulled), demoting the current add-first flow? Or do they coexist? (Big product call.)

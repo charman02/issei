@@ -75,7 +75,8 @@ alone — re-run it):
    rule. A grantee or a friend can read and cook, never mutate someone else's record.
    Every one of these returns **404, not 403**, to a non-owner: the same answer an unknown
    id gets, so a refusal never confirms the thing exists.
-   → `tests/test_sharing.py`, `tests/test_sharing_api.py`,
+   → `tests/test_owner_only_writes.py` (the file that actually pins it — every patch/delete
+   assertion lives there), `tests/test_sharing_api.py`,
    `tests/test_posts.py::test_READ_IS_NOT_WRITE_a_friend_cannot_edit_your_meal`
 
 3. **Autosuggest never leaks another user's data.**
@@ -318,12 +319,46 @@ Two more properties of a report, both of which would be easy to "improve" into a
   → `test_reporting_notifies_NOBODY`, `test_nothing_the_reported_person_can_read_changes`, and
   `frontend/src/pages/UserProfile.test.jsx` — "never says the reported person will hear about it".
 - **One OPEN report per reporter per person**, deduped in Python because the rule has a state
-  predicate a UNIQUE constraint can't express. A repeat while one is open is accepted and
-  discarded (the FIRST account is kept — a later duplicate must not overwrite what someone
-  originally said), and the caller gets the same 204 either way, because "you already reported
-  this person" makes someone doubt the first one landed. A report filed after the first was
-  CLOSED is a NEW report: it means it happened again.
-  → `test_a_second_report_while_the_first_is_OPEN_is_not_stored`,
+  predicate a UNIQUE constraint can't express. A repeat while one is open **APPENDS** to the open
+  row — the original words are kept first and the new ones added after, reason stamped inline and
+  the whole thing bounded. It used to DISCARD the repeat, which was wrong for the case that
+  matters: with no way to close a report, a genuinely new incident weeks later was thrown away
+  while the UI said "we'll take a look" about it. The caller gets the same 204 either way, because
+  "you already reported this person" makes someone doubt the first one landed. A report filed after
+  the first was CLOSED is a NEW report: it means it happened again.
+  → `test_a_second_report_APPENDS_to_the_open_one_instead_of_vanishing`,
   `test_a_report_after_the_first_was_CLOSED_is_a_new_report`,
   `test_the_caller_cannot_tell_a_duplicate_from_a_first_report`.
 
+### Invariant 15 — the service worker stays push-only, and the iOS tags stay in `index.html`
+
+`frontend/public/sw.js` handles exactly three events (`push`, `notificationclick`,
+`pushsubscriptionchange`) and **caches nothing**. That restraint is the invariant, because the
+tempting addition — offline caching, since "it's a PWA now" — is a second, much riskier feature
+wearing the same hat: a stale cached `index.html` serving an old JS bundle against a moved API is
+the classic PWA failure, and this app has no offline story to justify the risk (every screen is a
+fetch). If offline reading ever matters it gets its own task and its own review.
+
+Three more properties of the shell, none of which any rendered-UI test can see — they are static
+files, and each one fails **silently** when wrong:
+
+- **`display: standalone` plus the three `apple-*` tags.** Safari ignores the manifest's icons and
+  its display mode, so those tags are not redundant with it: without
+  `apple-mobile-web-app-capable`, an iOS install is a *bookmark*, and a bookmark is granted no Web
+  Push. The whole feature simply doesn't exist on iOS if this regresses, with no error anywhere.
+- **A maskable icon as well as a plain one**, and every icon the manifest names must exist on disk.
+  Android crops any icon to its platform shape (a non-maskable wordmark loses its edges), and a
+  404 icon makes the browser quietly decline to install rather than complain.
+- **No build-time placeholder in `sw.js`.** Files in `public/` are copied VERBATIM — Vite's
+  `define` never touches them — so a `__API_URL__` there would ship as that literal string and
+  every worker fetch would go to an invalid URL. The API base arrives in the registration's query
+  string instead (`/sw.js?api=…`), which the browser persists with the registration so it survives
+  a cold worker start weeks later.
+→ `frontend/src/pwa.test.js` (13 test cases over the manifest, `index.html` and `sw.js`).
+
+**What no test here can reach:** a real end-to-end delivery. Headless Chromium refuses
+`pushManager.subscribe` outright — "Registration failed - permission denied" — because there is no
+push service behind it, so the browser→FCM/APNs→device leg is covered only by
+`tests/test_push.py`'s round trip (which decrypts what the sender produces, from the receiver's
+side) plus the live subscribe/rotate routes. Treat one real phone as a required manual step before
+claiming notifications work.

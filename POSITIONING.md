@@ -190,15 +190,19 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). NINE test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). THIRTEEN test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
 `pages/InviteLanding.test.jsx`, `components/RecipeForm.test.jsx` (both mic states),
-`pages/Notifications.test.jsx` and `pages/UserProfile.test.jsx`. The regex is also WIDER than the
+`pages/Notifications.test.jsx`, `pages/UserProfile.test.jsx` and — new with #89's PWA shell —
+`components/NotificationSettings.test.jsx`, `components/NotifyNudge.test.jsx` and `pwa.test.js`
+(the last over the WEB MANIFEST's description, which is app-store-facing copy no rendered-screen
+assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
+screen and was missed by three separate recounts of this list. The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all four files — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all EIGHT files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -386,6 +390,33 @@ people add to it", no collaborative editing, no "enriched by whoever cooks it". 
 recipient who signs up gets to keep and cook the recipe — that's the promise, and it's
 enough.
 
+### Notifications: what the app may and may not say about them (#89)
+
+A whole new body of user-facing copy arrived with push — permission prompts, install
+instructions, a Home nudge, quiet-hours warnings, the notification bodies themselves — and it
+sits closer to the product's promises than a settings screen usually does. Five rules:
+
+1. **Never describe an unwired switch as working.** `notify_people` is stored and read by
+   nothing, so `NotificationSettings` renders **no switch for it**. A control that changes
+   nothing is worse than a missing one: switching it off reads as a promise the app then
+   breaks in the other direction. The same applies to any preference added ahead of its
+   sender.
+2. **The daily nudge counts PEOPLE and only ever says what is true.** "3 friends posted since
+   you last looked" is derived from a `can_view_post` re-check, so it excludes a friend's
+   private post and a blocked person's post. Zero sends nothing at all — never a generic
+   "open issei!", which is the species of notification people mute an app over.
+3. **"This browser can't do notifications" is FALSE on an iPhone in Safari.** Push exists
+   there, gated on the site being added to the home screen — so the honest copy is an
+   instruction ("Add issei to your home screen first"), never a refusal. This matters more
+   than it sounds: iPhones are most of this app's audience, and the refusal is a dead end.
+4. **A notification is not a metric.** Never push a count that the private-count rules
+   elsewhere in this file forbid showing on screen — a recipe-request count is the cook's
+   alone, a keeper count has no names, and a lock screen is the most public surface the app
+   has.
+5. **Don't claim delivery that hasn't been observed.** As of 2026-09-10 every layer we can
+   test is verified and no notification has yet arrived on a real device (see TECHDEBT). Until
+   one has, the truthful phrasing is "web push is implemented", not "notifications work".
+
 ### Never claim a shopping list or unit conversion
 
 Both removed. There is no shopping list and no `app/services/units.py`. `FUTURE.md`
@@ -422,7 +453,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **65 routes**, **18 models**,
-**600 backend tests**, **751 frontend tests in 51 files**. Endpoint and test counts have
+**600 backend tests**, **821 frontend tests in 55 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

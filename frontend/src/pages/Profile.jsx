@@ -8,6 +8,8 @@ import { PHOTO_ACCEPT } from '../lib/photoUpload'
 import { useAvatarUpload } from '../lib/useAvatarUpload'
 import MarkerTitle from '../components/MarkerTitle'
 import Avatar from '../components/Avatar'
+import Toggle from '../components/Toggle'
+import NotificationSettings from '../components/NotificationSettings'
 
 // Client-side display preferences (no backend needed). Persisted in localStorage
 // so they survive reloads. Account edits (name/email/password) DO hit the backend
@@ -19,43 +21,6 @@ function loadPrefs() {
   } catch {
     return {}
   }
-}
-
-// A quiet toggle switch in the sticker language. `hint` is a plain-language line
-// under the label saying what flipping it actually changes — added because
-// testing showed the bare labels ("Reduce motion") were read as jargon and
-// skipped. Optional so a self-evident toggle isn't padded with a redundant line.
-function Toggle({ on, onChange, label, hint }) {
-  return (
-    <button
-      onClick={() => onChange(!on)}
-      role="switch"
-      aria-checked={on}
-      className="flex items-center justify-between gap-4 w-full py-2.5 text-left"
-    >
-      <span className="min-w-0">
-        <span className="block font-display font-bold text-[14px] text-ink">
-          {label}
-        </span>
-        {hint && (
-          <span className="block font-display italic text-[12px] text-ink-soft mt-0.5">
-            {hint}
-          </span>
-        )}
-      </span>
-      <span
-        className={`relative flex-none w-12 h-7 rounded-full border-2 border-ink transition-colors ${
-          on ? 'bg-sage' : 'bg-cream'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 w-5 h-5 rounded-full bg-ink transition-all ${
-            on ? 'left-[22px]' : 'left-0.5'
-          }`}
-        />
-      </span>
-    </button>
-  )
 }
 
 // An account row that expands into its own edit form. Closed, it's a labelled
@@ -535,6 +500,11 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* NOTIFICATIONS (#89). Its own section above Settings, not a row inside it: the toggles
+          below are display preferences that change what this screen looks like, while these
+          decide whether the app is allowed to interrupt someone's day. */}
+      <NotificationSettings />
 
       {/* SETTINGS. */}
       <h2 className="font-display font-black text-[19px] text-ink mt-7 mb-2">

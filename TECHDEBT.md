@@ -102,10 +102,13 @@ strangers arrive. Security/privacy first.
   The column exists, `UserResponse` exposes it, login returns it, `PATCH /auth/me` writes it — and
   no code reads it, because person-to-person pushes are not wired: `services/notifications.py`'s
   `notify()` is untouched by #89 and does not import `services/push.py`. The owner's decision was
-  "every notification type pushes"; only the daily prompt does. So the client half can render a
-  "notifications from people" switch that does nothing, and no test fails if whoever wires the
-  pushes forgets to consult it — the only test touching the field asserts it has NO effect on the
-  daily nudge. *Why it's a ledger entry and not a fix:* wiring it properly needs a decision about
+  "every notification type pushes"; only the daily prompt does. **The client half resolved half of
+  this by omission** (2026-09-10): `NotificationSettings.jsx` deliberately renders NO switch for it,
+  because a control that changes nothing is worse than a missing one — switching it off would read
+  as a promise the app then breaks in the other direction — and a test pins the switch COUNT at two
+  so one can't be added back before the push is wired. What remains is that the FIELD is still
+  writable through `PATCH /auth/me` and consulted by nothing, and no test fails if whoever wires the
+  pushes forgets to read it: the three tests that touch it (`tests/test_prompt.py`, `tests/test_push_subscriptions.py`, `frontend/src/components/NotificationSettings.test.jsx`) assert only that it has NO effect — on the daily nudge, and on the switches the UI renders. *Why it's a ledger entry and not a fix:* wiring it properly needs a decision about
   WHERE, and the seam is genuinely awkward — `notify()` deliberately does not commit, so a push
   sent from inside it can fire for a row whose transaction then rolls back, and pushing after each
   caller's commit means touching every call site. *The trap to remember when it is wired:*
@@ -125,8 +128,23 @@ strangers arrive. Security/privacy first.
   signal. *Fix, when someone decides:* the cheap version is refusing to repeat an identical count on
   consecutive days, using the `friend_count` already stored on the previous row — no migration
   needed. Deliberately not done unilaterally: it is a product call about how insistent this app is
-  allowed to be, and nothing can reach a real inbox until the client half and the secrets exist.
+  allowed to be, and nothing can reach a real inbox until the secrets exist (the client half shipped
+  2026-09-10).
   *Where:* `app/services/prompt.py`, `app/models/prompt_send.py`.
+
+- **No end-to-end push delivery has ever been observed.** (#89)
+  Every leg is tested except the one that leaves the building. `tests/test_push.py` decrypts what the
+  sender produces from the RECEIVER's side (which is how the zero-salt bug was caught), the
+  subscribe/rotate/prompt routes are verified live against a running API, and `lib/push.js` is unit
+  tested against a stubbed `PushManager` — but nothing here has watched a notification arrive on a
+  device, because **headless Chromium refuses to subscribe at all**: `pushManager.subscribe` throws
+  `AbortError: Registration failed - permission denied`, since there is no push service behind it.
+  So the browser→FCM/APNs→device leg is inferred from the RFCs, not measured. *Why it's a ledger
+  entry and not a fix:* it cannot be automated on this machine at all — it needs one real phone,
+  once, after the VAPID secrets are set, plus an iOS device added to the home screen to confirm the
+  install-first path. Until then, "notifications work" is an untested claim, and the honest phrasing
+  is "every layer we can reach is verified". *Where:* `frontend/public/sw.js`,
+  `frontend/src/lib/push.js`, `app/services/push.py`.
 
 - **Reports go into a table nobody can read from inside the app.** (#87)
   `POST /friends/reports` stores the row; there is no endpoint, page or notification to get it

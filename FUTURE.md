@@ -12,7 +12,7 @@ list of things the app does *not* do.
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
 + Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 600
-backend tests, 751 frontend tests** — re-count rather than quote.
+backend tests, 821 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -169,18 +169,25 @@ actually said stays visible.
 
 ## iOS Mobile App
 
-**Current state:** no native app, and **not a PWA either** — there is no web manifest and no
-service worker. The interim answer is just a mobile-first SPA (max-width 430px, bottom nav)
-that a phone can bookmark to the home screen as a plain shortcut.
+**Current state (updated 2026-09-10): it IS a PWA now** — `frontend/public/manifest.webmanifest`
+and `frontend/public/sw.js` shipped with #89's client half, so a phone installs it as a real app
+rather than bookmarking a shortcut. This paragraph said the opposite for one commit; the roadmap
+item at the top of this file is the current account.
 
-**What this adds:** faster performance, push notifications (which the recipe-request loop
-above would immediately use), and better camera access for photographing a handwritten card.
+**What a NATIVE app would still add, now that push is not on the list:** faster navigation and
+scrolling, real camera access for photographing a handwritten card, and an App Store listing as a
+distribution channel. Notice how much smaller that is than it was — **push was the reason this
+item sat at #1**, and it turned out to be reachable on the web. On iOS it is reachable *only*
+through the install, which is why the manifest was the first thing built.
 
 **Why it matters:** the use case is a phone on a counter, not a laptop.
 
 **Implementation notes:** React Native for both platforms; TestFlight for the beta group that
 already exists. One gesture is worth stealing early even on web: **swipe-right-to-go-back**,
-which testers reached for and which the router-state draft handling now makes safe.
+which testers reached for and which the router-state draft handling now makes safe. Before any of
+it, the honest next step is much cheaper: **install the PWA on one real iPhone and confirm a
+notification arrives**, which is the one leg of #89 no test on the dev machine can reach (headless
+Chromium refuses `pushManager.subscribe` outright — there is no push service behind it).
 
 **On audio:** no audio of a person is captured or stored today — see the note at the bottom.
 Dictation is a keyboard substitute; the mic types into a field and the utterance is discarded.
@@ -268,24 +275,31 @@ carries notifications with it; family sharing was cut; language translation move
    and "be a real app" are the same piece of work; building them apart means building the
    notification layer twice.
 
-   **THE BACKEND HALF SHIPPED (2026-09-09.)** Per-device subscription storage, the VAPID sender
-   (RFC 8292 + 8291, on `cryptography` and `httpx` — no new dependency), the two preference
-   switches, quiet hours, the at-most-once send log, the "N friends posted" count, and an hourly
-   GitHub Actions cron. It was built before the shell because none of it depends on which shell
-   wins.
+   **THE BACKEND HALF SHIPPED (2026-09-09), THE PWA SHELL THE DAY AFTER (2026-09-10.)** Backend:
+   per-device subscription storage, the VAPID sender (RFC 8292 + 8291, on `cryptography` and `httpx`
+   — no new dependency), quiet hours, the at-most-once send log, the "N friends posted" count, and an
+   hourly GitHub Actions cron. Client: a web manifest with a maskable icon, the iOS-only meta tags, a
+   push-only service worker (no caching, deliberately), `lib/push.js`, a Notifications section on the
+   You page, a one-time nudge on Home, and `timezone` captured at login. The backend went first
+   because none of it depended on which shell won.
 
    Correcting an earlier claim here: #97 shipped the **watermark** the count is derived from
    (`users.last_feed_seen_post_id`), not the count itself — the count is new, and getting it right
    meant NOT reusing the feed's SQL, whose correctness lives in a Python `can_view_post` filter
    rather than in the query.
 
-   **What genuinely remains:** (a) the PWA shell — a web manifest and a service worker, which is
-   what makes iOS possible at all, plus the client-side subscribe call and the settings UI; (b)
-   five secrets, which nothing works without and everything degrades cleanly around — until they
-   are set, `is_configured()` is False, every send is a logged no-op and the cron route 404s; (c)
-   two ledgered decisions in TECHDEBT (person-to-person pushes are not wired, so `notify_people` is
-   inert; and the prompt can repeat the same sentence indefinitely for someone who never opens
-   Home). Bring swipe-back to web first.
+   **What genuinely remains:** (a) **four secrets** — `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`,
+   `VAPID_SUBJECT`, `CRON_SECRET` — which nothing works without and everything degrades cleanly
+   around: until they are set, `is_configured()` is False, every send is a logged no-op and the cron
+   route 404s. See `infra/RUNBOOK.md` "Step 1b", and note the ORDER (SSM parameters BEFORE the
+   task-definition entries, or the deploy rolls back). (b) **One thing no automated test on this
+   machine can reach**: a real end-to-end delivery. Headless Chromium refuses
+   `pushManager.subscribe` outright ("Registration failed - permission denied") because there is no
+   push service behind it, so the browser→FCM/APNs→device leg is verified only by the unit round-trip
+   in `tests/test_push.py` (which decrypts what the sender produces) plus the live subscribe/rotate
+   routes. It needs one phone, once. (c) Two ledgered decisions in TECHDEBT: person-to-person pushes
+   aren't wired, so `notify_people` is inert and has no switch in the UI; and the prompt can repeat
+   the same sentence indefinitely for someone who never opens Home. Bring swipe-back to web first.
 2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report

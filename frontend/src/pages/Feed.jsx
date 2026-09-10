@@ -6,6 +6,7 @@ import { getNotifications } from '../api/notifications'
 import PostCard from '../components/PostCard'
 import FriendsStrip from '../components/FriendsStrip'
 import PhotoNudge from '../components/PhotoNudge'
+import NotifyNudge from '../components/NotifyNudge'
 import Wordmark from '../components/Wordmark'
 import Loader from '../components/Loader'
 import Icon from '../components/Icon'
@@ -229,6 +230,13 @@ export default function Feed() {
           it's dismissed, and `nudgeKey` forces a remount so it disappears immediately rather
           than on the next navigation. */}
       <PhotoNudge key={nudgeKey} onDone={() => setNudgeKey((k) => k + 1)} />
+
+      {/* And one for notifications (#89), same shape and same one-time dismissal. Below the photo
+          nudge deliberately: a face is what makes you recognisable to friends, so it comes first,
+          and only one of the two is ever likely to be showing at once anyway. Self-hides unless
+          this browser can genuinely subscribe right now and the person hasn't answered the
+          permission question yet — see NotifyNudge for the four conditions. */}
+      <NotifyNudge key={`notify-${nudgeKey}`} onDone={() => setNudgeKey((k) => k + 1)} />
 
       {/* The friends presence strip (#75) — friends' faces, most-recently-active first, each
           a tap to their profile. No longer gated on a scope (there is none): it self-hides

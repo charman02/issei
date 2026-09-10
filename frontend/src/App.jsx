@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { reconcile } from './lib/currentUser'
+import { reconcileSubscription, registerServiceWorker } from './lib/push'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import BottomNav from './components/BottomNav'
@@ -43,6 +44,27 @@ export default function App() {
   // reason to blank someone's own name, and the cached value is the right fallback.
   useEffect(() => {
     if (localStorage.getItem('issei_token')) reconcile()
+  }, [])
+
+  // Register the push service worker on every load (#89), signed in or not.
+  //
+  // Not conditional on notifications being ON, and not deferred to the moment someone flips the
+  // switch: the worker is also what handles `pushsubscriptionchange`, which the browser fires on
+  // its own schedule to rotate a subscription. A device whose worker isn't registered silently
+  // stops receiving anything after a rotation, with nothing to notice it by.
+  //
+  // Safe to run for an anonymous invite reader too — this worker does no caching, so the usual
+  // PWA hazard (a stale bundle served from cache) doesn't exist here. See `public/sw.js`.
+  // Then, for a signed-in user, re-assert that this browser's subscription belongs to THEM. The
+  // case is a shared phone: person A subscribes, person B signs in on the same browser, and the
+  // browser still holds A's subscription — so the switch reads "on" for B while the server row
+  // still says A. B gets nothing and A's nudges land on the phone B is using. `POST /subscribe` is
+  // idempotent and deliberately MOVES ownership, so re-sending what the browser already has fixes
+  // it. A no-op for the overwhelming majority, who have no subscription on this device at all.
+  useEffect(() => {
+    registerServiceWorker().then(() => {
+      if (localStorage.getItem('issei_token')) reconcileSubscription()
+    })
   }, [])
 
   return (

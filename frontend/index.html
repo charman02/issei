@@ -12,6 +12,27 @@
     <title>issei</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!-- Installable app (#89). This is not decoration: Safari on iOS grants Web Push ONLY to a
+         site added to the home screen, so the manifest is the precondition for notifications
+         existing at all on the platform most of these people are on.
+         theme-color paints the status bar / address bar cream so the app doesn't sit inside a
+         white or black band that belongs to no design. It is the app background, not `terra`:
+         the accent is for things you can tap. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#FBF3E2" />
+
+    <!-- iOS ignores the manifest's icons and its display mode; these three tags are the Safari
+         equivalents and are NOT redundant with the manifest.
+         `apple-mobile-web-app-capable` is what makes the installed app open without Safari's
+         chrome — and on iOS it is also what makes the install a "web app" rather than a
+         bookmark, which is the distinction Web Push turns on. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="issei" />
+    <!-- `default` keeps the ink status-bar text on our cream; `black-translucent` would push the
+         content under the notch, where the app's own header already lives. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
     <!-- Social share / link unfurl. Static card representing the app (og.png,
          1200x630). Description is the positioning one-liner — keep it clean of
          claims the app doesn't make (see POSITIONING.md). -->

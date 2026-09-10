@@ -64,6 +64,15 @@ vi.mock('./pages/Requests', () => ({ default: () => <div>ASKS RENDERED</div> }))
 vi.mock('./lib/currentUser', () => ({ reconcile: vi.fn(() => Promise.resolve(null)) }))
 import { reconcile } from './lib/currentUser'
 
+// Same reasoning for the push layer (#89). Both calls are fire-and-forget wiring that the app
+// renders perfectly well without, and jsdom has no service worker at all — so unmocked they are
+// no-ops and nothing here could tell whether App.jsx still makes them.
+vi.mock('./lib/push', () => ({
+  registerServiceWorker: vi.fn(() => Promise.resolve({})),
+  reconcileSubscription: vi.fn(() => Promise.resolve(false)),
+}))
+import { reconcileSubscription, registerServiceWorker } from './lib/push'
+
 // The stale-identity fix (#90) is a single call in App.jsx. Nothing else would notice if it
 // were dropped in a refactor: the app renders fine without it, and every symptom (a photo
 // nudge that won't go away, a stale avatar on the You page) is invisible to the unit suite.
@@ -135,5 +144,52 @@ describe('the route table actually resolves (#79)', () => {
     )
     // Bounced, not rendered.
     expect(screen.queryByText('ASKS RENDERED')).not.toBeInTheDocument()
+  })
+})
+
+// The service worker is registered from App.jsx on every load, and that is the only place it
+// happens. Nothing else in the app would notice if the call were dropped in a refactor: every
+// screen still works, `enable()` registers on demand, and the only symptom is that
+// `pushsubscriptionchange` stops being handled — so a device goes permanently silent after the
+// browser rotates its subscription, with nothing to notice it by.
+describe('the push service worker is registered on app start (#89)', () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(() => localStorage.clear())
+
+  it('registers for everyone, signed in or not', async () => {
+    // Including an anonymous /invite/:token reader. Safe because this worker does no caching — the
+    // usual PWA hazard (a stale bundle served from cache) does not exist here.
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(registerServiceWorker).toHaveBeenCalled()
+  })
+
+  it('re-binds the subscription on this device to whoever is signed in', async () => {
+    // The shared-phone case: A subscribes, B signs in on the same browser, and the row still says
+    // A — so B receives nothing while A's nudges land on the phone B is using.
+    localStorage.setItem('issei_token', 'test-token')
+    localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Me' }))
+    render(
+      <MemoryRouter initialEntries={['/notifications']}>
+        <App />
+      </MemoryRouter>,
+    )
+    await screen.findByText('INBOX RENDERED')
+    await vi.waitFor(() => expect(reconcileSubscription).toHaveBeenCalled())
+  })
+
+  it('does NOT re-bind for a signed-out visitor', async () => {
+    // POST /notifications/subscribe is authenticated; calling it without a token is a guaranteed
+    // 401, and the interceptor would bounce someone who is already on /login.
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <App />
+      </MemoryRouter>,
+    )
+    await Promise.resolve()
+    expect(reconcileSubscription).not.toHaveBeenCalled()
   })
 })

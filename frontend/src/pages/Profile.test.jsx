@@ -33,6 +33,16 @@ vi.mock('../api/posts', () => ({
 }))
 // Avatar upload (#33): stub the shared uploader so picking a photo synchronously yields
 // a URL (the real one hits Cloudinary via axios).
+// The You page now renders NotificationSettings (#89). In jsdom there is no PushManager, so
+// without this the section shows its "this browser can't do notifications" branch and the switches
+// never mount — nobody would notice if the section were removed from the page.
+vi.mock('../lib/push', () => ({
+  pushAvailability: () => 'ready',
+  isSubscribedHere: () => Promise.resolve(false),
+  primeVapidKey: () => Promise.resolve({ public_key: 'k', configured: true }),
+  enable: () => Promise.resolve({ ok: true }),
+  disable: () => Promise.resolve({ ok: true }),
+}))
 vi.mock('../lib/photoUpload', () => ({
   PHOTO_ACCEPT: 'image/*',
   createUploader: () => ({
@@ -487,5 +497,22 @@ describe('You page — blocked people', () => {
     getBlocks.mockRejectedValueOnce(new Error('offline'))
     renderProfile()
     expect(await screen.findByText(/couldn.t load your blocked list/i)).toBeInTheDocument()
+  })
+})
+
+describe('You page carries the notification settings (#89)', () => {
+  it('renders the Notifications section with its own switches', async () => {
+    // Its own section ABOVE Settings, deliberately: Settings holds display preferences, while these
+    // decide whether the app may interrupt someone's day.
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByRole('heading', { name: 'Notifications' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: /notify me on this device/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: /daily nudge/i })).toBeInTheDocument()
   })
 })

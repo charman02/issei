@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router-dom'
 // [object Object] bug back in while the suite stayed green.
 vi.mock('../api/client', async () => ({
   ...(await vi.importActual('../api/client')),
-  default: { post: vi.fn() },
+  default: { post: vi.fn(), patch: vi.fn() },
 }))
 import client from '../api/client'
 
@@ -22,6 +22,8 @@ beforeEach(() => {
   localStorage.clear()
   mockNavigate.mockClear()
   client.post.mockReset()
+  client.patch.mockReset()
+  client.patch.mockResolvedValue({ data: { id: 1, timezone: 'America/New_York' } })
 })
 
 describe('Login', () => {
@@ -434,5 +436,52 @@ describe('Login', () => {
     fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }))
     // the email field is a fresh empty field
     expect(screen.getByPlaceholderText('Email')).toHaveValue('')
+  })
+})
+
+describe('Login — the timezone the daily nudge depends on (#89)', () => {
+  // WHY THIS LIVES ON THE SIGN-IN PATH. The daily prompt fires at a fixed hour in the RECIPIENT'S
+  // local time, and `services/prompt.local_now()` returns None — "never due" — for a user with no
+  // zone stored. Nobody opens settings to volunteer a value the browser already knows, so if this
+  // one line goes, notifications quietly stop reaching every new account and no other test notices.
+  function signIn(userOverrides = {}) {
+    client.post.mockResolvedValue({
+      data: {
+        access_token: 'tok',
+        user: { id: 1, first_name: 'Charlie', ...userOverrides },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'pw123456' } })
+    fireEvent.submit(screen.getByPlaceholderText('Password').closest('form'))
+  }
+
+  it('sends the browser zone on sign-in', async () => {
+    signIn()
+    await waitFor(() =>
+      expect(client.patch).toHaveBeenCalledWith('/auth/me', {
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    )
+  })
+
+  it('does NOT re-send it when the server already has the same zone', async () => {
+    // A returning user signs in often; a write per sign-in for an unchanged value is pure noise.
+    signIn({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled())
+    expect(client.patch).not.toHaveBeenCalled()
+  })
+
+  it('signs in normally when the timezone write FAILS', async () => {
+    // Not awaited and not fatal: a zone is not worth failing a sign-in over, and the next sign-in
+    // tries again. Awaiting it also put a round trip between the tap and the destination.
+    client.patch.mockRejectedValue(new Error('boom'))
+    signIn()
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true }))
   })
 })
