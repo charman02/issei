@@ -717,10 +717,12 @@ export default function Profile() {
         Log out
       </button>
 
-      {/* A warm, deliberately-vague "this is alive" note — no dates, no list. */}
-      <p className="text-center font-display italic text-[13.5px] text-ink-soft mt-6 mb-2">
-        More ways to share and connect are on the way. 💛
-      </p>
+      {/* REMOVED (#102): "More ways to share and connect are on the way. 💛"
+          It signed the APP's own voice with 💛 — the same glyph that signs the sender's message in
+          `lib/inviteMessage.js`, which is supposed to read like something a person wrote from their
+          own texting app. One heart cannot be both the app's warm cue and the sender's, and the
+          sender's is the one that matters, so this is the one that goes. (It was also a roadmap
+          promise on a settings page, which is a thing to ship rather than to say.) */}
     </div>
   )
 }

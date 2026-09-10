@@ -266,18 +266,24 @@ def test_quantity_type_is_a_vocabulary_not_a_free_string(client, make_user):
     assert ing("approximate") == 422  # plausible, and not one of the three
 
 
-def test_a_handoff_note_and_recipient_email_are_bounded(client, make_user):
-    """The handoff route was the other door into the same file, and both fields were bare."""
+def test_a_handoff_recipient_email_is_bounded(client, make_user):
+    """The handoff route was the other door into the same file, and its fields were bare.
+
+    The `note` half of this test went with the column (#102): the sender's message was stored on
+    every handoff and read by nothing, so it is no longer accepted or persisted. An older client
+    still sending one gets a 201 rather than a 422 — Pydantic ignores unknown fields by default,
+    which matters because Vercel and ECS deploy independently.
+    """
     _, h = make_user()
     rid = _create(client, h).json()["id"]
 
     def handoff(**body):
         return client.post(f"/recipes/{rid}/handoff", json=body, headers=h).status_code
 
-    assert handoff(note="x" * 2000) in (200, 201)
-    assert handoff(note="x" * 2001) == 422
-    # And to_email is an address now, not any string at all — it is later compared against a
-    # signing-up user's email to auto-accept the grant, so 500KB of junk was never meaningful.
+    # A stray `note` from an old build is IGNORED, not rejected.
+    assert handoff(note="x" * 5000) in (200, 201)
+    # to_email is an address, not any string at all — it is later compared against a signing-up
+    # user's email to auto-accept the grant, so 500KB of junk was never meaningful.
     assert handoff(to_email="lola@example.com") in (200, 201)
     assert handoff(to_email="x" * 300) == 422
     assert handoff(to_email="not-an-address") == 422

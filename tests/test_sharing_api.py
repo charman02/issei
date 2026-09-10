@@ -137,7 +137,7 @@ def test_handoff_without_a_recipient_is_link_only(client, make_user):
     shareable link the sender passes on themselves (share sheet / iMessage)."""
     _, owner = make_user()
     root = _make_root(client, owner)
-    r = client.post(f"/recipes/{root['id']}/handoff", json={"note": "x"}, headers=owner)
+    r = client.post(f"/recipes/{root['id']}/handoff", json={}, headers=owner)
     assert r.status_code == 201
     body = r.json()
     assert body["token"]

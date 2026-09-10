@@ -34,3 +34,35 @@ describe('defaultInviteMessage', () => {
     }
   })
 })
+
+describe('the asked-for variant (#102)', () => {
+  // The product's own one-liner is "you asked for the recipe", so this is the truest sentence
+  // available WHEN someone asked. The app can't know that it did — an in-app request is answered
+  // at /requests via fulfillPost(), which never renders the share stage — so the sender picks.
+  it('names the ask and the dish', () => {
+    expect(defaultInviteMessage({ recipeName: 'Adobo', asked: true })).toBe(
+      'You asked for my Adobo recipe — here it is 💛',
+    )
+  })
+
+  it('stays a clean sentence with no dish name', () => {
+    expect(defaultInviteMessage({ asked: true })).toBe(
+      'You asked for my recipe — here it is 💛',
+    )
+  })
+
+  it('defaults to the unprompted wording, which is what the app has evidence for', () => {
+    expect(defaultInviteMessage({ recipeName: 'Adobo' })).toMatch(/I wanted you to have it/)
+    expect(defaultInviteMessage({ recipeName: 'Adobo', asked: false })).toMatch(
+      /I wanted you to have it/,
+    )
+  })
+
+  it('is first person either way — the app never narrates the sender in the third person', () => {
+    for (const asked of [true, false]) {
+      const m = defaultInviteMessage({ recipeName: 'Adobo', asked })
+      expect(m).toMatch(/\bmy\b/)
+      expect(m).not.toMatch(/passed you|shared with you/i)
+    }
+  })
+})

@@ -45,15 +45,31 @@ export default function HandoffInvite({
   // name, so it collapses to empty and the message uses its dish-less fallback.
   const dishName = recipeName === 'this recipe' ? '' : recipeName
 
-  // The note field defaults to a warm, ready-to-send message in the sender's own
-  // voice ("Here's my Adobo recipe — I wanted you to have it 💛") — the app is about
-  // that handoff, so the sender shouldn't face a blank box. It's fully editable. The
-  // one-tap starter chips were removed: the default already carries the warm "I
-  // wanted you to have it" intent, so a "You'd love this" chip just restated it, and
-  // the second chip is better served by the sender typing their own line.
-  const defaultMessage = defaultInviteMessage({ recipeName: dishName })
+  // WAS THIS ASKED FOR? The app cannot know, and the answer changes the truest sentence available.
+  //
+  // "You asked for my Adobo recipe" is the product's own one-liner, and it is the right words
+  // whenever someone actually asked. But an in-app request never reaches this screen — it is
+  // answered at /requests via fulfillPost(), which mints grants server-side without rendering the
+  // share stage — so what arrives here is either an unprompted send or the founding case: someone
+  // who asked AT THE TABLE, which leaves no trace in any database.
+  //
+  // So neither default is honest, and the sender is the only party who knows. Two chips, one tap,
+  // and the message rewrites itself. `asked` starts false because the unprompted case is the one
+  // the app has evidence for. An earlier version of this screen had starter chips and they were
+  // removed for restating the default — these don't: they pick between two different claims.
+  const [asked, setAsked] = useState(false)
+  const defaultMessage = defaultInviteMessage({ recipeName: dishName, asked })
   const [email, setEmail] = useState('')
   const [note, setNote] = useState(defaultMessage)
+
+  // Switching the occasion rewrites the box — unless the sender has written their own words, which
+  // must never be thrown away by a tap on a chip. `touched` is what separates "still the app's
+  // sentence" from "theirs".
+  const [touched, setTouched] = useState(false)
+  function chooseOccasion(next) {
+    setAsked(next)
+    if (!touched) setNote(defaultInviteMessage({ recipeName: dishName, asked: next }))
+  }
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   const [handoff, setHandoff] = useState(null) // set once created → share stage
@@ -67,9 +83,11 @@ export default function HandoffInvite({
     setError('')
     setSending(true)
     try {
+      // The message is NOT sent to the server (#102). It used to be stored on the handoff row and
+      // read by nothing; the owner's call was to stop keeping it, so it lives only in the share text
+      // below and in the sender's own texting app.
       const { data } = await handoffRecipe(recipeId, {
         to_email: email.trim() || null,
-        note: note.trim() || null,
       })
       setHandoff(data)
     } catch (err) {
@@ -229,16 +247,43 @@ export default function HandoffInvite({
             : 'This won’t put your recipe in Browse — only someone with the link can open it.'}
         </p>
       )}
-      {/* The note comes pre-filled with the default message; the sender edits or
-          replaces it in their own words. No starter chips — the default already
-          carries the warm intent they'd have picked. */}
+      {/* THE OCCASION. Two chips, because the app can't tell which one this is and the sender can
+          — see the long note beside `asked` above. Tapping one rewrites the message below, but only
+          while it is still the app's sentence: once the sender has typed, their words win and the
+          chips just record the occasion. */}
+      <p className="section-label mb-1.5 text-left">Your message</p>
+      <div className="flex gap-2 mb-2">
+        {[
+          [true, 'They asked for it'],
+          [false, 'Just because'],
+        ].map(([value, label]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => chooseOccasion(value)}
+            aria-pressed={asked === value}
+            className={`chip ${asked === value ? '!bg-saffron' : ''}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* Pre-filled so the sender never faces a blank box; fully editable, and goes out in their own
+          text message with the link. */}
       <textarea
         placeholder="Say something with it… (optional)"
         value={note}
-        onChange={(e) => setNote(e.target.value)}
-        rows={2}
-        className="field resize-none mb-3"
+        onChange={(e) => {
+          setNote(e.target.value)
+          setTouched(true)
+        }}
+        rows={3}
+        aria-label="Your message"
+        className="field resize-none mb-1.5"
       />
+      <p className="font-display italic text-[12px] text-ink-soft mb-3 text-left">
+        This goes in your text, with the link.
+      </p>
       <input
         type="email"
         placeholder="Their email (optional)"

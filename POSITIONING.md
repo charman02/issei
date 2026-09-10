@@ -390,6 +390,27 @@ people add to it", no collaborative editing, no "enriched by whoever cooks it". 
 recipient who signs up gets to keep and cook the recipe — that's the promise, and it's
 enough.
 
+### The sender's sentence is the sender's — the app does not sign it (#102)
+
+The invite message ("Here's my Adobo recipe — I wanted you to have it 💛") goes out from the
+sender's OWN texting app, under their name. Three rules follow, and each one was broken until #102:
+
+1. **The app does not use 💛 in its own copy.** It appeared in exactly two shipping strings — this
+   message and the You page's "More ways to share and connect are on the way. 💛" — which meant one
+   glyph signed both the app's voice and a sentence meant to read like a person. The You-page line
+   was deleted. If the app ever needs a warm sign-off of its own, it does not get this one.
+2. **Never claim an ask the app cannot see.** "You asked for my Adobo recipe" is POSITIONING's own
+   one-liner and the truest sentence available *when someone asked* — but an in-app request is
+   answered at `/requests` and never reaches the share stage, so the app has no evidence either way.
+   It asks (two chips) instead of guessing, and it must keep asking rather than picking a default
+   that is false half the time.
+3. **What the sender typed is never overwritten.** A chip that rewrites the box may only do so while
+   the text is still the app's. Once a person has written their own words, the app's copy loses.
+
+The corollary for the CARD (`invite_og.py`): it stays THIRD person, because that genuinely is the
+app narrating a caption ("Charlie passed you the recipe for Adobo"). First person in the message and
+third on the card is deliberate, not an inconsistency.
+
 ### Notifications: what the app may and may not say about them (#89)
 
 A whole new body of user-facing copy arrived with push — permission prompts, install
@@ -453,7 +474,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **65 routes**, **18 models**,
-**604 backend tests**, **840 frontend tests in 57 files**. Endpoint and test counts have
+**604 backend tests**, **848 frontend tests in 57 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

@@ -33,6 +33,12 @@ class Handoff(Base):
     )
     to_email: Mapped[Optional[str]] = mapped_column(nullable=True)
     state: Mapped[str] = mapped_column(server_default="pending")
-    note: Mapped[Optional[str]] = mapped_column(nullable=True)
+    # NO `note` COLUMN (dropped 2026-09-10, #102). The sender's message used to be persisted here on
+    # every handoff and read by NOTHING — not InvitePreview, not the OG card builder, no frontend
+    # surface. It travelled only as a share-sheet string. Storing user-written words and showing them
+    # nowhere is the worst of the two options: the choice was to render them on the invite page or to
+    # stop keeping them, and the owner chose the latter, so the message lives only in the sender's own
+    # texting app. That is also the argument for it reading like them. If it ever needs to survive a
+    # forwarded link or a truncated SMS, this column comes back WITH a surface that displays it.
     token: Mapped[Optional[str]] = mapped_column(nullable=True, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

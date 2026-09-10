@@ -27,10 +27,10 @@ describe('HandoffInvite', () => {
     await userEvent.clear(note)
     await userEvent.type(note, 'your adobo')
     await userEvent.click(screen.getByRole('button', { name: /get a link to send/i }))
-    expect(handoffRecipe).toHaveBeenCalledWith(7, {
-      to_email: 'mom@example.com',
-      note: 'your adobo',
-    })
+    // The MESSAGE IS NOT SENT to the server (#102) — the column that stored it and showed it
+    // nowhere is gone, so the body carries the recipient and nothing else. The message's own
+    // journey is covered by the delivery tests at the bottom of this file.
+    expect(handoffRecipe).toHaveBeenCalledWith(7, { to_email: 'mom@example.com' })
     // The whole point: the token must be surfaced, not discarded. onSent must NOT
     // fire yet — that used to skip the share step entirely.
     expect(await screen.findByText(/\/invite\/tok123/)).toBeInTheDocument()
@@ -51,10 +51,7 @@ describe('HandoffInvite', () => {
     )
     // no email typed at all
     await userEvent.click(screen.getByRole('button', { name: /get a link to send/i }))
-    expect(handoffRecipe).toHaveBeenCalledWith(7, {
-      to_email: null,
-      note: 'Here’s my Adobo recipe — I wanted you to have it 💛',
-    })
+    expect(handoffRecipe).toHaveBeenCalledWith(7, { to_email: null })
     expect(await screen.findByText(/\/invite\/tok123/)).toBeInTheDocument()
   })
 
@@ -217,10 +214,7 @@ describe('HandoffInvite', () => {
       await userEvent.click(
         screen.getByRole('button', { name: /get a link to send/i }),
       )
-      expect(handoffRecipe).toHaveBeenCalledWith(7, {
-        to_email: null,
-        note: 'made this for you, tita',
-      })
+      expect(handoffRecipe).toHaveBeenCalledWith(7, { to_email: null })
     })
   })
 })
@@ -337,5 +331,51 @@ describe('HandoffInvite — the Browse reassurance must match the recipe (#102)'
   it('says nothing about Browse for a PUBLIC recipe, because it IS in Browse', async () => {
     render(<HandoffInvite recipeId={7} recipeName="Adobo" recipeVisibility="public" onSent={() => {}} onSkip={() => {}} />)
     expect(screen.queryByText(/won.t put your recipe in Browse/i)).toBeNull()
+  })
+})
+
+describe('HandoffInvite — the occasion chips (#102)', () => {
+  it('offers both occasions, defaulting to the one the app has evidence for', async () => {
+    // The app CANNOT know whether someone asked: an in-app request is answered at /requests via
+    // fulfillPost(), which never renders this screen, so what arrives here is either an unprompted
+    // send or someone who asked at the table. The sender is the only party who knows.
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />)
+
+    expect(screen.getByRole('button', { name: /they asked for it/i })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /just because/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Your message')).toHaveValue(
+      'Here’s my Adobo recipe — I wanted you to have it 💛',
+    )
+  })
+
+  it('naming the ask rewrites the message to the product’s own one-liner', async () => {
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /they asked for it/i }))
+
+    expect(screen.getByLabelText('Your message')).toHaveValue(
+      'You asked for my Adobo recipe — here it is 💛',
+    )
+  })
+
+  it('NEVER overwrites words the sender typed', async () => {
+    // The one thing a chip must not do. Switching occasion after someone has written their own
+    // sentence would throw it away — so once touched, their words win and the chip only records
+    // the occasion.
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />)
+    const box = screen.getByLabelText('Your message')
+    await userEvent.clear(box)
+    await userEvent.type(box, 'made this for you, tita')
+
+    await userEvent.click(screen.getByRole('button', { name: /they asked for it/i }))
+
+    expect(box).toHaveValue('made this for you, tita')
+  })
+
+  it('says where the message goes', async () => {
+    // The box had no label at all, and its placeholder was never seen because it always arrives
+    // pre-filled — so nothing told a sender the text lands in their own text message.
+    render(<HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />)
+    expect(screen.getByText(/this goes in your text, with the link/i)).toBeInTheDocument()
   })
 })

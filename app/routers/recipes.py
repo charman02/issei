@@ -251,7 +251,6 @@ def handoff_recipe(
         to_user_id=(resolved_user.id if resolved_user else None),
         to_email=(None if resolved_user else to_email),
         state=("accepted" if resolved_user else "pending"),
-        note=handoff_in.note,
         token=secrets.token_urlsafe(32),
     )
     db.add(handoff)
@@ -1025,7 +1024,6 @@ def claim_invite(
         to_user_id=current_user.id,
         to_email=None,
         state="accepted",
-        note=h.note,
         token=secrets.token_urlsafe(32),
     )
     db.add(grant)

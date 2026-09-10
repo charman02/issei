@@ -80,13 +80,22 @@ def build_invite_meta(recipe, *, site_origin, token, reached=True):
     title = f"{name} — from {byline}" if byline else name
     # Description names the SENDER ("Charlie passed you…"), mirroring the landing.
     who = f"{sender} passed you" if sender else "Someone passed you"
+    # "no account needed" IS THE CLAUSE THAT ANSWERS "why would I tap this?", so it belongs on every
+    # card — not, as before, only on the cards for recipes with no description.
+    #
+    # Nobody decided to drop it. The two branches were written as alternatives for one og:description
+    # line, and the promise happened to live in the else, so the differentiator appeared only on the
+    # emptiest cards — the ones with nothing else to say. The cook's own words now come LAST, which
+    # is the real cost of this change: iMessage shows roughly two lines, so a long description loses
+    # its tail. That is the right trade, because a stranger's first question is whether this costs
+    # them an account, and the description is still there for anyone who taps.
+    #
+    # "on issei" is dropped from this sentence: og:site_name already says issei, and the unfurl shows
+    # the domain, so it was the third mention on one card. That buys back most of the room.
     recipe_description = (getattr(recipe, "description", None) or "").strip()
+    description = f"{who} the recipe for {name} — read it and cook it, no account needed."
     if recipe_description:
-        description = f"{who} the recipe for {name} on issei. {recipe_description}"
-    else:
-        description = (
-            f"{who} the recipe for {name} on issei — read it and cook it, no account needed."
-        )
+        description = f"{description} {recipe_description}"
     # The alt has to describe the image we ACTUALLY chose. A recipe with no cover photo gets the
     # generic issei card, and calling that "Adobo, from Lola" describes a dish photo that isn't
     # there — to precisely the person who can't see it.

@@ -347,9 +347,9 @@ class HandoffIn(BaseModel):
     # — EmailStr alone doesn't cap it.
     to_email: Optional[Annotated[EmailStr, StringConstraints(max_length=254)]] = None
     to_user_id: Optional[int] = None
-    # The note the sender writes alongside the recipe. Same 2000 as a step's note: it is a
-    # message to one person, not an essay.
-    note: Optional[Text2000] = None
+    # No `note`. It was accepted, stored, and displayed nowhere (#102) — see the model. Pydantic
+    # IGNORES unknown fields by default, so an older frontend build still sending one gets a 201
+    # rather than a 422; that matters because Vercel and ECS deploy independently.
 
 
 class HandoffResponse(BaseModel):
@@ -358,7 +358,6 @@ class HandoffResponse(BaseModel):
     state: str
     to_email: Optional[str] = None
     to_user_id: Optional[int] = None
-    note: Optional[str] = None
     token: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
