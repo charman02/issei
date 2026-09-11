@@ -7,6 +7,7 @@ import Avatar from '../components/Avatar'
 import { loadPrefs, setPref } from '../lib/prefs'
 import { PHOTO_ACCEPT } from '../lib/photoUpload'
 import { useAvatarUpload } from '../lib/useAvatarUpload'
+import PhotoFramer from '../components/PhotoFramer'
 
 // The post-signup welcome (/welcome) — three panels, once, then never again.
 //
@@ -112,7 +113,13 @@ export default function Welcome() {
   const [panel, setPanel] = useState(0)
   // The photo step (panel 2). photoUrl reflects the just-uploaded avatar so the panel
   // shows it immediately; uploading drives the busy state on the picker.
-  const { onPick, uploading: uploadingPhoto, error: photoError, photoUrl } = useAvatarUpload()
+  const {
+    onPick,
+    uploading: uploadingPhoto,
+    error: photoError,
+    photoUrl,
+    framerProps,
+  } = useAvatarUpload()
 
   useEffect(() => {
     markWelcomeSeen()
@@ -129,6 +136,9 @@ export default function Welcome() {
     // the one place that sprawled to the full window on a desktop browser —
     // /welcome sits outside App's Layout wrapper, so it has to set its own width.
     <div className="min-h-screen bg-cream">
+      {/* The framing step (#103) — real DOM in this tree so the overlay inherits the app's styles.
+          Null file renders nothing. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <div className="max-w-app mx-auto px-5 pt-6">
         {/* Skip sits in the header on BOTH panels, at the same coordinates, so it
           never has to be hunted for and nobody is one panel from being stuck.

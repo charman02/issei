@@ -4,6 +4,7 @@ import { useAvatarUpload } from '../lib/useAvatarUpload'
 import { useCurrentUser } from '../lib/currentUser'
 import Avatar from './Avatar'
 import Icon from './Icon'
+import PhotoFramer from './PhotoFramer'
 
 // A one-time, dismissible "add a photo" strip on Home (#84).
 //
@@ -31,7 +32,7 @@ export default function PhotoNudge({ onDone }) {
   // it on screen after the photo was already set.
   const user = useCurrentUser()
 
-  const { onPick, uploading, error, photoUrl } = useAvatarUpload({ onDone })
+  const { onPick, uploading, error, photoUrl, framerProps } = useAvatarUpload({ onDone })
   const dismissed = !!loadPrefs().photoNudgeDismissed
   // photoUrl reflects a just-finished upload, so the strip removes itself the moment it
   // succeeds rather than waiting for a parent refetch.
@@ -46,6 +47,10 @@ export default function PhotoNudge({ onDone }) {
 
   return (
     <div className="px-4 pb-3">
+      {/* The framing step (#103). Rendered here rather than inside the hook because it must be real
+          DOM in this tree — a fixed overlay from a hook has no styling context and no way to sit
+          above this strip's own stacking. Null file → renders nothing. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <div className="sticker bg-card flex items-center gap-3 p-3">
         <Avatar name={user.first_name || '?'} photoUrl={null} size="md" />
         <div className="min-w-0 flex-1">

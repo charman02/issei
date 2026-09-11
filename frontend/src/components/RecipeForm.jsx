@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import client, { toUserMessage } from '../api/client'
 import { createUploader, PHOTO_ACCEPT } from '../lib/photoUpload'
+import { usePhotoFramer } from '../lib/usePhotoFramer'
+import PhotoFramer from './PhotoFramer'
 import Icon from './Icon'
 import MarkerTitle from './MarkerTitle'
 import FieldLabel from './FieldLabel'
@@ -157,6 +159,8 @@ export default function RecipeForm({
   // and the user's instinct (pick again) has to keep working. So instead of
   const uploader = useRef(createUploader())
   const uploadPhotoFor = (args) => uploader.current.upload(args)
+  // The framing step (#103), shared by the cover and every step photo.
+  const { frame, framerProps } = usePhotoFramer()
   const retireSlot = (slot) => uploader.current.retire(slot)
 
 
@@ -230,6 +234,9 @@ export default function RecipeForm({
     return uploadPhotoFor({
       slot: COVER_SLOT,
       event: e,
+      // "Hard to adjust the photo to center the subject" (#103). 4:3, matching what the endpoint
+      // stores, so the server's crop becomes a pure resize.
+      frame: frame('cover'),
       onBusy: setUploading,
       onError: setPhotoError,
       onUrl: setCoverPhotoUrl,
@@ -261,6 +268,9 @@ export default function RecipeForm({
     return uploadPhotoFor({
       slot: uid,
       event: e,
+      // Same 4:3 frame as the cover — a step photo lands in the same 800x600 endpoint, so an
+      // unframed one is centre-cropped exactly as badly.
+      frame: frame('cover'),
       onBusy: setFlag(setStepUploading),
       onError: setFlag(setStepPhotoError),
       onUrl: (url) =>
@@ -429,6 +439,10 @@ export default function RecipeForm({
 
   return (
     <div className="min-h-screen bg-cream px-[18px] pt-5 pb-8">
+      {/* The framing step (#103) — one instance serves the cover AND every step photo, because the
+          framer is only ever open for one pick at a time (usePhotoFramer cancels an earlier pending
+          one). Real DOM in this tree so the overlay inherits the app's styles. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       {topSlot && <div className="mb-4">{topSlot}</div>}
       <h1 className="font-display font-black text-[30px] text-ink mb-4">
         {heading}

@@ -10,6 +10,7 @@ import MarkerTitle from '../components/MarkerTitle'
 import Avatar from '../components/Avatar'
 import Toggle from '../components/Toggle'
 import NotificationSettings from '../components/NotificationSettings'
+import PhotoFramer from '../components/PhotoFramer'
 
 // The client-side prefs bag. Since the Settings section was removed (2026-09-11) the ONLY key this
 // page still touches is `photoNudgeDismissed` — every display preference is gone, and everything
@@ -125,6 +126,7 @@ export default function Profile() {
     onPick: onPickPhoto,
     uploading: uploadingPhoto,
     error: photoError,
+    framerProps,
   } = useAvatarUpload({
     // No local mirror needed — the hook writes through patchUser, and useCurrentUser above
     // re-renders this page from the store.
@@ -272,6 +274,10 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-cream px-5 pt-6">
+      {/* The framing step (#103) — "can't edit profile photo to make sure it looks as u want" was
+          reported from this page. Real DOM in this tree so the overlay inherits the app's styles;
+          a null file renders nothing. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <MarkerTitle
         color="bg-peach"
         className="font-display font-black text-[32px] text-ink leading-none"

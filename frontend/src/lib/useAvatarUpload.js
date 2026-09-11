@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import client, { toUserMessage } from '../api/client'
 import { createUploader } from './photoUpload'
+import { usePhotoFramer } from './usePhotoFramer'
 import { patchUser, readUser } from './currentUser'
 
 // The pick → upload → save-photo flow, shared by the You page (#33) and the Welcome
@@ -14,6 +15,11 @@ import { patchUser, readUser } from './currentUser'
 // onDone(url) fires after a successful save for callers that want to advance a step.
 export function useAvatarUpload({ onDone } = {}) {
   const uploader = useRef(createUploader())
+  // The framing step (#103). "Can't edit profile photo to make sure it looks as u want" was one of
+  // the two reports that made this a P0 — an avatar was face-gravity centre-cropped server-side with
+  // no preview, so a photo where you weren't dead centre came back wrong and the only recourse was
+  // uploading a different one.
+  const { frame, framerProps, framing } = usePhotoFramer()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   // Seeded from the cached user so an already-set photo shows without a fetch.
@@ -24,6 +30,10 @@ export function useAvatarUpload({ onDone } = {}) {
       slot: 'avatar',
       event: e,
       endpoint: '/upload/avatar',
+      // SQUARE, because that is what the endpoint stores (400x400). Sending an already-square image
+      // makes the server's `crop: fill` a pure resize and its `gravity: face` a no-op — which is why
+      // no backend change was needed for any of this.
+      frame: frame('avatar'),
       onBusy: setUploading,
       onError: setError,
       onUrl: async (url) => {
@@ -41,5 +51,8 @@ export function useAvatarUpload({ onDone } = {}) {
     })
   }
 
-  return { onPick, uploading, error, photoUrl }
+  // `framerProps` goes on a <PhotoFramer>; `framing` lets a caller hide its own controls while the
+  // framer is up. A caller that renders neither still uploads — it just gets the old centre-crop,
+  // which is why every avatar surface should render it.
+  return { onPick, uploading, error, photoUrl, framerProps, framing }
 }

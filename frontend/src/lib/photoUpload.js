@@ -55,7 +55,21 @@ export function createUploader() {
     aborts.get(slot)?.abort()
   }
 
-  async function upload({ slot, event, onBusy, onError, onUrl, endpoint = '/upload/recipe-photo' }) {
+  // `frame` is the optional confirm-and-crop step (#103). It receives the CONVERTED, VALIDATED file
+  // and returns a File to upload instead — or null to cancel the whole pick.
+  //
+  // It runs LAST, after HEIC conversion, because an iPhone's HEIC cannot be drawn into a canvas by
+  // any browser: framing before the conversion would show a blank preview to the people who most
+  // need one. It runs after validation too, so nobody frames a 40 MB file only to be told no.
+  async function upload({
+    slot,
+    event,
+    onBusy,
+    onError,
+    onUrl,
+    endpoint = '/upload/recipe-photo',
+    frame = null,
+  }) {
     let file = event.target.files?.[0]
     if (!file) return
     const input = event.target
@@ -106,6 +120,33 @@ export function createUploader() {
       if (file.size > MAX_UPLOAD_BYTES) {
         reject('That image is too large (max 10 MB).')
         return
+      }
+
+      // THE FRAMING STEP (#103). Reported twice by one tester: "hard to adjust the photo to center
+      // the subject" and "can't edit profile photo to make sure it looks as u want".
+      //
+      // Busy goes OFF while a human is looking at their photo — a spinner during an interaction
+      // someone is deliberately taking reads as a hang, and the file input has to stay usable if
+      // they cancel. It goes back on for the actual upload.
+      if (frame) {
+        onBusy(false)
+        let framed
+        try {
+          framed = await frame(file)
+        } catch {
+          // A framer that throws must not eat the pick. Fall through with the original file: an
+          // un-cropped upload is a worse photo, not a lost one.
+          framed = file
+        }
+        if (!isCurrent()) return
+        if (framed === null) {
+          // Cancelled. Not an error — say nothing, reset the input so the same file can be picked
+          // again, and leave any existing photo exactly as it was.
+          input.value = ''
+          return
+        }
+        file = framed || file
+        onBusy(true)
       }
 
       const formData = new FormData()

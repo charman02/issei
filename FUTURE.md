@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 608
-backend tests, 860 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **65 routes, 18 models, 609
+backend tests, 874 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -198,7 +198,9 @@ Recorded audio would be new capability built from scratch.
 ## Richer Photo/Video Support
 
 **Current state:** a cover photo per recipe **and** per-step photos both ship, via Cloudinary
-with browser-side HEIC → JPEG conversion. `CookEvent.photo_url` exists on the model. Posts
+with browser-side HEIC → JPEG conversion, and since #103 every pick goes through a
+drag-and-zoom framing step so the person chooses the crop instead of a server-side centre-cut
+(`components/PhotoFramer.jsx`). `CookEvent.photo_url` exists on the model. Posts
 carry a photo, which is the post. What's missing is video and any gallery.
 
 **What this adds:** short video for steps where technique is the point (folding a dumpling,

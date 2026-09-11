@@ -17,6 +17,27 @@ vi.mock('../api/client', () => ({
   toUserMessage: vi.fn((_err, fallback) => fallback),
 }))
 
+// THE FRAMING STEP IS STUBBED TO AUTO-ACCEPT (#103), and the reason is worth stating because it
+// looks like ducking a test.
+//
+// Every photo test below is about the UPLOADER's race safety: per-slot tickets, supersession,
+// aborts, and the rule that a landing response can't write to a slot someone re-picked. Those tests
+// drive several file inputs programmatically in one tick — which no human can do, because the framer
+// is a modal overlay and it is the thing that serialises picks in the real app. Left unstubbed, the
+// tests would exercise an impossible state (two picks framing at once) and their subject would be
+// buried under clicking through an overlay twice per assertion.
+//
+// So the frame here resolves immediately with the same file, which is exactly the "person framed it
+// and tapped Use" outcome those tests already assume. The framing behaviour itself has its own tests
+// in PhotoFramer.test.jsx and usePhotoFramer.test.jsx, where it is the subject rather than a step.
+vi.mock('../lib/usePhotoFramer', () => ({
+  usePhotoFramer: () => ({
+    frame: () => async (file) => file,
+    framerProps: { file: null, shape: 'cover', onDone: () => {}, onCancel: () => {} },
+    framing: false,
+  }),
+}))
+
 // A JPEG the size validator accepts, for driving the file input.
 function jpeg(name) {
   return new File(['x'], name, { type: 'image/jpeg' })

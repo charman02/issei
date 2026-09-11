@@ -190,7 +190,7 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). THIRTEEN test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). FOURTEEN test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
@@ -199,10 +199,12 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 `components/NotificationSettings.test.jsx`, `components/NotifyNudge.test.jsx` and `pwa.test.js`
 (the last over the WEB MANIFEST's description, which is app-store-facing copy no rendered-screen
 assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
-screen and was missed by three separate recounts of this list. The regex is also WIDER than the
+screen and was missed by three separate recounts of this list — and, since #103,
+`components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep.
+The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all NINE files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js and — since #102 — InviteLanding, whose guard was the weakest of the thirteen on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all TEN files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer and — since #102 — InviteLanding, whose guard was the weakest of the thirteen on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -474,7 +476,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **65 routes**, **18 models**,
-**608 backend tests**, **860 frontend tests in 57 files**. Endpoint and test counts have
+**609 backend tests**, **874 frontend tests in 59 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

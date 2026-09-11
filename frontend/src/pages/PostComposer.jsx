@@ -3,11 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { createPost } from '../api/posts'
 import { toUserMessage } from '../api/client'
 import { createUploader, PHOTO_ACCEPT } from '../lib/photoUpload'
+import { usePhotoFramer } from '../lib/usePhotoFramer'
 import { sourceNameOf } from '../lib/sourceName'
 import BackButton from '../components/BackButton'
 import Icon from '../components/Icon'
 import FieldLabel from '../components/FieldLabel'
 import RecipePicker from '../components/RecipePicker'
+import PhotoFramer from '../components/PhotoFramer'
 
 // "Share a meal" — the light everyday post. Photo (required, it IS the post) + dish
 // name (required) + an optional line. NOT a recipe: no ingredients, no steps. Lands
@@ -46,6 +48,8 @@ export default function PostComposer() {
   const [error, setError] = useState('')
   const [posting, setPosting] = useState(false)
   const uploader = useRef(createUploader())
+  // The framing step (#103) — see onPickPhoto.
+  const { frame, framerProps } = usePhotoFramer()
   // Optionally link one of your OWN recipes (#72). We keep the whole recipe object for the
   // chip's label/byline; only its id is sent. Ownership is the backend's call — create_post
   // 404s a recipe_id that isn't the caller's — so this is a convenience link, not a grant.
@@ -91,6 +95,11 @@ export default function PostComposer() {
     return uploader.current.upload({
       slot: 'post',
       event: e,
+      // A POST IS ITS PHOTO — it carries no ingredients and no steps — so this is the single most
+      // load-bearing image in the app, and "hard to adjust the photo to center the subject" was
+      // reported against exactly this screen. 4:3 to match what the endpoint stores (800x600),
+      // which makes the server's crop a pure resize.
+      frame: frame('cover'),
       onBusy: setUploading,
       onError: setPhotoError,
       onUrl: setPhotoUrl,
@@ -130,6 +139,9 @@ export default function PostComposer() {
 
   return (
     <div className="min-h-screen bg-cream px-[18px] pt-5 pb-10">
+      {/* The framing step (#103) — real DOM in this tree so the overlay inherits the app's styles.
+          A null file renders nothing. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <div className="mb-4">
         <BackButton to="/add" label="Back" />
       </div>
