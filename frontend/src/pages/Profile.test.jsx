@@ -11,7 +11,7 @@ vi.mock('react-router-dom', async () => ({
 // Account edits go through client.patch('/auth/me'); toUserMessage passes through
 // the real formatter's behavior for the error test.
 vi.mock('../api/client', () => ({
-  default: { patch: vi.fn() },
+  default: { patch: vi.fn(), get: vi.fn() },
   toUserMessage: (err, fallback) =>
     err?.response?.data?.detail || fallback,
 }))
@@ -70,6 +70,7 @@ beforeEach(() => {
   localStorage.clear()
   mockNavigate.mockClear()
   client.patch.mockReset()
+  client.get.mockReset()
   localStorage.setItem(
     'issei_user',
     JSON.stringify({
@@ -515,5 +516,227 @@ describe('You page carries the notification settings (#89)', () => {
       screen.getByRole('switch', { name: /notify me on this device/i }),
     ).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: /daily nudge/i })).toBeInTheDocument()
+  })
+})
+
+// ============================================================================================
+// #105 — the three settings that shipped. The two that were REMOVED the day before are the
+// reason each of these has a test: one of them wrote a localStorage key nothing ever read, so
+// tapping it changed nothing at all. A setting with no consumer is worse than a missing one.
+// ============================================================================================
+
+function seedUser(over = {}) {
+  localStorage.setItem(
+    'issei_user',
+    JSON.stringify({
+      id: 1,
+      first_name: 'Yoko',
+      last_name: 'M',
+      email: 'yoko@example.com',
+      ...over,
+    }),
+  )
+}
+
+const renderYou = () =>
+  render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>,
+  )
+
+describe('You page — new recipes start as (#105)', () => {
+  it('shows all THREE values, including the one the old model could not express', async () => {
+    // The default used to be derived from a two-valued profile toggle, so "Friends only" — the
+    // actual default for every new recipe — appeared nowhere on any screen.
+    seedUser({ default_recipe_visibility: 'friends' })
+    renderYou()
+
+    const group = await screen.findByRole('radiogroup', { name: /new recipes start as/i })
+    expect(group).toBeInTheDocument()
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(
+      expect.arrayContaining(['Everyone', 'Friends', 'Only me']),
+    )
+  })
+
+  it('shows the stored value as selected, not a hardcoded guess', async () => {
+    seedUser({ default_recipe_visibility: 'public' })
+    renderYou()
+
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Everyone' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    )
+    expect(screen.getByRole('radio', { name: 'Friends' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('falls back to the PRE-#105 derivation for a cached user that predates the field', async () => {
+    // Someone whose localStorage was written by an older build has neither field. Showing them
+    // yesterday's behaviour is right; showing "Friends" to a public-profile user would be a
+    // silent change of audience on their next recipe.
+    seedUser({ profile_visibility: 'public' })
+    renderYou()
+
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Everyone' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    )
+  })
+
+  it('saves the pick and caches it, because the create form reads it from the cache', async () => {
+    seedUser({ default_recipe_visibility: 'friends' })
+    client.patch.mockResolvedValue({ data: { default_recipe_visibility: 'private' } })
+    renderYou()
+
+    await userEvent.click(await screen.findByRole('radio', { name: 'Only me' }))
+
+    await waitFor(() =>
+      expect(client.patch).toHaveBeenCalledWith('/auth/me', {
+        default_recipe_visibility: 'private',
+      }),
+    )
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem('issei_user')).default_recipe_visibility).toBe(
+        'private',
+      ),
+    )
+  })
+
+  it('ROLLS BACK when the save fails, so nobody is shown a setting that did not take', async () => {
+    seedUser({ default_recipe_visibility: 'friends' })
+    client.patch.mockRejectedValue({ response: { data: { detail: 'Nope.' } } })
+    renderYou()
+
+    await userEvent.click(await screen.findByRole('radio', { name: 'Everyone' }))
+
+    expect(await screen.findByText('Nope.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Friends' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    )
+  })
+
+  it('says that changing it moves nothing already saved', async () => {
+    // The #68 guarantee, in the words a person would use. Without this line the control reads as
+    // "re-scope my whole kitchen", which is a different (and much scarier) feature.
+    seedUser()
+    renderYou()
+    expect(await screen.findByText(/nothing you.{0,3}ve already\s+saved moves/i)).toBeInTheDocument()
+  })
+})
+
+describe('You page — only friends can send me recipes (#105)', () => {
+  it('is OFF by default, matching the permissive server default', async () => {
+    seedUser({ invite_permission: 'anyone' })
+    renderYou()
+    const toggle = await screen.findByRole('switch', { name: /only friends can send me recipes/i })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('sends "friends" when turned on, and "anyone" when turned off', async () => {
+    seedUser({ invite_permission: 'anyone' })
+    client.patch.mockResolvedValue({ data: { invite_permission: 'friends' } })
+    renderYou()
+
+    await userEvent.click(
+      await screen.findByRole('switch', { name: /only friends can send me recipes/i }),
+    )
+    await waitFor(() =>
+      expect(client.patch).toHaveBeenCalledWith('/auth/me', { invite_permission: 'friends' }),
+    )
+
+    client.patch.mockResolvedValue({ data: { invite_permission: 'anyone' } })
+    await userEvent.click(
+      screen.getByRole('switch', { name: /only friends can send me recipes/i }),
+    )
+    await waitFor(() =>
+      expect(client.patch).toHaveBeenLastCalledWith('/auth/me', { invite_permission: 'anyone' }),
+    )
+  })
+
+  it('ROLLS BACK on failure — the worst outcome is believing a restriction is on', async () => {
+    seedUser({ invite_permission: 'anyone' })
+    client.patch.mockRejectedValue(new Error('offline'))
+    renderYou()
+
+    const toggle = await screen.findByRole('switch', {
+      name: /only friends can send me recipes/i,
+    })
+    await userEvent.click(toggle)
+
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'))
+  })
+
+  it('says a shared LINK still works, because it does', async () => {
+    // The token is the capability and link-only handoffs are never gated. A person who turns this
+    // on and then wonders why their own share link still opens deserves to have been told.
+    seedUser({ invite_permission: 'friends' })
+    renderYou()
+    expect(await screen.findByText(/a shared link still works/i)).toBeInTheDocument()
+  })
+})
+
+describe('You page — export your recipes (#105)', () => {
+  it('downloads a dated JSON file of the export response', async () => {
+    seedUser()
+    client.get.mockResolvedValue({
+      data: { exported_at: '2026-09-11T00:00:00Z', recipe_count: 1, recipes: [{ name: 'Adobo' }] },
+    })
+    const created = []
+    global.URL.createObjectURL = vi.fn((blob) => {
+      created.push(blob)
+      return 'blob:export'
+    })
+    global.URL.revokeObjectURL = vi.fn()
+    const clicks = []
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = realCreate(tag)
+      if (tag === 'a') el.click = () => clicks.push(el)
+      return el
+    })
+
+    renderYou()
+    await userEvent.click(await screen.findByRole('button', { name: /download/i }))
+
+    await waitFor(() => expect(client.get).toHaveBeenCalledWith('/recipes/export'))
+    await waitFor(() => expect(clicks).toHaveLength(1))
+    expect(clicks[0].download).toMatch(/^issei-recipes-\d{4}-\d{2}-\d{2}\.json$/)
+    expect(created[0].type).toBe('application/json')
+    // The object URL is released — an export left dangling pins the whole file in memory.
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:export')
+    document.createElement.mockRestore()
+  })
+
+  it('surfaces a failure instead of silently doing nothing', async () => {
+    seedUser()
+    client.get.mockRejectedValue({ response: { data: { detail: 'Server said no.' } } })
+    renderYou()
+
+    await userEvent.click(await screen.findByRole('button', { name: /download/i }))
+
+    expect(await screen.findByText('Server said no.')).toBeInTheDocument()
+  })
+
+  it('says what is in the file and what is not', async () => {
+    // "Recipes other people sent you stay theirs" is the line that stops this reading as a way to
+    // take a copy of someone else's dish — which is what "keep" has never meant.
+    seedUser()
+    renderYou()
+    expect(await screen.findByText(/every recipe you.{0,3}ve written/i)).toBeInTheDocument()
+    expect(screen.getByText(/stay theirs/i)).toBeInTheDocument()
+  })
+
+  it('is NOT a PDF or a cookbook — POSITIONING keeps issei out of the keepsake business', async () => {
+    seedUser()
+    renderYou()
+    await screen.findByRole('button', { name: /download/i })
+    expect(document.body.textContent).not.toMatch(/pdf|cookbook|print/i)
   })
 })

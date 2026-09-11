@@ -335,6 +335,30 @@ class KeptShelf(BaseModel):
     unreachable_count: int = 0
 
 
+class RecipeExport(BaseModel):
+    """Everything the caller WROTE, in one JSON document (#105).
+
+    An envelope rather than a bare list, and each field earns its place: `exported_at` so a file
+    sitting in someone's downloads folder says when it was true, and `recipe_count` so a truncated
+    or half-written file is detectable without counting the array by hand.
+
+    It reuses `RecipeResponse` deliberately instead of defining a leaner export shape. A second
+    schema would be a second thing to remember when a field is added — and the failure mode is
+    silent, because an export missing a field still parses. The cost is that a few computed fields
+    (`soul_count`, `growth_stage`, `growth_vitality`, which no UI has displayed since the garden was
+    removed) ride along; that is a smaller problem than an export that quietly loses the story
+    someone typed.
+
+    What is NOT here: recipes on the caller's KEPT shelf. Those are someone else's record of their
+    dish, held by a grant that permits reading — read is not write, and "keep" has never meant a
+    copy.
+    """
+
+    exported_at: datetime
+    recipe_count: int
+    recipes: list[RecipeResponse] = []
+
+
 class HandoffIn(BaseModel):
     # A recipient is OPTIONAL. With neither field the handoff is "link-only": it
     # mints a token the sender shares however they already talk to that person

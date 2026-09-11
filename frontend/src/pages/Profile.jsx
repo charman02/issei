@@ -156,6 +156,96 @@ export default function Profile() {
   const [accountError, setAccountError] = useState('')
   const [accountDone, setAccountDone] = useState('')
 
+  // --- The two #105 settings -------------------------------------------------------------
+  // Seeded from the cached user so the controls render in their true state on first paint, with
+  // the same pre-#105 fallback the create form uses (a cached user written by an older build has
+  // neither field, and showing someone the wrong current state is worse than a beat of loading).
+  const [defaultVisibility, setDefaultVisibility] = useState(
+    user.default_recipe_visibility ||
+      (user.profile_visibility === 'public' ? 'public' : 'friends'),
+  )
+  const [savingDefault, setSavingDefault] = useState(false)
+  // Its OWN error line, rendered inside its own card. The first version routed this into
+  // `accountError`, which lives in the Account section five cards down the page — so a failed save
+  // rolled the control back correctly and explained itself somewhere the person wasn't looking.
+  const [settingsError, setSettingsError] = useState('')
+  const [invitesFriendsOnly, setInvitesFriendsOnly] = useState(
+    user.invite_permission === 'friends',
+  )
+
+  // OPTIMISTIC, then reconciled from the response — and rolled back on failure. A settings
+  // control that silently keeps the new position after a failed save is the worst of the three
+  // outcomes: the person believes a restriction is in force when it is not.
+  async function onPickDefaultVisibility(value) {
+    if (value === defaultVisibility || savingDefault) return
+    setSettingsError('')
+    const previous = defaultVisibility
+    setDefaultVisibility(value)
+    setSavingDefault(true)
+    try {
+      const { data } = await client.patch('/auth/me', { default_recipe_visibility: value })
+      setDefaultVisibility(data.default_recipe_visibility)
+      // Into the cached user, because the create form reads it from there before any /auth/me
+      // round trip could answer — the same reason profile_visibility is cached.
+      patchUser({ default_recipe_visibility: data.default_recipe_visibility })
+    } catch (err) {
+      setDefaultVisibility(previous)
+      setSettingsError(toUserMessage(err, 'Could not save that. Please try again.'))
+    } finally {
+      setSavingDefault(false)
+    }
+  }
+
+  async function onToggleInvites(next) {
+    setSettingsError('')
+    const previous = invitesFriendsOnly
+    setInvitesFriendsOnly(next)
+    try {
+      const { data } = await client.patch('/auth/me', {
+        invite_permission: next ? 'friends' : 'anyone',
+      })
+      setInvitesFriendsOnly(data.invite_permission === 'friends')
+      patchUser({ invite_permission: data.invite_permission })
+    } catch (err) {
+      setInvitesFriendsOnly(previous)
+      setSettingsError(
+        toUserMessage(err, 'Could not change that just now. Please try again.'),
+      )
+    }
+  }
+
+  // --- Export (#105) ---------------------------------------------------------------------
+  // The honest answer to "what if issei goes away?" for someone who has typed thirty recipes in.
+  // A Blob and an object URL rather than pointing a link at the endpoint: the request needs the
+  // Authorization header, so a bare <a href> would 401, and a token in a query string would end
+  // up in history and logs.
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+
+  async function exportRecipes() {
+    if (exporting) return
+    setExporting(true)
+    setExportError('')
+    try {
+      const { data } = await client.get('/recipes/export')
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      // Dated, because someone exporting twice should end up with two files rather than
+      // "issei-recipes (1).json" and no idea which is current.
+      a.download = `issei-recipes-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(toUserMessage(err, 'Could not export your recipes. Please try again.'))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   function setPref(key, val) {
     const next = { ...prefs, [key]: val }
     setPrefs(next)
@@ -455,6 +545,73 @@ export default function Profile() {
         />
       </div>
 
+      {/* NEW RECIPES START AS — (#105). This was previously INFERRED from the toggle above, and
+          the inference lost a value: the profile is two-valued while a recipe's visibility is
+          three, so "Friends only" — the actual default for every new recipe — existed only as the
+          side effect of having a private profile, and nothing on any screen said so. Stated here.
+
+          It sets the STARTING POINT of the picker on the create form, nothing more. Changing it
+          moves nothing already saved (#68: a recipe's visibility is stored literally), which is
+          what the hint says in the words a person would use. */}
+      <div className="sticker bg-card px-5 py-4 mt-3">
+        <p className="font-display font-bold text-[14px] text-ink">New recipes start as</p>
+        <p className="font-display italic text-[12.5px] text-ink-soft mt-0.5 mb-2.5 leading-snug">
+          Just the starting point — you can change it on any recipe. Nothing you&rsquo;ve already
+          saved moves.
+        </p>
+        <div className="flex gap-2" role="radiogroup" aria-label="New recipes start as">
+          {[
+            { value: 'public', label: 'Everyone' },
+            { value: 'friends', label: 'Friends' },
+            { value: 'private', label: 'Only me' },
+          ].map((opt) => {
+            const selected = defaultVisibility === opt.value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={savingDefault}
+                onClick={() => onPickDefaultVisibility(opt.value)}
+                className={`flex-1 rounded-full border-2 border-ink px-3 py-2 font-display font-bold text-[13px] transition-transform active:translate-y-[1px] disabled:opacity-50 ${
+                  selected ? 'bg-peach text-ink' : 'bg-card text-ink-soft'
+                }`}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* WHO CAN SEND YOU A RECIPE — (#105). Grouped with visibility rather than with Account
+          because it is about CONTACT, and it belongs on this page at all because it is the app's
+          last unsolicited-contact channel: a handoff can be pre-addressed to your EMAIL, so a
+          sender needs no relationship with you and blocking (#85) cannot reach it — there is
+          nobody to block until after it has happened.
+
+          The copy does not say "strangers", which would describe most senders unfairly; the
+          honest framing is who it stays OPEN to. A refusal is invisible to the sender by design
+          (a uniform 404), so this hint is the only place the consequence is stated. */}
+      <div className="sticker bg-card px-5 py-2 mt-3">
+        <Toggle
+          label="Only friends can send me recipes"
+          hint={
+            invitesFriendsOnly
+              ? 'Someone has to be your friend before they can send a recipe to your email. A shared link still works.'
+              : 'Anyone who knows your email address can send you a recipe.'
+          }
+          on={invitesFriendsOnly}
+          onChange={onToggleInvites}
+        />
+      </div>
+      {settingsError && (
+        <p className="mt-2">
+          <span className="error-pill">{settingsError}</span>
+        </p>
+      )}
+
       {/* Confirm dialog for either flip. Because item visibility is concrete, changing
           the profile alone leaves existing recipes/posts as they are — so we ask what
           to do with them: keep them, or sweep everything to match the new profile. Copy
@@ -662,6 +819,42 @@ export default function Profile() {
             {saving ? 'Saving…' : 'Save password'}
           </button>
         </AccountRow>
+
+        {/* EXPORT YOUR RECIPES (#105). Beside delete-account because both are "your data, your
+            call" — and deliberately ABOVE it, so the row that ends an account is still the last
+            thing on the page.
+
+            NOT a row that expands: there is nothing to configure and nothing to confirm. One tap
+            downloads a file, which is the whole feature.
+
+            JSON, not a PDF or a printable cookbook — a keepsake artefact is the legacy-archive
+            product POSITIONING keeps issei out of, and a machine-readable file is what actually
+            answers "what if this goes away?", because it can be re-imported somewhere else. The
+            hint says what is IN it (your own recipes, verbatim) and what is not (recipes other
+            people handed you, which are theirs). */}
+        <div className="border-t-2 border-line py-3.5">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-display font-bold text-[14px] text-ink">Export your recipes</p>
+              <p className="font-display italic text-[12.5px] text-ink-soft mt-0.5 leading-snug">
+                A file with every recipe you&rsquo;ve written, exactly as you wrote it — &ldquo;a
+                good splash&rdquo; and all. Recipes other people sent you stay theirs.
+              </p>
+            </div>
+            <button
+              onClick={exportRecipes}
+              disabled={exporting}
+              className="flex-none rounded-full bg-cream text-ink border-2 border-ink px-3.5 py-1.5 font-display font-bold text-[12.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+            >
+              {exporting ? 'Preparing…' : 'Download'}
+            </button>
+          </div>
+          {exportError && (
+            <p className="mt-2">
+              <span className="error-pill">{exportError}</span>
+            </p>
+          )}
+        </div>
 
         {/* Delete account — same expandable row pattern, gated on password. */}
         <AccountRow

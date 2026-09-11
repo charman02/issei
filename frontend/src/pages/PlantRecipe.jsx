@@ -43,18 +43,23 @@ export default function PlantRecipe() {
   const [seeded, setSeeded] = useState(null)
   // The raw pasted text, kept so back-from-the-form returns to it intact.
   const [pastedText, setPastedText] = useState('')
-  // Concrete visibility (#68). The default the form auto-selects mirrors the author's
-  // profile — "Everyone" on a public profile, "Friends only" on a private one — but the
-  // chosen value is stored literally, not as a live pointer to the profile. The user can
-  // pick any of the three in VisibilityChoice, always shown at save time.
-  const profileVisibility =
-    JSON.parse(localStorage.getItem('issei_user') || '{}').profile_visibility ||
-    'private'
+  // Concrete visibility (#68). The value the form auto-selects is now the author's OWN stated
+  // default (#105) rather than something inferred from a two-valued profile setting — the old
+  // derivation could not express "friends", which was the actual default for every new recipe and
+  // had no name anywhere on any screen. Whatever it starts on, the chosen value is stored
+  // LITERALLY, never as a live pointer, and all three remain pickable in VisibilityChoice.
+  const cached = JSON.parse(localStorage.getItem('issei_user') || '{}')
   const [visibility, setVisibility] = useState(
-    // Mid-post, start from what the author already chose for the post — same dish, same
-    // moment, same audience intent. Still shown in VisibilityChoice and still stored
-    // literally, so this is a starting point, not a link to the post's value.
-    postDraft?.visibility || (profileVisibility === 'public' ? 'public' : 'friends'),
+    // Mid-post, start from what the author already chose for the POST — same dish, same moment,
+    // same audience intent — and only then from the setting. Both are starting points, not links.
+    //
+    // The fallback chain still ends in the old derivation, deliberately: `default_recipe_visibility`
+    // is absent from a cached user written by a build that predates #105, and someone whose
+    // localStorage was seeded before this shipped should get what they got yesterday rather than a
+    // silent change of audience on their next recipe.
+    postDraft?.visibility ||
+      cached.default_recipe_visibility ||
+      (cached.profile_visibility === 'public' ? 'public' : 'friends'),
   )
   const [saved, setSaved] = useState(null)
 

@@ -55,6 +55,15 @@ class UserResponse(UserBase):
     notify_people: bool = True
     quiet_from: int = 22
     quiet_to: int = 8
+    # The two #105 settings. Safe to expose for the same reason as the others: both are NOT NULL
+    # with a server_default, so no stored row can violate the type.
+    #
+    # `invite_permission` is the caller's OWN setting only — it is on UserResponse, which is
+    # returned by /auth/me and /auth/login, never by a route that describes someone else. Leaking
+    # another person's value would tell a sender in advance whether an address will accept an
+    # unsolicited recipe, which is exactly the thing `handoff_recipe`'s uniform 404 exists to hide.
+    invite_permission: str = "anyone"
+    default_recipe_visibility: str = "friends"
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -86,6 +95,16 @@ class AccountUpdate(BaseModel):
     # profile flip alone changes NOTHING existing — this sweep is the only way to
     # bulk-rescope what's already there, and it's always an explicit, confirmed choice.
     apply_visibility_to_all: Optional[Literal["public", "friends", "private"]] = None
+    # Who may pre-address a handoff to you (#105). Low-risk like the others — it only narrows what
+    # reaches YOU and is instantly reversible, so no current_password. A Literal rather than a free
+    # string so an unknown value is a 422 rather than a silently permissive setting: "anythin" must
+    # not fail open into "anyone".
+    invite_permission: Optional[Literal["anyone", "friends"]] = None
+    # What the create form pre-selects for a new recipe (#105). THREE values, matching an item's
+    # concrete visibility — and note this is NOT the same field as `profile_visibility` above,
+    # which is two-valued and still drives the bulk sweep. Changing this moves nothing already
+    # saved; per #68 an item's visibility is stored literally at create time.
+    default_recipe_visibility: Optional[Literal["public", "friends", "private"]] = None
     # Profile picture URL (from POST /upload/avatar), or "" / null to clear back to the
     # monogram. Low-risk like a name edit — no current_password. Empty string is allowed
     # here (unlike the name rules) precisely so a user can remove their photo.

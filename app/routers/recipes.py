@@ -24,6 +24,7 @@ from app.schemas.recipe import (
     RecipeResponse,
     RecipeUpdate,
     KeptShelf,
+    RecipeExport,
     IngredientResponse,
     IngredientSectionResponse,
     IngredientSuggestions,
@@ -221,15 +222,53 @@ def handoff_recipe(
         resolved_user = db.query(User).filter(User.id == to_user_id).first()
         if resolved_user is None:
             raise HTTPException(status_code=404, detail="User not found")
-        # No NEW grant across a block (#85), either direction. The locked decision is that a
-        # grant which ALREADY EXISTED at block time survives — you genuinely gave them that
-        # dish and a block means "no new contact", not "unsend". Minting a grant AFTER the
-        # block is the opposite: because can_view's grant branch waves a grant through
-        # regardless of visibility or friendship, without this check a blocked person could
-        # put arbitrary text (name, story, byline, step notes) plus their own name straight
-        # onto the blocker's Kept shelf, once per recipe they care to write. Same 404 body as
-        # an unknown user above, so the block stays undetectable.
-        if is_blocked(current_user.id, resolved_user.id, db):
+
+    # WHO THE RECIPIENT IS *FOR THE PURPOSE OF THE TWO CHECKS BELOW* — which is not the same
+    # question as who the grant gets bound to.
+    #
+    # An email-addressed handoff was never resolved to an account, and that was a hole rather than
+    # an omission: the block check fires on a resolved user, so addressing a handoff by EMAIL
+    # walked straight past it. Anyone who knew a blocker's address could keep minting grants onto
+    # their Kept shelf, once per recipe, and nothing in #85 stopped it (#105).
+    #
+    # DELIBERATELY A SEPARATE VARIABLE from `resolved_user`. Letting the email path set that would
+    # also change what gets STORED — an accepted grant bound to `to_user_id` instead of a pending
+    # invite bound to `to_email` — which moves the dedupe key and the state the recipient sees.
+    # That is a different feature from the one being built here. The checks get the person; the row
+    # is built exactly as it was.
+    #
+    # Case-insensitive, because an email address is: a sender typing "Ana@x.com" for "ana@x.com"
+    # would otherwise resolve to nobody and skip both checks.
+    recipient = resolved_user
+    if recipient is None and to_email:
+        recipient = (
+            db.query(User).filter(func.lower(User.email) == to_email.strip().lower()).first()
+        )
+    # An address with no account behind it has nobody to hold a preference, so it stays a pending
+    # email invite exactly as before — auto-accepted at signup, which is the #88 rule: an invite
+    # minted BEFORE a restriction stays claimable, because the sender chose to send it.
+
+    if recipient is not None and recipient.id != current_user.id:
+        # No NEW grant across a block (#85), either direction. The locked decision is that a grant
+        # which ALREADY EXISTED at block time survives — you genuinely gave them that dish and a
+        # block means "no new contact", not "unsend". Minting one AFTER the block is the opposite:
+        # because can_view's grant branch waves a grant through regardless of visibility or
+        # friendship, without this check a blocked person could put arbitrary text (name, story,
+        # byline, step notes) plus their own name straight onto the blocker's Kept shelf, once per
+        # recipe they care to write. Same 404 body as an unknown user, so the block is undetectable.
+        if is_blocked(current_user.id, recipient.id, db):
+            raise HTTPException(status_code=404, detail="User not found")
+        # WHO MAY PRE-ADDRESS A HANDOFF TO THIS PERSON (#105). "friends" requires an accepted
+        # friendship; "anyone" (the default, and today's behaviour) checks nothing. Same 404 body
+        # as an unknown user and as a block, so a refusal never distinguishes "they don't take
+        # unsolicited recipes" from "no such account" — otherwise the setting leaks, and worse,
+        # confirms the address belongs to a real person.
+        #
+        # The LINK-ONLY handoff is deliberately untouched: no recipient means nothing to check,
+        # and the token is the capability this product is built on.
+        if recipient.invite_permission == "friends" and not are_friends(
+            current_user.id, recipient.id, db
+        ):
             raise HTTPException(status_code=404, detail="User not found")
 
     # Idempotent per (root, grantee): return the existing grant if present.
@@ -376,6 +415,56 @@ def shared_with_me(
     for r in recipes:
         _attach_growth_fields(r, db)
     return recipes
+
+
+@router.get("/export", response_model=RecipeExport)
+def export_my_recipes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every recipe the caller WROTE, as JSON — the honest answer to "what if issei goes away?".
+
+    Declared before `get_recipe` so the literal "/export" isn't captured as a recipe id, same as
+    "/shared" and "/kept" above.
+
+    THREE decisions worth keeping.
+
+    **Own recipes only, not the Kept shelf.** A kept recipe is someone else's record of their dish
+    — it is on your shelf by their grant, and a grant is permission to read, not to take a copy
+    away (read is not write, the same rule `patch_recipe` enforces). Exporting them would make
+    "keep" mean the copy it has never meant, and it would hand you text that stops being yours the
+    moment they delete it or block you. What this exports is what you typed.
+
+    **JSON, not a PDF or a printable cookbook.** A keepsake artefact is the legacy-archive product
+    POSITIONING deliberately keeps issei out of; a machine-readable file is the one that answers
+    the actual question, because it can be re-imported somewhere else. It is also why the imprecise
+    amounts matter here more than anywhere: a recipe whose "a good splash" is preserved verbatim in
+    the app has to leave it that way, so the export carries `quantity_text` and `quantity_type`
+    exactly as stored and does no formatting of its own.
+
+    **Deleted recipes are excluded.** `deleted_at IS NULL`, like every other read. A soft-deleted
+    row is one the person chose to remove; an export that quietly resurrected it would be a
+    surprise, not a service.
+    """
+    recipes = (
+        db.query(Recipe)
+        .filter(Recipe.user_id == current_user.id, Recipe.deleted_at == None)
+        .options(
+            selectinload(Recipe.ingredient_sections).selectinload(IngredientSection.ingredients),
+            selectinload(Recipe.ingredients),
+            selectinload(Recipe.steps),
+            selectinload(Recipe.user),
+        )
+        .order_by(Recipe.created_at.asc())
+        .all()
+    )
+    for r in recipes:
+        _attach_growth_fields(r, db)
+    return RecipeExport(
+        exported_at=datetime.now(timezone.utc),
+        recipe_count=len(recipes),
+        recipes=recipes,
+    )
 
 
 @router.get("/kept", response_model=KeptShelf)

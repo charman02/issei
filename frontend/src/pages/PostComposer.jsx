@@ -37,11 +37,18 @@ export default function PostComposer() {
   const [description, setDescription] = useState(draft?.description || '')
   // Concrete visibility (#68). Auto-select mirrors the author's profile — "Everyone" on
   // a public profile, "Friends only" on a private one — but the value is stored literally.
-  const profileVisibility =
-    JSON.parse(localStorage.getItem('issei_user') || '{}').profile_visibility ||
-    'private'
+  // Same source as the recipe form since #105 — the author's stated default, with the old
+  // profile-derived value as the fallback for a cached user written before it existed.
+  //
+  // NOTE the setting is named for RECIPES and is applied to a post too. That is deliberate: a
+  // person has one sense of who they share with, and two separate defaults would be a settings
+  // screen asking a question nobody has. If posts ever need their own, it becomes a second field —
+  // not a reinterpretation of this one.
+  const cached = JSON.parse(localStorage.getItem('issei_user') || '{}')
   const [visibility, setVisibility] = useState(
-    draft?.visibility || (profileVisibility === 'public' ? 'public' : 'friends'),
+    draft?.visibility ||
+      cached.default_recipe_visibility ||
+      (cached.profile_visibility === 'public' ? 'public' : 'friends'),
   )
   const [uploading, setUploading] = useState(false)
   const [photoError, setPhotoError] = useState('')

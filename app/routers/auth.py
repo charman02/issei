@@ -86,6 +86,11 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             # a re-login would drop the field and the UI would default to "private",
             # telling a public-profile user their kitchen is friends-only when it isn't.
             "profile_visibility": user.profile_visibility,
+            # #105 — the create form reads this to pre-select a new recipe's visibility, and it
+            # has to be in the cached user for the same reason profile_visibility is: the form
+            # renders before any /auth/me round trip would answer.
+            "default_recipe_visibility": user.default_recipe_visibility,
+            "invite_permission": user.invite_permission,
             # Same reason — the cached user drives the You-box avatar; a re-login that
             # dropped it would blank the photo back to the monogram until the next edit.
             "photo_url": user.photo_url,
@@ -162,6 +167,13 @@ def update_me(
         # NOTHING already stored — it only sets the default the create form auto-selects
         # next time. To rescope existing items, the caller sends apply_visibility_to_all.
         current_user.profile_visibility = update.profile_visibility
+
+    # The two #105 settings. No current_password: one only narrows what reaches the caller, the
+    # other only changes what a form pre-selects, and both are instantly reversible.
+    if update.invite_permission is not None:
+        current_user.invite_permission = update.invite_permission
+    if update.default_recipe_visibility is not None:
+        current_user.default_recipe_visibility = update.default_recipe_visibility
 
     if update.photo_url is not None:
         # Low-risk like a name edit — no password. An empty/blank string clears the photo

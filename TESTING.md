@@ -139,6 +139,12 @@ alone — re-run it):
   anyway, and `pwa.test.js` guards a manifest string that is not a screen at all. The
   phrase arrives wherever someone describes a person's presence, so the rule is "new
   surface", not "new microphone".
+- **A new SETTING** → it needs a CONSUMER and a test that exercises the consumer, not just the
+  round trip. Two toggles were deleted from the You page on 2026-09-11 and one of them had
+  *worked* in the sense that it wrote localStorage — nothing ever read the key, so tapping it
+  changed nothing at all and no test noticed. For #105 that meant asserting the create form
+  actually STARTS on `default_recipe_visibility` and that `handoff_recipe` actually refuses under
+  `invite_permission`, not merely that `PATCH /auth/me` echoed the value back.
 - **A new photo-taking surface** → pass `frame` from `usePhotoFramer` AND render
   `{framerProps?.file && <PhotoFramer {...framerProps} />}`. Omitting the render hangs the
   pick with no error on screen; `src/photoFramer-wiring.test.js` scans for this, so a new

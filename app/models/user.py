@@ -87,6 +87,45 @@ class User(Base):
     quiet_from: Mapped[int] = mapped_column(nullable=False, server_default="22")
     quiet_to: Mapped[int] = mapped_column(nullable=False, server_default="8")
 
+    # --- The two settings from #105 ------------------------------------------------------
+    #
+    # WHO MAY PRE-ADDRESS A HANDOFF TO YOU: "anyone" | "friends".
+    #
+    # This is the app's last unsolicited-contact channel, and blocking (#85) does not reach it.
+    # `POST /recipes/{id}/handoff` accepts a `to_email`, and a sender needs no relationship with
+    # you — not even an account of yours to exist — to put a recipe, a byline, a story and their
+    # own name on your Kept shelf. A block can't help, because there is nobody to block until
+    # after it has happened.
+    #
+    # DEFAULT "anyone", which is the *permissive* choice and deliberately so: it is exactly
+    # today's behaviour, and a migration that silently tightened everyone's setting would break
+    # sends that are already in flight for people who never asked for that. It is offered as a
+    # setting rather than imposed as a rule.
+    #
+    # NOT enforced on the LINK-ONLY handoff, ever. There the token is the capability and the
+    # sender chose to hand it over — that is the product (POSITIONING), and gating it would
+    # break the founding case, someone who asked for the dish at the table.
+    invite_permission: Mapped[str] = mapped_column(nullable=False, server_default="anyone")
+    #
+    # WHAT THE CREATE FORM PRE-SELECTS FOR A NEW RECIPE: "public" | "friends" | "private".
+    #
+    # Stated directly, because it used to be INFERRED and the inference lost a value:
+    # `profile_visibility` is two-valued while an item's visibility is three-valued, so
+    # "friends" — the actual default for every new recipe — existed only as the side effect of
+    # having a private profile, and nothing on any screen said so.
+    #
+    # THIS IS NOT A FOURTH VISIBILITY VALUE AND NOT A LIVE POINTER. Per #68 an item's
+    # visibility is stored LITERALLY at create time; this only picks what the form starts on, so
+    # changing it later moves nothing already saved. `profile_visibility` stays, because it still
+    # drives the bulk sweep — retiring it is a separate decision.
+    #
+    # Backfilled from `profile_visibility` in the migration (public profile → "public", private →
+    # "friends") rather than defaulted flat, so no existing account's create form changes
+    # behaviour on the day this shipped.
+    default_recipe_visibility: Mapped[str] = mapped_column(
+        nullable=False, server_default="friends"
+    )
+
     # server_default lets the database generate the timestamp, more reliable
     # than app-side defaults in distributed environments
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
