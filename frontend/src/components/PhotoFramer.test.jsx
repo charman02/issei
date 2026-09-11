@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import PhotoFramer, { FRAME_RATIOS } from './PhotoFramer'
+import PhotoFramer, { FRAME_RATIOS, MIN_ZOOM, MAX_ZOOM, anchoredOffset } from './PhotoFramer'
 
 // WHAT JSDOM CANNOT SEE, stated up front so nobody trusts these tests further than they go: there is
 // no layout engine, no image decoder and no canvas encoder here. The drag maths, the zoom clamp and
@@ -95,10 +95,113 @@ describe('PhotoFramer (#103)', () => {
     expect(zoom).toHaveValue('1')
   })
 
+  it('offers zoom as a range whose bounds are the ones the gesture clamps to', () => {
+    // The slider and the pinch must agree; two independently-written 1..4 pairs would eventually not.
+    render(<PhotoFramer file={FILE} onDone={() => {}} onCancel={() => {}} />)
+    const zoom = screen.getByLabelText('Zoom')
+    expect(zoom).toHaveAttribute('min', String(MIN_ZOOM))
+    expect(zoom).toHaveAttribute('max', String(MAX_ZOOM))
+  })
+
   it('claims nothing about voice, audio or recording', () => {
     // A new user-facing surface; POSITIONING treats the count of these guards as a floor.
     const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
     render(<PhotoFramer file={FILE} onDone={() => {}} onCancel={() => {}} />)
     expect(document.body.textContent).not.toMatch(BANNED)
+  })
+})
+
+// PINCH-TO-ZOOM ANCHORING. The screen's one instruction says "Pinch or use the slider to zoom", and
+// for one commit that was a lie: there was no multi-touch code at all, and `touch-none` suppressed
+// the browser's own pinch too, so two fingers panned the photo on the one input that matters most.
+//
+// jsdom cannot deliver a two-finger gesture and cannot decode an image (so `naturalWidth` is 0 and
+// the component's pinch branch bails before any arithmetic). The maths is therefore exported as a
+// pure function and tested here directly, with the GESTURE WIRING verified in a real browser.
+describe('anchoredOffset — zoom keeps the subject under the fingers', () => {
+  // A 1000x1000 source in a 300x300 frame: base scale 0.3, so the whole image just covers it.
+  const SQUARE = { srcW: 1000, srcH: 1000, frameW: 300, frameH: 300, base: 0.3 }
+  const CENTRED = { x: 0, y: 0 }
+
+  // Where does source pixel (srcX, srcY) land on screen, at a given zoom and offset?
+  function screenPos({ srcX, srcY }, zoom, offset) {
+    const s = SQUARE.base * zoom
+    return {
+      x: (SQUARE.frameW - SQUARE.srcW * s) / 2 + offset.x + srcX * s,
+      y: (SQUARE.frameH - SQUARE.srcH * s) / 2 + offset.y + srcY * s,
+    }
+  }
+
+  it('leaves the pixel under the midpoint exactly where it was', () => {
+    // Fingers centred on a point up and to the left — someone framing a face off-centre.
+    const mid = { x: 90, y: 120 }
+    const before = { zoom: 1, offset: CENTRED }
+    const toZoom = 2.5
+
+    const at = anchoredOffset({ ...SQUARE, mid, fromZoom: before.zoom, fromOffset: before.offset, toZoom })
+
+    // Work out which source pixel was under the midpoint, then confirm it is still there after.
+    const s0 = SQUARE.base * before.zoom
+    const src = {
+      srcX: (mid.x - ((SQUARE.frameW - SQUARE.srcW * s0) / 2 + before.offset.x)) / s0,
+      srcY: (mid.y - ((SQUARE.frameH - SQUARE.srcH * s0) / 2 + before.offset.y)) / s0,
+    }
+    const after = screenPos(src, toZoom, at)
+    expect(after.x).toBeCloseTo(mid.x, 6)
+    expect(after.y).toBeCloseTo(mid.y, 6)
+  })
+
+  it('is a no-op when the zoom does not change', () => {
+    const at = anchoredOffset({
+      ...SQUARE,
+      mid: { x: 200, y: 40 },
+      fromZoom: 1.8,
+      fromOffset: { x: -25, y: 12 },
+      toZoom: 1.8,
+    })
+    expect(at.x).toBeCloseTo(-25, 6)
+    expect(at.y).toBeCloseTo(12, 6)
+  })
+
+  it('holds the anchor on zoom OUT as well as in', () => {
+    const mid = { x: 240, y: 250 }
+    const fromOffset = { x: 40, y: -60 }
+    const at = anchoredOffset({ ...SQUARE, mid, fromZoom: 3, fromOffset, toZoom: 1.4 })
+
+    const s0 = SQUARE.base * 3
+    const src = {
+      srcX: (mid.x - ((SQUARE.frameW - SQUARE.srcW * s0) / 2 + fromOffset.x)) / s0,
+      srcY: (mid.y - ((SQUARE.frameH - SQUARE.srcH * s0) / 2 + fromOffset.y)) / s0,
+    }
+    const after = screenPos(src, 1.4, at)
+    expect(after.x).toBeCloseTo(mid.x, 6)
+    expect(after.y).toBeCloseTo(mid.y, 6)
+  })
+
+  it('anchoring at the exact centre is the same as plain centre-zoom', () => {
+    // The degenerate case, worth pinning: pinching dead centre must not drift the photo sideways.
+    const at = anchoredOffset({
+      ...SQUARE,
+      mid: { x: SQUARE.frameW / 2, y: SQUARE.frameH / 2 },
+      fromZoom: 1,
+      fromOffset: CENTRED,
+      toZoom: 2,
+    })
+    expect(at.x).toBeCloseTo(0, 6)
+    expect(at.y).toBeCloseTo(0, 6)
+  })
+
+  it('works for a non-square frame, where the two axes have different slack', () => {
+    const WIDE = { srcW: 1200, srcH: 1200, frameW: 400, frameH: 300, base: 400 / 1200 }
+    const mid = { x: 310, y: 80 }
+    const fromOffset = { x: 5, y: -5 }
+    const at = anchoredOffset({ ...WIDE, mid, fromZoom: 1.2, fromOffset, toZoom: 2.2 })
+
+    const s0 = WIDE.base * 1.2
+    const srcX = (mid.x - ((WIDE.frameW - WIDE.srcW * s0) / 2 + fromOffset.x)) / s0
+    const srcY = (mid.y - ((WIDE.frameH - WIDE.srcH * s0) / 2 + fromOffset.y)) / s0
+    const s1 = WIDE.base * 2.2
+    expect((WIDE.frameW - WIDE.srcW * s1) / 2 + at.x + srcX * s1).toBeCloseTo(mid.x, 6)
+    expect((WIDE.frameH - WIDE.srcH * s1) / 2 + at.y + srcY * s1).toBeCloseTo(mid.y, 6)
   })
 })

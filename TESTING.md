@@ -92,9 +92,16 @@ alone — re-run it):
 5. **No false audio/recording claims in the UI (POSITIONING).**
    The words `voice` / `recording` / `audio` / `listen` / `in their own words`
    appear nowhere a user or screen reader can reach. Dictation is speak-to-type;
-   the utterance is discarded. Guard tests assert the banned set across the mic UI.
-   → `frontend/src/components/DictateButton.test.jsx`,
-     `frontend/src/components/PasteRecipe.test.jsx`, `RecipeForm.test.jsx`
+   the utterance is discarded. **FOURTEEN test files** carry the guard, and they are
+   not confined to the mic UI — the claim reappears on any new user-facing surface,
+   which is why the count is a floor and not a fixed number. Ten use the wide regex
+   (`in (their|your|his|her)( own)? words`); re-grep rather than trusting this list.
+   → `DictateButton`, `PasteRecipe`, `RecipeForm`, `RecipeBody`, `PhotoFramer`,
+     `NotificationSettings`, `NotifyNudge`, `Notifications`, `UserProfile`,
+     `InviteLanding`, `Login`, `Welcome`, `pwa.test.js` (the web manifest's
+     description — app-store-facing copy no rendered-screen assertion reaches), and
+     `lib/inviteMessage.test.js` (the SHARE TEXT, which is also not a screen).
+     POSITIONING.md §"No audio" says what each one checks.
 
 6. **No lineage / family tree.**
    No ancestors, descendants, roots, branches, or parent_recipe_id. Removed
@@ -127,8 +134,15 @@ alone — re-run it):
   → `frontend/src/lib/currentUser.test.jsx`
 - **New recipe-form field** → seed it in `EditRecipe.initialValues` and add a
   round-trip assertion (invariant 7). Add it to the payload test.
-- **New user-facing copy near dictation/handoff** → it's covered by the banned-word
-  guards, but if you add a new screen with a mic, add the guard there too.
+- **ANY new user-facing surface** → add the banned-word guard to its test file. Not just
+  screens with a mic: #103's photo framer has nothing to do with dictation and needed one
+  anyway, and `pwa.test.js` guards a manifest string that is not a screen at all. The
+  phrase arrives wherever someone describes a person's presence, so the rule is "new
+  surface", not "new microphone".
+- **A new photo-taking surface** → pass `frame` from `usePhotoFramer` AND render
+  `{framerProps?.file && <PhotoFramer {...framerProps} />}`. Omitting the render hangs the
+  pick with no error on screen; `src/photoFramer-wiring.test.js` scans for this, so a new
+  call site is covered automatically — do not silence it by threading the props onward.
 - **New model/migration** → `tests/test_migrations.py` must still replay clean on
   SQLite (migrations are portable, not Postgres-only).
 

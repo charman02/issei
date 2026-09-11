@@ -1,10 +1,10 @@
 # issei — architecture refresher
 
-Written to be reread before an interview. Verified against the code on 2026-09-09, not
+Written to be reread before an interview. Verified against the code on 2026-09-11, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 65 endpoints · 18 tables · 24 migrations · 609 backend tests · 874 frontend
-tests · 8,137 lines of Python under `app/` (excluding tests and migrations), deployed
+**Scale:** 65 endpoints · 18 tables · 24 migrations · 609 backend tests · 901 frontend
+tests · 8,297 lines of Python under `app/` (excluding tests and migrations), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
 
 ---
@@ -28,7 +28,7 @@ downstream of one product decision.
 | API | FastAPI | Pydantic gives request/response validation at the boundary for free; async for the LLM call |
 | ORM | SQLAlchemy 2.0 (`Mapped[]` typed style) | Types are checkable; the models double as documentation |
 | DB | Postgres (Neon) in prod, SQLite locally | Same ORM either way; `database.py` branches on the URL |
-| Migrations | Alembic | 23 versioned migrations, forward-only in practice |
+| Migrations | Alembic | 24 versioned migrations, forward-only in practice |
 | Auth | JWT, stateless, bcrypt | No session store to run; the token carries `sub` = user id |
 | Frontend | React + Vite + Tailwind | — |
 | Hosting | AWS ECS Fargate (API) · Vercel (web) · Neon (DB) | Push to `main` auto-deploys via GitHub Actions OIDC pipeline |

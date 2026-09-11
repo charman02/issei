@@ -52,7 +52,10 @@ export function useAvatarUpload({ onDone } = {}) {
   }
 
   // `framerProps` goes on a <PhotoFramer>; `framing` lets a caller hide its own controls while the
-  // framer is up. A caller that renders neither still uploads — it just gets the old centre-crop,
-  // which is why every avatar surface should render it.
+  // framer is up. RENDERING IT IS NOT OPTIONAL: `onPick` always passes a `frame` callback, and
+  // `photoUpload` awaits the promise it returns, which only `framerProps.onDone`/`onCancel` can
+  // settle. A caller that renders no framer therefore leaves the pick hanging forever — busy flag
+  // off, nothing on screen, the photo simply never appears — rather than falling back to the old
+  // centre-crop. All three consumers (Profile, Welcome, PhotoNudge) render it; a test pins that.
   return { onPick, uploading, error, photoUrl, framerProps, framing }
 }
