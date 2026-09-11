@@ -14,6 +14,7 @@ from app.models.password_reset import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse, AccountUpdate
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.services.email import send_password_reset_email
+from app.services.media import require_our_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -170,16 +171,18 @@ def update_me(
         # user's name, so accepting an arbitrary URL would let someone point it at an
         # external tracking pixel that leaks every viewer's IP. Not XSS (an <img src> won't
         # run javascript:/data: script), but a real privacy leak, so we pin the host.
+        #
+        # The host rule itself now lives in `services/media.py`, shared with
+        # `PATCH /posts/{id}` (#106). It was inline here, and the next write to accept a photo
+        # URL shipped with no check at all — which is what a rule living in one router does.
+        # The BLANK-CLEARS behaviour stays here rather than moving into the service, because it
+        # is specific to this field: a profile photo is optional (NULL → monogram) while a
+        # post's is `nullable=False`, so the same blank value must mean opposite things.
         photo = (update.photo_url or "").strip()
         if not photo:
             current_user.photo_url = None
-        elif photo.startswith("https://") and ".cloudinary.com/" in photo:
-            current_user.photo_url = photo
         else:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="A profile photo must be uploaded through issei.",
-            )
+            current_user.photo_url = require_our_image_url(photo, what="profile photo")
 
     if update.apply_visibility_to_all is not None:
         # Bulk sweep, chosen in the confirm dialog: set EVERY recipe and post to one

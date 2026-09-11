@@ -41,14 +41,26 @@ class PostUpdate(BaseModel):
     send `""` for that (the router strips it back to NULL). That ambiguity is the cost of a
     partial update, and the alternative — a sentinel — is worse to read.
 
-    THREE fields, matching exactly what the edit form on PostPage offers. Two things a client
-    might expect here are deliberately absent, and both were removed after review flagged that
-    the schema was wider than any rule or UI backing it:
+    FOUR fields, matching exactly what the edit form on PostPage offers.
 
-      - `photo_url`. A different photo is a different meal, so re-shooting it is a NEW post, not
-        an edit — the UI, the README and CLAUDE.md all said so while the schema quietly accepted
-        the field, with no Cloudinary-host check of the kind `PATCH /auth/me` applies. A rule
-        enforced only in the client isn't enforced.
+    `photo_url` IS EDITABLE, since #106 — reversing the #98 decision, on the owner's call. The
+    old rule was "a different photo is a different meal, so re-shoot it as a new post", which is
+    a defensible model of what a post MEANS and a bad answer to what people actually hit: a photo
+    that came out badly, or the wrong one of two picked in a hurry. Those aren't a different meal,
+    and the only remedy the app offered was delete-and-repost — which loses the post's date, its
+    place in everyone's feed, and (the part that actually costs something) any recipe ASKS already
+    sitting on it. Re-shooting the dish tomorrow and calling it today's dinner is the fiction the
+    old rule was avoiding; someone fixing a blurry photo of the meal they just posted is not.
+
+    The reason the field was removed rather than fixed in #98 still stands and is honoured here:
+    it had NO host validation. `update_post` now runs it through
+    `services/media.require_our_image_url`, the same rule `PATCH /auth/me` applies, extracted to
+    one place precisely because this is the second caller. Note there is no way to CLEAR it —
+    `Post.photo_url` is `nullable=False` and a post with no photo is not a post, so a blank value
+    is a 422 rather than a delete. Deleting the post is the way to have no photo.
+
+    One thing a client might still expect here is deliberately absent:
+
       - `recipe_id`. Attaching a recipe to a post people have ASKED about is answering them, and
         answering already has an endpoint that does the whole job: `POST /posts/{id}/fulfill`
         mints a grant per pending requester, marks the asks fulfilled and notifies them. A quiet
@@ -64,6 +76,10 @@ class PostUpdate(BaseModel):
     dish_name: Optional[DishName] = None
     description: Optional[str] = Field(default=None, max_length=500)
     visibility: Optional[Literal["public", "friends", "private"]] = None
+    # Same type as PostCreate.photo_url, so an edit can never accept a URL a create would
+    # refuse. The HOST check is in the router, not here: it raises a 422 with copy a person
+    # reads, and it is shared with PATCH /auth/me via services/media.py.
+    photo_url: Optional[PhotoUrl] = None
 
 
 class FeedSeenIn(BaseModel):

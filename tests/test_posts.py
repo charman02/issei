@@ -467,19 +467,70 @@ def test_editing_requires_auth_and_404s_on_an_unknown_post(client, make_user):
     assert client.patch("/posts/999999", json={"dish_name": "x"}, headers=ah).status_code == 404
 
 
-def test_an_edit_CANNOT_touch_the_photo_or_the_attached_recipe(client, make_user):
-    """The edit surface is three fields wide, and the other two are absent on purpose.
+def test_an_edit_CAN_replace_the_photo_but_only_with_one_of_OUR_uploads(client, make_user):
+    """#106 reversed #98 on the photo, and the reversal keeps #98's actual objection.
 
-    The photo, because a different photo is a different meal — that's a new post, and the field
-    carried none of the Cloudinary-host validation `PATCH /auth/me` applies, so an author could
-    have repointed their own post's image at any third-party URL that then loaded in every
-    friend's browser. The recipe, because attaching one to a post people ASKED about is
-    answering them, and `POST /{id}/fulfill` is what answers: it mints a grant per pending
-    requester, marks the asks fulfilled and notifies. A quiet `recipe_id` here would have
-    attached the recipe and left every ask pending underneath it.
+    #98 removed `photo_url` for two reasons and only one of them was about product meaning. The
+    product reason ("a different photo is a different meal, so re-shoot it as a new post")
+    described what a post MEANS but answered the wrong question: the common case is a photo that
+    came out badly, and delete-and-repost was the only remedy — which loses the post's date, its
+    place in every feed, and any recipe asks already on it. The owner reversed that.
 
-    Both are dropped from the schema rather than rejected, so Pydantic ignores them — the
-    assertion that matters is that NOTHING moved.
+    The SECURITY reason has not been reversed. The field carried no host validation, so an author
+    could repoint their own post's image at any third-party URL that then loaded in every friend's
+    browser — every viewer's IP arriving in a log they never chose to contact. `update_post` now
+    runs it through `services/media.require_our_image_url`, the same rule `PATCH /auth/me` applies.
+    """
+    _, ah = make_user()
+    post = _own(client, ah)
+
+    # A Cloudinary URL — one of ours — replaces it.
+    good = "https://res.cloudinary.com/demo/image/upload/v1/issei/new.jpg"
+    r = client.patch(f"/posts/{post['id']}", json={"photo_url": good}, headers=ah)
+    assert r.status_code == 200
+    assert r.json()["photo_url"] == good
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["photo_url"] == good
+
+    # Anything else is refused, with copy a person can read rather than a field name.
+    r = client.patch(
+        f"/posts/{post['id']}",
+        json={"photo_url": "https://evil.test/tracker.gif"},
+        headers=ah,
+    )
+    assert r.status_code == 422
+    assert "uploaded through issei" in r.json()["detail"]
+    # And the refusal changed nothing.
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["photo_url"] == good
+
+
+def test_an_edit_cannot_REMOVE_the_photo_a_post_is_its_photo(client, make_user):
+    """`Post.photo_url` is `nullable=False`, so a blank value is a 422, not a delete.
+
+    A post carries no ingredients and no steps — the photo IS the post. Letting a blank through
+    would either violate the column or leave a row that renders as an empty card in every feed.
+    Deleting the post is how you have no photo. Both the empty string and whitespace fail, and
+    they fail by the same rule.
+    """
+    _, ah = make_user()
+    post = _own(client, ah)
+
+    for blank in ("", "   "):
+        r = client.patch(f"/posts/{post['id']}", json={"photo_url": blank}, headers=ah)
+        # "" is refused by the schema's min_length, "   " by the router's host check. Different
+        # layers, same answer to the person: 422.
+        assert r.status_code == 422, blank
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["photo_url"] == post["photo_url"]
+
+
+def test_an_edit_still_CANNOT_attach_a_recipe(client, make_user):
+    """The other omission from #98 stands, and for a reason the photo never had.
+
+    Attaching a recipe to a post people ASKED about is answering them, and `POST /{id}/fulfill`
+    is what answers: it mints a grant per pending requester, marks the asks fulfilled and
+    notifies them. A quiet `recipe_id` here would attach the recipe and leave every ask pending
+    underneath it — the cook's own card still reading "1 person asked for this" about a recipe
+    already sitting on the post. `recipe_id` is dropped from the schema rather than rejected, so
+    Pydantic ignores it; the assertion that matters is that nothing moved.
     """
     _, ah = make_user()
     post = _own(client, ah)
@@ -491,22 +542,34 @@ def test_an_edit_CANNOT_touch_the_photo_or_the_attached_recipe(client, make_user
 
     r = client.patch(
         f"/posts/{post['id']}",
-        json={
-            "dish_name": "Renamed",
-            "photo_url": "https://evil.test/tracker.gif",
-            "recipe_id": rec["id"],
-        },
+        json={"dish_name": "Renamed", "recipe_id": rec["id"]},
         headers=ah,
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["dish_name"] == "Renamed"           # the field that IS editable moved
-    assert body["photo_url"] == post["photo_url"]   # the two that aren't did not
+    assert body["dish_name"] == "Renamed"   # the field that IS editable moved
     assert body["recipe_id"] is None
-    # And not just in the response — re-read it.
-    fresh = client.get(f"/posts/{post['id']}", headers=ah).json()
-    assert fresh["photo_url"] == post["photo_url"]
-    assert fresh["recipe_id"] is None
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["recipe_id"] is None
+
+
+def test_a_non_author_cannot_replace_someone_elses_photo(client, make_user):
+    """Read is not write, and #106 widened what write MEANS — so re-pin it on the new field.
+
+    The ownership filter runs before any field is looked at, so this is 404 (not 403, and not a
+    422 about the URL): the same answer an unknown id gets, which is what stops a probe from
+    confirming the post exists.
+    """
+    _, ah = make_user()
+    _, bh = make_user()
+    post = _own(client, ah)
+
+    r = client.patch(
+        f"/posts/{post['id']}",
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/v1/x.jpg"},
+        headers=bh,
+    )
+    assert r.status_code == 404
+    assert client.get(f"/posts/{post['id']}", headers=ah).json()["photo_url"] == post["photo_url"]
 
 
 def test_hiding_a_post_does_not_TRAP_the_ask_of_someone_who_can_no_longer_see_it(client, make_user):

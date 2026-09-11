@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
@@ -11,6 +11,29 @@ vi.mock('../api/posts', () => ({
   updatePost: vi.fn(),
 }))
 vi.mock('../api/client', () => ({ default: {}, toUserMessage: (e, f) => f }))
+// #106 — the photo-replace path. A controllable uploader: `upload()` records its options so a test
+// can land a URL, an error or a busy flag at the exact moment it wants to. Mocked for the same
+// reason RecipeForm.test.jsx mocks the framer — a real one is a modal only a human can dismiss,
+// and what these tests are about is the DRAFT semantics around it.
+const uploadCalls = []
+const retireCalls = []
+vi.mock('../lib/photoUpload', () => ({
+  PHOTO_ACCEPT: 'image/jpeg',
+  createUploader: () => ({
+    upload: (opts) => {
+      uploadCalls.push(opts)
+      return Promise.resolve()
+    },
+    retire: (slot) => retireCalls.push(slot),
+  }),
+}))
+vi.mock('../lib/usePhotoFramer', () => ({
+  usePhotoFramer: () => ({
+    frame: () => async (file) => file,
+    framerProps: { file: null, shape: 'cover', onDone: () => {}, onCancel: () => {} },
+    framing: false,
+  }),
+}))
 import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
 import PostPage from './PostPage'
 
@@ -443,5 +466,147 @@ describe('PostPage opens straight into the control the card asked for (#104)', (
     await screen.findByText('Sunday Adobo')
     expect(screen.queryByDisplayValue('Sunday Adobo')).toBeNull()
     expect(screen.queryByText(/delete this meal\?/i)).toBeNull()
+  })
+})
+
+// ============================================================================
+// #106 — REPLACING THE PHOTO. Reverses #98, which deliberately left the photo out of the edit
+// form ("a different photo is a different meal, so re-shoot it as a new post"). The owner
+// reversed it: that rule described what a post MEANS but answered the wrong question, because
+// the common case is a photo that came out badly, and the only remedy on offer was
+// delete-and-repost — which throws away the post's date, its place in every feed, and any recipe
+// asks already sitting on it.
+//
+// The uploader and framer are mocked here for the same reason RecipeForm.test.jsx mocks them: a
+// real framer is a modal only a human can dismiss, and these tests are about the DRAFT semantics
+// around it, which is where the bugs would be.
+// ============================================================================
+
+const CLOUDINARY = 'https://res.cloudinary.com/demo/image/upload/v1/issei/new.jpg'
+const A_FILE = () => new File(['x'], 'new.jpg', { type: 'image/jpeg' })
+
+async function openEditor(over = {}) {
+  localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+  getPost.mockResolvedValue({ data: postData(over) })
+  renderPost()
+  await screen.findByText('Sunday Adobo')
+  await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+}
+
+describe('PostPage — replacing the photo (#106)', () => {
+  beforeEach(() => {
+    uploadCalls.length = 0
+    retireCalls.length = 0
+  })
+
+  it('offers a way to change the photo, which #98 did not', async () => {
+    await openEditor()
+    expect(screen.getByLabelText('Replace the photo')).toBeInTheDocument()
+    expect(screen.getByText(/change photo/i)).toBeInTheDocument()
+  })
+
+  it('offers NO way to remove it — a post with no photo is not a post', async () => {
+    // `Post.photo_url` is nullable=False, and a post carries no ingredients or steps: the photo
+    // IS the post. Deleting the post is how you have no photo, and Delete is already on this page.
+    await openEditor()
+    expect(screen.queryByRole('button', { name: /remove photo/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete photo/i })).toBeNull()
+  })
+
+  it('frames a replacement, at the same ratio as an original', async () => {
+    // A second, simpler upload path here would be the one that drifts: a replacement must get
+    // HEIC conversion and the #103 framing step exactly like the composer's pick.
+    await openEditor()
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+    expect(uploadCalls).toHaveLength(1)
+    expect(uploadCalls[0].frame).toBeTypeOf('function')
+    expect(uploadCalls[0].slot).toBe('post-edit')
+  })
+
+  it('a new photo lands in the DRAFT and is only sent on "Save changes"', async () => {
+    await openEditor()
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+    act(() => uploadCalls[0].onUrl(CLOUDINARY))
+
+    await waitFor(() =>
+      expect(screen.getByAltText('Your meal').getAttribute('src')).toBe(CLOUDINARY),
+    )
+    expect(updatePost).not.toHaveBeenCalled()
+
+    updatePost.mockResolvedValue({ data: postData({ photo_url: CLOUDINARY }) })
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+    await waitFor(() =>
+      expect(updatePost).toHaveBeenCalledWith(5, expect.objectContaining({ photo_url: CLOUDINARY })),
+    )
+  })
+
+  it('"Never mind" abandons the new photo AND retires the upload slot', async () => {
+    // Retiring matters: an in-flight upload resolving after the draft is gone would write into
+    // nothing, and on a slow link it could land while a SECOND edit is already open.
+    await openEditor()
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+    act(() => uploadCalls[0].onUrl(CLOUDINARY))
+    await waitFor(() =>
+      expect(screen.getByAltText('Your meal').getAttribute('src')).toBe(CLOUDINARY),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+
+    expect(retireCalls).toContain('post-edit')
+    expect(updatePost).not.toHaveBeenCalled()
+  })
+
+  it('sends photo_url as NULL when the photo was not touched', async () => {
+    // The API reads null as "unchanged". Sending the existing URL would also work, but then a
+    // caption fix would depend on the host rule passing for a photo the person never touched, and
+    // a post whose stored URL predates that rule would become uneditable.
+    await openEditor()
+    const name = screen.getByLabelText(/what is it/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Renamed')
+    updatePost.mockResolvedValue({ data: postData({ dish_name: 'Renamed' }) })
+
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }))
+
+    await waitFor(() => expect(updatePost).toHaveBeenCalled())
+    expect(updatePost.mock.calls[0][1].photo_url).toBeNull()
+  })
+
+  it('cannot save mid-upload, so a post never saves with a half-replaced photo', async () => {
+    await openEditor()
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+
+    act(() => uploadCalls[0].onBusy(true))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled(),
+    )
+
+    act(() => uploadCalls[0].onBusy(false))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /save changes/i })).not.toBeDisabled(),
+    )
+  })
+
+  it('shows an upload failure without discarding the rest of the edit', async () => {
+    await openEditor()
+    const name = screen.getByLabelText(/what is it/i)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Kept typing')
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+
+    act(() => uploadCalls[0].onError('That image is too large (max 10 MB).'))
+
+    expect(await screen.findByText(/too large/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/what is it/i)).toHaveValue('Kept typing')
+  })
+
+  it('a non-author gets no photo control at all', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 999 }))
+    getPost.mockResolvedValue({ data: postData() })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+
+    expect(screen.queryByRole('button', { name: /edit this meal/i })).toBeNull()
+    expect(screen.queryByLabelText('Replace the photo')).toBeNull()
   })
 })

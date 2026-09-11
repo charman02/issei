@@ -17,6 +17,7 @@ from app.schemas.notification import FulfillRequest, RequesterSummary
 from app.services.friends import are_friends, friend_ids
 from app.services.notifications import notify
 from app.services.blocks import blocked_ids, is_blocked
+from app.services.media import require_our_image_url
 from app.services.sharing import can_view, can_view_post
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -740,12 +741,20 @@ def update_post(
         anyone's "new since you last looked" (#97) — `is_new` keys on the post's id, which
         doesn't move, so this is true by construction rather than by a guard.
       - It does not notify anyone. Nobody asked to hear that a caption changed.
-      - It does not touch the photo or the attached recipe. Both were in the schema and both
-        came out in review: the photo because a different photo is a different meal (a new
-        post, not an edit) and the field had no host validation, and the recipe because
-        attaching one to a post people ASKED about is answering them — which is
-        `POST /{post_id}/fulfill`'s whole job, grants and notifications included. Attaching
-        here would have left every ask pending behind an already-attached recipe.
+      - It does not touch the attached recipe. Attaching one to a post people ASKED about is
+        answering them — which is `POST /{post_id}/fulfill`'s whole job, grants and
+        notifications included. Attaching here would leave every ask pending behind an
+        already-attached recipe.
+
+    THE PHOTO *IS* EDITABLE, since #106, reversing #98 on the owner's call. What changed is not
+    the argument — a different photo really can be a different meal — but which failure it was
+    optimising for. Delete-and-repost was the only remedy for a photo that came out badly, and it
+    throws away the post's date, its position in every feed, and any recipe asks already on it;
+    that cost lands on the person who was ALREADY sharing. The #98 objection that the field had
+    no host check is answered rather than dodged: it goes through
+    `services/media.require_our_image_url`, the same rule `PATCH /auth/me` uses, which is now one
+    function instead of two inline copies. There is deliberately no way to CLEAR the photo —
+    `Post.photo_url` is `nullable=False`, so a blank value is a 422, not a removal.
 
     One thing it CAN do that's worth knowing: lowering visibility (public -> private) hides the
     post from anyone who asked and isn't a friend. Their ask survives, and `fulfill` still
@@ -764,6 +773,11 @@ def update_post(
         post.description = body.description.strip() or None
     if body.visibility is not None:
         post.visibility = body.visibility
+    if body.photo_url is not None:
+        # Host-checked, because this string is rendered as an <img src> to every friend who sees
+        # the post. Raises 422 for anything that isn't one of our own uploads — including a blank
+        # value, which would otherwise violate the column's NOT NULL.
+        post.photo_url = require_our_image_url(body.photo_url, what="photo")
 
     db.commit()
     db.refresh(post)

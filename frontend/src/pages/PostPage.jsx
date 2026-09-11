@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
 import VisibilityChoice from '../components/VisibilityChoice'
@@ -7,6 +7,9 @@ import BackButton from '../components/BackButton'
 import Avatar from '../components/Avatar'
 import Loader from '../components/Loader'
 import { toUtcMs } from '../utils/time'
+import { createUploader, PHOTO_ACCEPT } from '../lib/photoUpload'
+import { usePhotoFramer } from '../lib/usePhotoFramer'
+import PhotoFramer from '../components/PhotoFramer'
 
 const fullName = (p) => `${p.author_first_name} ${p.author_last_name}`.trim()
 
@@ -51,8 +54,11 @@ function postedOn(iso) {
 // what does NOT go — a linked recipe is a separate row and survives — because "delete post"
 // reads as "delete the recipe I attached" otherwise, and that would be the scariest possible
 // misunderstanding in an app whose whole point is keeping the recipe. EDIT (#98) sits beside it,
-// inline rather than on its own route, and covers dish name, description and visibility — NOT
-// the photo, because a different photo is a different meal and that's a new post.
+// inline rather than on its own route, and covers dish name, description, visibility AND — since
+// #106, reversing #98 on the owner's call — the PHOTO. The old rule ("a different photo is a
+// different meal, so re-shoot it as a new post") described what a post means but answered the
+// wrong question: the common case is a photo that came out badly, and delete-and-repost was the
+// only remedy, which throws away the post's date, its place in every feed, and any asks on it.
 export default function PostPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -78,6 +84,28 @@ export default function PostPage() {
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // Replacing the photo (#106). The same uploader and framer the composer uses, so a replacement
+  // gets HEIC conversion and the 4:3 framing step exactly like an original — a second, simpler
+  // upload path here would be the one that drifts.
+  const uploader = useRef(createUploader())
+  const { frame, framerProps } = usePhotoFramer()
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+
+  function onPickNewPhoto(e) {
+    return uploader.current.upload({
+      slot: 'post-edit',
+      event: e,
+      frame: frame('cover'),
+      onBusy: setUploadingPhoto,
+      onError: setPhotoError,
+      // Into the DRAFT, not the post: nothing is saved until "Save changes", so backing out with
+      // "Never mind" has to leave the original photo untouched. Functional update because the
+      // upload resolves long after the handler's closure was made and the dish name may have been
+      // edited in between.
+      onUrl: (url) => setDraft((d) => (d ? { ...d, photo_url: url } : d)),
+    })
+  }
 
   const me = JSON.parse(localStorage.getItem('issei_user') || '{}')
   const isMine = post ? String(me.id) === String(post.user_id) : false
@@ -127,6 +155,10 @@ export default function PostPage() {
         dish_name: draft.dish_name.trim(),
         description: draft.description,
         visibility: draft.visibility,
+        // Only when it actually changed. Sending the unchanged URL would work (the router
+        // re-validates and reassigns the same string), but "send only what changed" is what keeps
+        // an edit from depending on the host rule for a photo the person never touched.
+        photo_url: draft.photo_url === post.photo_url ? null : draft.photo_url,
       })
       setPost(data)
       setDraft(null)
@@ -205,6 +237,8 @@ export default function PostPage() {
 
   return (
     <div className="min-h-screen bg-cream px-5 pt-4 pb-10">
+      {/* The framing step (#103) for a replacement photo (#106). A null file renders nothing. */}
+      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <div className="mb-3">
         <BackButton to="/browse" label="Back" />
       </div>
@@ -311,6 +345,7 @@ export default function PostPage() {
                     dish_name: post.dish_name,
                     description: post.description || '',
                     visibility: post.visibility,
+                    photo_url: post.photo_url,
                   })
                 }
                 className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
@@ -326,12 +361,47 @@ export default function PostPage() {
             </div>
           )}
 
-          {/* The edit form. Dish name, the line under it, and who can see it — the three things
-              you'd actually come back to change. The PHOTO is deliberately not editable here: a
-              different photo is a different meal, and re-shooting it is a new post, not an edit. */}
+          {/* The edit form: the photo, the dish name, the line under it, and who can see it.
+              The PHOTO became editable in #106 (owner's call), reversing #98's "a different photo
+              is a different meal, so re-shoot it as a new post". That rule described what a post
+              MEANS but answered the wrong question — the common case isn't a different meal, it's
+              a photo that came out badly or the wrong one of two picked in a hurry, and the only
+              remedy on offer was delete-and-repost, which throws away the post's date, its place
+              in every feed, and any recipe asks already sitting on it. It goes through the same
+              pick → HEIC-convert → frame → upload path as the composer, so a replacement is
+              framed (#103) exactly like an original. There is no "remove" — a post with no photo
+              is not a post; deleting the post is how you have no photo. */}
           {isMine && draft && (
             <div className="mt-4 pt-3 border-t-2 border-line">
-              <label className="section-label block mb-1" htmlFor="edit-dish">
+              <span className="section-label block mb-1">Photo</span>
+              <label
+                aria-busy={uploadingPhoto || undefined}
+                className="relative block cursor-pointer focus-within:ring-4 focus-within:ring-terra/25 rounded-[14px]"
+              >
+                <input
+                  type="file"
+                  accept={PHOTO_ACCEPT}
+                  onChange={onPickNewPhoto}
+                  aria-label="Replace the photo"
+                  className="sr-only"
+                />
+                <img
+                  src={draft.photo_url}
+                  alt="Your meal"
+                  className="w-full h-[180px] object-cover block rounded-[14px] border-[2.5px] border-ink"
+                />
+                {/* A label over the image rather than a separate button: the photo IS the control,
+                    which is the same idiom the composer uses for picking one in the first place. */}
+                <span className="absolute bottom-2 right-2 rounded-full bg-cream text-ink border-2 border-ink px-3 py-1 font-display font-bold text-[12.5px] shadow-[0_2px_0_#2E3A24]">
+                  {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+                </span>
+              </label>
+              {photoError && (
+                <p className="mt-2">
+                  <span className="error-pill">{photoError}</span>
+                </p>
+              )}
+              <label className="section-label block mt-3 mb-1" htmlFor="edit-dish">
                 What is it?
               </label>
               <input
@@ -367,15 +437,19 @@ export default function PostPage() {
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={saveEdit}
-                  disabled={saving || !draft.dish_name.trim()}
+                  disabled={saving || uploadingPhoto || !draft.dish_name.trim()}
                   className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Save changes'}
                 </button>
                 <button
                   onClick={() => {
+                    // Retire the slot so an in-flight upload can't write into a draft that no
+                    // longer exists — the same reason PostComposer retires on remove.
+                    uploader.current.retire('post-edit')
                     setDraft(null)
                     setSaveError('')
+                    setPhotoError('')
                   }}
                   disabled={saving}
                   className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"

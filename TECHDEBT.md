@@ -455,9 +455,24 @@ narrow situations.
   URL that then loaded in every friend's browser. It was dropped from the schema instead —
   the right call there for a product reason too (a different photo is a different meal) — but
   dropping a field is not a fix for this class, and the next schema to accept an image URL
-  will need the same catch. *Where:* `app/routers/auth.py` (avatar guard, done), vs
-  `app/schemas/recipe.py` `cover_photo_url` + `app/schemas/post.py` `photo_url` on CREATE
-  (both unguarded); render sites
+  will need the same catch.
+  **UPDATE (#106): the shared validator now exists, and it is applied on TWO of the four
+  entry points.** `app/services/media.py` holds the rule (`require_our_image_url`: HTTPS +
+  a host ending `.cloudinary.com`), `PATCH /auth/me` was refactored onto it, and
+  `PATCH /posts/{id}` — which re-accepted `photo_url` when the owner reversed #98 — goes
+  through it too. So the "one shared validator" half of this item is DONE. What remains is
+  the half that was always the bigger hole: **`POST /posts` and `POST /recipes` still accept
+  an arbitrary string**, which means an edit is now stricter than a create, and the tracking-
+  pixel path is still open at the point where most photos actually enter. Two reasons it
+  wasn't closed in the same pass, both worth weighing rather than inheriting: a large number
+  of existing tests create posts and recipes with `https://img.test/...` URLs (mechanical to
+  fix, but it is a wide diff on a shipping branch), and tightening a CREATE can reject data
+  from an older deployed client, whereas tightening an EDIT only rejects a request nobody's
+  client makes. Closing it is a small, self-contained task: import the same function in
+  `create_post` and `create_recipe`, update the fixtures, and the class is gone.
+  *Where:* `app/services/media.py` (the rule), `app/routers/auth.py` + `app/routers/posts.py`
+  `update_post` (both guarded), vs `app/schemas/recipe.py` `cover_photo_url` +
+  `app/schemas/post.py` `photo_url` on CREATE (still unguarded); render sites
   `frontend/src/components/{Avatar,CoverImage,PostCard}.jsx`.
 
 - **Signup leaks account existence; forgot-password deliberately doesn't.** Signup returns

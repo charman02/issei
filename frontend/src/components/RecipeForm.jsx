@@ -482,6 +482,25 @@ export default function RecipeForm({
             >
               <Icon name="close" className="w-4 h-4" />
             </button>
+            {/* CHANGE, not just remove (#106). This branch used to offer the × alone, so the only
+                way to swap a cover was to delete it and pick again — two taps, with the recipe
+                briefly photo-less in between, and on the EDIT form that meant tapping × on the
+                photo you were trying to keep if the new pick then failed. A user asked for this
+                directly. A sibling label rather than wrapping the whole tile: a <button> inside a
+                <label> is nested interactive content, and tapping × would also open the picker. */}
+            <label
+              aria-busy={uploading || undefined}
+              className="absolute bottom-2 right-2 cursor-pointer rounded-full bg-cream text-ink border-2 border-ink px-3 py-1 font-display font-bold text-[12.5px] shadow-[0_2px_0_#2E3A24] focus-within:ring-4 focus-within:ring-terra/25 active:translate-y-[1px] active:shadow-none transition-transform"
+            >
+              <input
+                type="file"
+                accept={PHOTO_ACCEPT}
+                onChange={handlePhotoSelect}
+                aria-label="Change the cover photo"
+                className="sr-only"
+              />
+              {uploading ? 'Uploading…' : 'Change photo'}
+            </label>
           </div>
         ) : (
           <label
@@ -1021,9 +1040,21 @@ export default function RecipeForm({
                     alt={`Photo for step ${idx + 1}`}
                     className="w-14 h-14 object-cover rounded-[10px] border-2 border-ink block flex-none"
                   />
-                  <span className="font-display font-bold text-[12.5px] text-ink-soft flex-1">
-                    Photo added
-                  </span>
+                  {/* CHANGE, not just remove (#106) — the same gap as the cover: this branch
+                      offered only the ×, so swapping a step photo meant deleting it first. */}
+                  <label
+                    aria-busy={stepUploading[step.uid] || undefined}
+                    className="flex-1 font-display font-bold text-[12.5px] text-terra cursor-pointer rounded-full focus-within:ring-4 focus-within:ring-terra/25"
+                  >
+                    <input
+                      type="file"
+                      accept={PHOTO_ACCEPT}
+                      onChange={(e) => handleStepPhotoSelect(step.uid, e)}
+                      aria-label={`Change the photo for step ${idx + 1}`}
+                      className="sr-only"
+                    />
+                    {stepUploading[step.uid] ? 'Uploading…' : 'Change photo'}
+                  </label>
                   <button
                     type="button"
                     onClick={() => removeStepPhoto(step.uid)}
