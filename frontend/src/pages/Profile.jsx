@@ -11,9 +11,14 @@ import Avatar from '../components/Avatar'
 import Toggle from '../components/Toggle'
 import NotificationSettings from '../components/NotificationSettings'
 
-// Client-side display preferences (no backend needed). Persisted in localStorage
-// so they survive reloads. Account edits (name/email/password) DO hit the backend
-// now — PATCH /auth/me — and refresh the cached issei_user afterward.
+// The client-side prefs bag. Since the Settings section was removed (2026-09-11) the ONLY key this
+// page still touches is `photoNudgeDismissed` — every display preference is gone, and everything
+// else on this screen is either a server field (visibility, notifications) or an account action.
+//
+// These local copies predate `lib/prefs.js` and duplicate it; they stay for now because the shared
+// module's `setPref` merges against storage while this one merges against React state, and the
+// nudge's dismissal is read at mount from `loadPrefs()` in both places. Collapse them together
+// only with a test on the nudge, which is the thing that breaks if they disagree.
 const PREFS_KEY = 'issei_prefs'
 function loadPrefs() {
   try {
@@ -64,6 +69,8 @@ export default function Profile() {
   // own post card was correct: a post card renders server data, this rendered a cache nobody
   // reconciled. Writes below go through patchUser, which merges over a FRESH read.
   const user = useCurrentUser()
+  // Held in state so `setPref` can merge without re-reading storage. Nothing RENDERS from it any
+  // more — the display toggles that did are gone — so it is write-mostly now.
   const [prefs, setPrefs] = useState(loadPrefs)
 
   // Identity-box counts (recipes · posts · friends) + the incoming friend-request
@@ -506,32 +513,20 @@ export default function Profile() {
           decide whether the app is allowed to interrupt someone's day. */}
       <NotificationSettings />
 
-      {/* SETTINGS. */}
-      <h2 className="font-display font-black text-[19px] text-ink mt-7 mb-2">
-        Settings
-      </h2>
-      {/* Both labels say what you'd notice, and the hints say it again in full.
-          "Reduce motion" is accessibility-spec jargon that means nothing to a
-          cook, and "Cooking mode" was a name for a screen the user hadn't met
-          yet — so this mirrors RecipeBody's toggle wording exactly, which is the
-          control it actually presets. Rename them together or the setting starts
-          describing a button that no longer exists. */}
-      <div className="sticker bg-card px-5 py-2">
-        <Toggle
-          label="Turn off animations"
-          hint="Things appear right away instead of sliding or fading in."
-          on={!!prefs.reduceMotion}
-          onChange={(v) => setPref('reduceMotion', v)}
-        />
-        <div className="border-t-2 border-line">
-          <Toggle
-            label="Open recipes at “Ingredients & steps”"
-            hint="Skip the photo and story and go straight to ingredients and steps."
-            on={!!prefs.cookingByDefault}
-            onChange={(v) => setPref('cookingByDefault', v)}
-          />
-        </div>
-      </div>
+      {/* THE "SETTINGS" SECTION IS GONE (owner's call, 2026-09-11) — both toggles removed, and the
+          heading with them, because two display preferences were all it ever held.
+
+          "Open recipes at Ingredients & steps" was read by NOTHING. It wrote `cookingByDefault` to
+          localStorage and no component ever looked at it, so tapping it changed nothing at all —
+          the same defect #102 removed from the notifications screen, sitting one heading below it.
+
+          "Turn off animations" DID work, via `prefersReducedMotion()`, but it duplicated a control
+          the operating system already owns. `prefers-reduced-motion` is a real OS setting that this
+          app still honours; someone who wants stillness sets it once and every app obeys, which is
+          strictly better than setting it again here. `SaveCelebration` keeps checking it.
+
+          What's left on this page is now all consequential: who can see your kitchen, whether the
+          app may interrupt your day, who you've blocked, and your account. */}
 
       {/* ACCOUNT ACTIONS — real edits via PATCH /auth/me. */}
       <h2 className="font-display font-black text-[19px] text-ink mt-7 mb-2">

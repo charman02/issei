@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     openrouter_referer: str = ""
     # SES — password-reset emails. sender_email must be a verified SES identity.
     sender_email: str = ""
+    # Where a new feedback note is emailed (#101). Empty → falls back to `sender_email`, which
+    # needs NO new secret: SES requires the sender to be verified and, inside the sandbox, the
+    # recipient too, so the one address guaranteed to be verified is the one already configured.
+    # Point this at a real inbox once that address is verified in SES. Both empty → no email at
+    # all, logged once per note, and feedback still saves — see services/email.py.
+    feedback_notify_email: str = ""
     # Frontend URL used to build the reset link in the email.
     app_url: str = "https://issei.app"
     # Web Push / VAPID (#89). Both DEFAULT TO "" and that is load-bearing, not laziness: CI

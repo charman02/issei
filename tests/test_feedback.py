@@ -192,3 +192,118 @@ def test_a_person_can_send_more_than_one_note(client, make_user):
     for _ in range(3):
         assert _send(client, headers).status_code == 201
     assert len(client.get("/feedback", headers=headers).json()) == 3
+
+
+# --- The owner finds out (#101) -----------------------------------------------------------------
+#
+# Feedback had been live since #9 and produced a beta's worth of notes nobody read, because reading
+# them meant remembering to open a database console. The read path is deliberately still self-only
+# (the scoping tests above are the guard on that); what changed is that a new note now announces
+# itself by email. These tests pin the two properties that make that safe.
+
+
+def test_a_new_note_emails_the_owner(client, make_user, monkeypatch):
+    sent = {}
+
+    def fake_send(body, *, from_name, from_email, path, app_version):
+        sent.update(
+            body=body, from_name=from_name, from_email=from_email, path=path, app_version=app_version
+        )
+        return True
+
+    monkeypatch.setattr("app.routers.feedback.send_feedback_notification", fake_send)
+    user, h = make_user(first_name="Mia", last_name="Tan")
+
+    r = _send(client, h, body="the save button did nothing", path="/add/recipe", app_version="abc123")
+
+    assert r.status_code == 201
+    # The owner needs to know WHO, on WHICH screen, and on WHICH build — "which build was this?" is
+    # the first question a bug report raises.
+    assert sent["body"] == "the save button did nothing"
+    assert sent["from_name"] == "Mia Tan"
+    assert sent["from_email"] == user.email
+    assert sent["path"] == "/add/recipe"
+    assert sent["app_version"] == "abc123"
+
+
+def test_a_FAILED_email_never_fails_the_feedback(client, make_user, db_session, monkeypatch):
+    """The most self-defeating error message this app could produce is "your feedback failed" on
+    feedback that saved perfectly. `email.py` swallows its own errors, and the router wraps the call
+    anyway — this pins the belt AND the braces by raising from the notification itself.
+    """
+    def boom(*a, **kw):
+        raise RuntimeError("SES is having a day")
+
+    monkeypatch.setattr("app.routers.feedback.send_feedback_notification", boom)
+    _, h = make_user()
+
+    r = _send(client, h, body="still worth saying")
+
+    assert r.status_code == 201
+    assert r.json()["body"] == "still worth saying"
+    # And it is really in the table, not just echoed back.
+    from app.models.feedback import Feedback
+
+    assert db_session.query(Feedback).filter(Feedback.body == "still worth saying").count() == 1
+
+
+def test_with_no_recipient_configured_it_is_a_no_op_not_an_error(client, make_user, monkeypatch):
+    """Unconfigured means OFF, never broken — the same rule as push.is_configured() and the cron
+    secret. A deploy with no SES address behaves exactly as it did before this existed.
+    """
+    monkeypatch.setattr("app.config.settings.sender_email", "")
+    monkeypatch.setattr("app.config.settings.feedback_notify_email", "")
+
+    import app.services.email as email_mod
+
+    monkeypatch.setattr(email_mod, "_WARNED_NO_RECIPIENT", False)
+    assert email_mod.feedback_recipient() == ""
+    # Returns False rather than raising, and never touches boto3.
+    assert email_mod.send_feedback_notification(
+        "x", from_name="A", from_email="a@b.com", path=None, app_version=None
+    ) is False
+
+    # And the endpoint still succeeds with no recipient at all.
+    _, h = make_user()
+    assert _send(client, h).status_code == 201
+
+
+def test_the_off_warning_is_emitted_ONCE_not_per_note(monkeypatch, caplog):
+    """An INFO line here was invisible under uvicorn's default root level, so "it's logged" was a
+    claim with nothing behind it. WARNING surfaces it; once-per-process keeps it from repeating,
+    because being unconfigured is a property of the deploy rather than of the note.
+    """
+    import logging
+
+    import app.services.email as email_mod
+
+    monkeypatch.setattr("app.config.settings.sender_email", "")
+    monkeypatch.setattr("app.config.settings.feedback_notify_email", "")
+    monkeypatch.setattr(email_mod, "_WARNED_NO_RECIPIENT", False)
+
+    with caplog.at_level(logging.WARNING, logger=email_mod.__name__):
+        for _ in range(3):
+            email_mod.send_feedback_notification(
+                "x", from_name="A", from_email="a@b.com", path=None, app_version=None
+            )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    # And it points at the way to read them anyway.
+    assert "read_feedback.py" in warnings[0].getMessage()
+
+
+
+def test_the_recipient_falls_back_to_the_verified_sender(monkeypatch):
+    """No new secret needed. SES requires the sender to be verified and — in the sandbox — the
+    recipient too, so the one address certain to be verified is the one already configured.
+    """
+    from app.services.email import feedback_recipient
+
+    monkeypatch.setattr("app.config.settings.sender_email", "noreply@issei.app")
+    monkeypatch.setattr("app.config.settings.feedback_notify_email", "")
+    assert feedback_recipient() == "noreply@issei.app"
+
+    # An explicit override wins.
+    monkeypatch.setattr("app.config.settings.feedback_notify_email", "me@example.com")
+    assert feedback_recipient() == "me@example.com"

@@ -1,9 +1,17 @@
+import logging
+
 import boto3
 from botocore.exceptions import ClientError
 
 from app.config import settings
 
 _SES_REGION = "us-west-2"
+
+logger = logging.getLogger(__name__)
+
+# Set once the "feedback notifications are off" warning has been emitted, so a deploy with no SES
+# address says so once at startup-ish rather than on every note. Reset by tests via monkeypatch.
+_WARNED_NO_RECIPIENT = False
 
 
 def send_password_reset_email(to_email: str, token: str) -> None:
@@ -42,3 +50,94 @@ def send_password_reset_email(to_email: str, token: str) -> None:
             },
         },
     )
+
+
+def feedback_recipient() -> str:
+    """Where a new feedback note gets emailed, or "" for nowhere.
+
+    DEFAULTS TO `sender_email`, which is the whole reason this needs no new secret. SES requires
+    the SENDER to be a verified identity, and — while the account is still in the SES sandbox —
+    every RECIPIENT to be verified too. `sender_email` is by definition already verified, so
+    mailing it works today with nothing added to SSM or the task definition. Set
+    FEEDBACK_NOTIFY_EMAIL to redirect it at a real inbox once that address is verified.
+    """
+    return (settings.feedback_notify_email or settings.sender_email or "").strip()
+
+
+def send_feedback_notification(
+    body: str,
+    *,
+    from_name: str,
+    from_email: str,
+    path: str | None,
+    app_version: str | None,
+) -> bool:
+    """Email the owner one new piece of feedback. Returns True if a send was attempted.
+
+    WHY PUSH RATHER THAN PULL (#101). `GET /feedback` is deliberately self-only — the read path is
+    where the absence of an admin role matters most, and `routers/feedback.py` records why an
+    OWNER_USER_ID-gated read-everything endpoint was rejected: it invents an admin role without any
+    of the machinery a real one needs, and converts one 7-day bearer token in one phone's
+    localStorage into read access over every tester's candid words. That reasoning still holds. So
+    the fix is not a new way to READ the table; it is the table telling the owner when something
+    lands. "Remember to check the database" is what produced a beta's worth of unread notes.
+
+    DEGRADES, NEVER RAISES. Same discipline as `services/push.py` and the opposite of
+    `send_password_reset_email` above, which raises and leans on its one HTTP caller: this is called
+    from a user-facing write, and a note that saved fine must never surface as a failure because SES
+    was unhappy. With no recipient configured it is a logged no-op, so a deploy without SES behaves
+    exactly as it did before this existed.
+
+    The sender's identity is included because feedback is not anonymous to the owner — they may need
+    to reply — and because "which build was this?" is the first question a bug report raises, which
+    is what `app_version` is for.
+    """
+    to = feedback_recipient()
+    if not to:
+        # ONCE PER PROCESS, at WARNING. An INFO line here was invisible in practice — the root
+        # logger sits at WARNING under uvicorn, so "it's logged" was a claim with nothing behind it,
+        # which is the worst kind of degradation: silent AND believed to be observable. WARNING
+        # surfaces it; once-per-process keeps it from repeating on every note, because the condition
+        # is a property of the deploy, not of the note.
+        global _WARNED_NO_RECIPIENT
+        if not _WARNED_NO_RECIPIENT:
+            _WARNED_NO_RECIPIENT = True
+            logger.warning(
+                "feedback notifications are OFF: neither FEEDBACK_NOTIFY_EMAIL nor SENDER_EMAIL is "
+                "set. Notes are still saved; read them with scripts/read_feedback.py."
+            )
+        return False
+
+    where = path or "(unknown screen)"
+    build = app_version or "(no version stamped)"
+    subject = f"issei feedback from {from_name}".strip()
+
+    text = (
+        f"{body}\n\n"
+        f"—\n"
+        f"From: {from_name} <{from_email}>\n"
+        f"Screen: {where}\n"
+        f"Build: {build}\n"
+    )
+    try:
+        client = boto3.client("ses", region_name=_SES_REGION)
+        client.send_email(
+            Source=settings.sender_email,
+            Destination={"ToAddresses": [to]},
+            # Replies go to the person who wrote it, so answering a tester is one tap rather than a
+            # copy-paste out of the footer.
+            ReplyToAddresses=[from_email] if from_email else [],
+            Message={
+                "Subject": {"Data": subject},
+                "Body": {"Text": {"Data": text}},
+            },
+        )
+        return True
+    except Exception:
+        # DELIBERATELY BROAD, and broader than `ClientError`. The realistic failures here are not
+        # only SES rejections: no IAM credentials at all (every local dev run), no network, a
+        # botocore config error, an endpoint that can't be resolved. Every one of them must end the
+        # same way — logged, swallowed, feedback still saved — so narrowing this would only create
+        # a class of failure that turns a working write into a 500.
+        logger.warning("feedback email failed", exc_info=True)
+        return False

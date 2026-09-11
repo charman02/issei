@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -6,8 +8,11 @@ from app.database import get_db
 from app.models.feedback import Feedback
 from app.models.user import User
 from app.schemas.feedback import FeedbackCreate, FeedbackResponse
+from app.services.email import send_feedback_notification
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
@@ -38,6 +43,28 @@ def send_feedback(
     db.commit()
     # Re-read for the server-generated id and created_at, matching signup.
     db.refresh(entry)
+
+    # TELL THE OWNER (#101). Everything above this line worked for months and produced a beta's
+    # worth of notes nobody read, because reading them meant remembering to open a database console.
+    # The read path stays self-only (see `my_feedback` below for why an admin endpoint was rejected);
+    # what changed is that the note now announces itself.
+    #
+    # AFTER the commit, and never able to fail the request: the note is already saved and returned,
+    # so a send that goes wrong must be invisible to the person who wrote it. `email.py` swallows its
+    # own errors and returns a bool; the belt-and-braces try here covers an unexpected raise from the
+    # notification path itself, because "your feedback failed" on feedback that saved fine would be
+    # the most self-defeating error message in the app.
+    try:
+        send_feedback_notification(
+            entry.body,
+            from_name=f"{current_user.first_name} {current_user.last_name}".strip(),
+            from_email=current_user.email,
+            path=entry.path,
+            app_version=entry.app_version,
+        )
+    except Exception:  # pragma: no cover - defence in depth; email.py already swallows
+        logger.warning("feedback notification raised unexpectedly", exc_info=True)
+
     return entry
 
 

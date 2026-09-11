@@ -27,15 +27,23 @@ export function setPref(key, value) {
   return next
 }
 
-// Should motion be suppressed? True when EITHER the user's in-app "Turn off
-// animations" toggle is on OR the OS-level prefers-reduced-motion is set. Either
-// signal is a request for stillness, so decorative motion (the save celebration)
-// honors both — the app toggle existed but nothing consumed it until now.
+// Should motion be suppressed? THE OS SETTING IS THE ONLY SOURCE NOW.
+//
+// There used to be an in-app "Turn off animations" toggle ORed in here, and it was removed with
+// the whole Settings section (2026-09-11): it duplicated a control the operating system already
+// owns. Someone who wants stillness sets `prefers-reduced-motion` once and every app on the device
+// obeys, which is strictly better than asking them to set it again in one app — and a preference
+// stored per-browser doesn't follow them to their other devices, while the OS one does.
+//
+// Still honoured, and still the right thing to check before any decorative motion (today just
+// `SaveCelebration`). A stale `reduceMotion` key may linger in an existing `issei_prefs` bag; it is
+// simply ignored, which is correct — the OS answer supersedes it.
 export function prefersReducedMotion() {
-  if (loadPrefs().reduceMotion) return true
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   } catch {
+    // jsdom and older browsers have no matchMedia. Motion is the safe default here: the animation
+    // it gates is a celebration over an already-saved recipe, never load-bearing.
     return false
   }
 }

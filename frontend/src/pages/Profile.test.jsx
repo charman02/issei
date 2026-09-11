@@ -81,38 +81,38 @@ beforeEach(() => {
   )
 })
 
-describe('Profile settings copy', () => {
-  it('describes the motion toggle in plain language, not "reduce motion"', () => {
+// THE SETTINGS SECTION WAS REMOVED (owner's call, 2026-09-11), and with it the three tests that
+// pinned its copy. Kept as a guard instead of deleted outright, because "the section is gone" is the
+// claim worth defending: one of those toggles wrote a key nothing read, and re-adding a control that
+// does nothing is the specific mistake this page has now made twice.
+describe('the You page holds no dead display settings (2026-09-11)', () => {
+  it('has no Settings section at all', () => {
     renderProfile()
-    expect(screen.getByText('Turn off animations')).toBeInTheDocument()
-    expect(
-      screen.getByText(/appear right away instead of sliding or fading/i),
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^settings$/i })).toBeNull()
+  })
+
+  it('does not offer the animations toggle — the OS owns that preference', () => {
+    // `prefers-reduced-motion` is a real OS setting the app still honours (SaveCelebration checks
+    // it). Duplicating it in one app asked someone to set the same thing twice, and a per-browser
+    // copy doesn't follow them to another device.
+    renderProfile()
+    expect(screen.queryByText(/turn off animations/i)).toBeNull()
     expect(screen.queryByText(/reduce motion/i)).toBeNull()
   })
 
-  it('names the steps-only preference the same way the recipe toggle does', () => {
+  it('does not offer the "open recipes at ingredients & steps" toggle, which read NOTHING', () => {
+    // It wrote `cookingByDefault` to localStorage and no component ever looked at it, so tapping it
+    // changed nothing — a switch that does nothing is worse than a missing one.
     renderProfile()
-    // Mirrors RecipeBody's toggle verbatim. "Just the steps" was retired because
-    // it was a lie — that view shows the ingredients too — and this setting has to
-    // be renamed in lockstep or it describes a button that no longer exists.
-    expect(screen.getByText(/ingredients & steps/i)).toBeInTheDocument()
-    expect(screen.queryByText(/just the steps/i)).toBeNull()
-    expect(
-      screen.getByText(/straight to ingredients and steps/i),
-    ).toBeInTheDocument()
-    // "Cooking mode" was the undecodable label; it must not survive anywhere.
+    expect(screen.queryByText(/ingredients & steps/i)).toBeNull()
     expect(screen.queryByText(/cooking mode/i)).toBeNull()
   })
 
-  it('still persists under the original pref keys after the rename', async () => {
+  it('writes no display preference to the prefs bag on load', () => {
     renderProfile()
-    await userEvent.click(
-      screen.getByRole('switch', { name: /turn off animations/i }),
-    )
-    expect(JSON.parse(localStorage.getItem('issei_prefs'))).toEqual({
-      reduceMotion: true,
-    })
+    const bag = JSON.parse(localStorage.getItem('issei_prefs') || '{}')
+    expect(bag.reduceMotion).toBeUndefined()
+    expect(bag.cookingByDefault).toBeUndefined()
   })
 })
 
@@ -220,7 +220,7 @@ describe('Profile identity-box counts (#74)', () => {
   it('hides the friend-requests button when there are none', async () => {
     getFriendRequests.mockResolvedValueOnce({ data: [] })
     renderProfile()
-    await screen.findByText('Settings') // let effects settle
+    await screen.findByText('Account') // let effects settle (Settings is gone)
     expect(screen.queryByRole('button', { name: /friend request/i })).toBeNull()
   })
 
@@ -502,8 +502,9 @@ describe('You page — blocked people', () => {
 
 describe('You page carries the notification settings (#89)', () => {
   it('renders the Notifications section with its own switches', async () => {
-    // Its own section ABOVE Settings, deliberately: Settings holds display preferences, while these
-    // decide whether the app may interrupt someone's day.
+    // Its own section, above Account. It used to sit above a "Settings" block of display
+    // preferences; that block was removed on 2026-09-11, so Notifications is now the only
+    // preference section on the page — and the only one that was ever consequential.
     render(
       <MemoryRouter>
         <Profile />
