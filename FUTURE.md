@@ -1,6 +1,6 @@
 # Future Roadmap
 
-*Current state verified against the code on **2026-09-09**. Re-verify before trusting any
+*Current state verified against the code on **2026-09-11**. Re-verify before trusting any
 claim here; this file has drifted a full release cycle behind before.*
 
 This document outlines planned features and improvements for Issei — a full-stack app for

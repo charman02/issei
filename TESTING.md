@@ -150,7 +150,8 @@ alone — re-run it):
 
 Backend routers are well covered. These frontend surfaces have **no test file** and
 are the first places a silent break can hide — add tests when you next touch them:
-`EditRecipe`, `HandoffPage`, `ForgotPassword`, `ResetPassword`.
+`EditRecipe`, `ForgotPassword`. (`HandoffPage` and `ResetPassword` were on this list
+and now have their own files — check `git ls-files` before believing this paragraph.)
 
 ### Invariant 8 — a recipe-request count never reaches anyone but the cook
 

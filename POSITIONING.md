@@ -204,7 +204,7 @@ screen and was missed by three separate recounts of this list — and, since #10
 The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all TEN files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer and — since #102 — InviteLanding, whose guard was the weakest of the thirteen on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all TEN files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer and — since #102 — InviteLanding, whose guard was the weakest of the thirteen that existed then, on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)

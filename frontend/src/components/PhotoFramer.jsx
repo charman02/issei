@@ -74,10 +74,13 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
   // FRAME pixels. Kept in state rather than on the canvas so a re-render redraws identically.
   const [zoom, setZoom] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  // A counter bumped on resize, held in state ONLY so the draw effect reruns. Deliberately not the
+  // width itself: the effect reads the live `clientWidth`, so storing a second copy of it would
+  // invite someone to trust the stale one.
+  const [resizeTick, setResizeTick] = useState(0)
   const canvasRef = useRef(null)
   const frameRef = useRef(null)
   const drag = useRef(null)
-  const objectUrl = useRef(null)
   // EVERY pointer currently down, by id — not a boolean, because two fingers is a different
   // gesture from one and the second `pointerdown` must not be mistaken for a new drag. Keeping the
   // whole map is also what lets a lifted finger hand the drag back to the one still on the glass.
@@ -111,16 +114,18 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
   useEffect(() => {
     if (!file) return undefined
     let cancelled = false
+    let settled = false
     const url = URL.createObjectURL(file)
-    objectUrl.current = url
     const image = new Image()
     image.onload = () => {
+      settled = true
       URL.revokeObjectURL(url)
       if (cancelled) return
       setError('')
       setImg(image)
     }
     image.onerror = () => {
+      settled = true
       URL.revokeObjectURL(url)
       if (cancelled) return
       setError('That image could not be opened. Try another, or use it as it is.')
@@ -128,7 +133,16 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
     image.src = url
     return () => {
       cancelled = true
-      objectUrl.current = null
+      // Revoking on the way out is safe ONLY once the load has settled — that is the whole point of
+      // moving the revoke into the handlers. But an unmount BEFORE it settles (tapping "Use this
+      // photo" while the preview is still decoding, which is a real path and one the tests exercise)
+      // would otherwise leak the URL for the life of the document, since neither handler will now
+      // run. Cancelling the load first, then revoking, closes that without reopening the original
+      // bug: `src = ''` aborts the fetch, so no in-flight decode is reading the URL we drop.
+      if (!settled) {
+        image.src = ''
+        URL.revokeObjectURL(url)
+      }
     }
   }, [file])
 
@@ -170,7 +184,30 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
     const w = img.naturalWidth * s
     const h = img.naturalHeight * s
     ctx.drawImage(img, (frameW - w) / 2 + offset.x, (frameH - h) / 2 + offset.y, w, h)
-  }, [img, zoom, offset, ratio])
+  }, [img, zoom, offset, ratio, resizeTick])
+
+  // REDRAW ON RESIZE, and re-clamp. This effect owns `canvas.width/height` and the inline
+  // `style.height`, all derived from `frame.clientWidth` — so without a resize signal an orientation
+  // flip left the bitmap stretched to a new CSS width while the height stayed put, and worse, the
+  // offset was still clamped for the OLD frame: an offset legal at 400px wide is out of bounds at
+  // 300px, which is exactly how a cream band gets into the uploaded photo (the clamp is the only
+  // thing guaranteeing full coverage). `frameSize()` already re-read the frame per gesture and cited
+  // orientation flips in its own comment; the draw path needed the same treatment.
+  useEffect(() => {
+    function onResize() {
+      const s = frameSize()
+      if (!s) return
+      setResizeTick((n) => n + 1) // retrigger the draw effect
+      if (img) setOffset((o) => clamp(o, s.frameW, s.frameH, zoom))
+    }
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [img, zoom, ratio])
 
   // WHEEL, attached BY HAND rather than as an `onWheel` prop. React registers wheel as a PASSIVE
   // listener (react-dom lists it alongside touchstart/touchmove), so `e.preventDefault()` inside a
@@ -199,14 +236,24 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
   }
 
   // Two live pointers → the distance between them and their midpoint, in FRAME coordinates.
+  //
+  // `clientLeft`/`clientTop` subtract the frame's own 2.5px BORDER. `getBoundingClientRect()` gives
+  // the outer edge, but every other length here is content-box (`frameW` is `clientWidth`, and the
+  // canvas is `w-full` so its pixel 0 sits inside the border) — so without this the midpoint was
+  // systematically 2.5px down and right of the space the maths assumes. That is the ~2.7px anchor
+  // drift the browser probe measured and I wrote off as noise; it was this, and it is not noise:
+  // it's a fixed bias that grows with the border, and a reader comparing the two coordinate spaces
+  // would have found the arithmetic self-inconsistent.
   function pinchOf() {
     const frame = frameRef.current
     const [a, b] = [...pointers.current.values()]
     if (!a || !b || !frame) return null
     const box = frame.getBoundingClientRect()
+    const originX = box.left + frame.clientLeft
+    const originY = box.top + frame.clientTop
     return {
       dist: Math.hypot(a.x - b.x, a.y - b.y),
-      mid: { x: (a.x + b.x) / 2 - box.left, y: (a.y + b.y) / 2 - box.top },
+      mid: { x: (a.x + b.x) / 2 - originX, y: (a.y + b.y) / 2 - originY },
     }
   }
 
@@ -285,11 +332,22 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
   function onPointerUp(e) {
     pointers.current.delete(e.pointerId)
     pinch.current = null
+    const rest = [...pointers.current.values()]
+    if (rest.length >= 2) {
+      // THREE FINGERS BECOMING TWO IS STILL A PINCH. The first version only handled 2→1: it nulled
+      // `pinch.current` and anchored a drag, so lifting one finger of three left two fingers PANNING
+      // the photo — the exact symptom the pinch work exists to eliminate — and anchored to one
+      // finger's coordinates, so it jumped as well. Re-arm from the fingers that remain, measuring
+      // the gesture afresh from here rather than from a spread that included a finger now gone.
+      const p = pinchOf()
+      pinch.current = p ? { dist: p.dist, zoom, offset: offsetRef.current } : null
+      drag.current = null
+      return
+    }
     // A finger lifted out of a pinch leaves one still down. Re-anchor the drag to WHERE IT IS now
     // rather than clearing it — otherwise the photo either jumps or freezes until they let go
     // entirely, and letting go is the one thing someone mid-adjustment doesn't want to do.
-    const [rest] = [...pointers.current.values()]
-    drag.current = rest ? { x: rest.x, y: rest.y, from: offsetRef.current } : null
+    drag.current = rest[0] ? { x: rest[0].x, y: rest[0].y, from: offsetRef.current } : null
   }
 
   function changeZoom(next) {
@@ -356,8 +414,14 @@ export default function PhotoFramer({ file, shape = 'cover', onDone, onCancel })
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-ink/50 flex items-end sm:items-center justify-center px-4">
-      <div className="sticker bg-card w-full max-w-sm p-4 mb-4 sm:mb-0">
+    <div className="fixed inset-0 z-50 bg-ink/50 flex items-end sm:items-center justify-center px-4 py-4">
+      {/* `max-h-full` + `overflow-y-auto`, matching RecipePicker — the app's other bottom sheet,
+          which is capped for the same reason. An avatar preview is SQUARE, so its height equals the
+          panel's inner width: on a 320-360px phone the heading, the instruction, the square frame,
+          the slider and two stacked buttons already exceed a short viewport, and with no cap the
+          sheet grew past the screen with no way to scroll — "Use this photo" simply off-screen on
+          the device class this whole feature was built for. */}
+      <div className="sticker bg-card w-full max-w-sm p-4 max-h-full overflow-y-auto">
         <h2 className="font-display font-black text-[19px] text-ink leading-tight">
           {shape === 'avatar' ? 'Frame your photo' : 'Frame the photo'}
         </h2>
