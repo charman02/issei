@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useLocation, useParams, useNavigate } from 'react-router-dom'
 import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
 import VisibilityChoice from '../components/VisibilityChoice'
 import { toUserMessage } from '../api/client'
@@ -56,6 +56,10 @@ function postedOn(iso) {
 export default function PostPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  // MUST be the router's location, not the global one. `window.location` has no `.state`, so
+  // reading it would make the #104 deep-link below silently never fire — a whole feature that
+  // compiles, ships, and does nothing.
+  const location = useLocation()
   const [post, setPost] = useState(null)
   const [error, setError] = useState('')
   // The ask (#79). Mirrors the server's answer; `asked` is seeded from the loaded post so a
@@ -137,6 +141,30 @@ export default function PostPage() {
     getPost(id)
       .then((res) => {
         setPost(res.data)
+        // ARRIVING STRAIGHT INTO A CONTROL (#104). A post card's ⋯ menu names "Edit this meal" and
+        // "Delete", and both actions live here rather than on the card — so the card sends the
+        // intent along in router state and this opens the matching control. A menu item that only
+        // dropped someone on the page would make them hunt for the thing they just asked for.
+        //
+        // Gated on OWNERSHIP as answered by the server, not by the card: `res.data.user_id` is the
+        // authority, so a hand-crafted navigation can't open an editor on someone else's meal. The
+        // form would fail on save anyway (PATCH is author-only) — but showing it at all would be
+        // the client claiming an edit is possible when it isn't, which is the class of lie #104's
+        // sibling tasks keep removing.
+        const wanted = location.state?.open
+        const mine = String(me.id) === String(res.data.user_id)
+        if (mine && wanted === 'edit') {
+          setDraft({
+            dish_name: res.data.dish_name,
+            description: res.data.description || '',
+            visibility: res.data.visibility,
+          })
+        } else if (mine && wanted === 'delete') {
+          setConfirmingDelete(true)
+        }
+        // Consume it, so a back-then-forward or a refresh doesn't reopen a confirm someone
+        // already dismissed — router state survives both.
+        if (wanted) navigate(`/posts/${id}`, { replace: true, state: {} })
         // Seed the ask state from the server, or a reload shows "Ask for the recipe" to
         // someone who already asked — and tapping it would then RETRACT the ask they
         // still wanted. Caught by its own test.

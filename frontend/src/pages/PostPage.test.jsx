@@ -29,9 +29,9 @@ const postData = (over = {}) => ({
   ...over,
 })
 
-function renderPost(id = '5') {
+function renderPost(id = '5', state = undefined) {
   return render(
-    <MemoryRouter initialEntries={[`/posts/${id}`]}>
+    <MemoryRouter initialEntries={[{ pathname: `/posts/${id}`, state }]}>
       <Routes>
         <Route path="/posts/:id" element={<PostPage />} />
         <Route path="/recipes/:id" element={<div>recipe page</div>} />
@@ -394,5 +394,54 @@ describe('PostPage — editing your own meal', () => {
     renderPost()
     await screen.findByText('Sunday Adobo')
     expect(screen.queryByRole('button', { name: /edit this meal/i })).toBeNull()
+  })
+})
+
+// #104 — the card's ⋯ names "Edit this meal" and "Delete", and both actions live HERE. Landing
+// someone on the page and making them find the control again would defeat the point of naming it.
+describe('PostPage opens straight into the control the card asked for (#104)', () => {
+  it('opens the editor when arriving with open: "edit"', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 })) // the author
+    getPost.mockResolvedValue({ data: postData() })
+
+    renderPost('5', { open: 'edit' })
+
+    // The edit form, not the read view's button.
+    expect(await screen.findByDisplayValue('Sunday Adobo')).toBeInTheDocument()
+  })
+
+  it('opens the delete confirm when arriving with open: "delete"', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+    getPost.mockResolvedValue({ data: postData() })
+
+    renderPost('5', { open: 'delete' })
+
+    expect(await screen.findByText(/delete this meal\?/i)).toBeInTheDocument()
+    // Still TWO taps: arriving at the confirm is not confirming.
+    expect(deletePost).not.toHaveBeenCalled()
+  })
+
+  it('ignores the hint for someone who is NOT the author', async () => {
+    // The server is the authority on ownership, not the navigation. PATCH/DELETE are author-only, so
+    // showing the form to anyone else would be the client claiming an edit is possible when it isn't.
+    localStorage.setItem('issei_user', JSON.stringify({ id: 999 }))
+    getPost.mockResolvedValue({ data: postData({ user_id: 42 }) })
+
+    renderPost('5', { open: 'edit' })
+
+    await screen.findByText('Sunday Adobo')
+    expect(screen.queryByDisplayValue('Sunday Adobo')).toBeNull()
+    expect(screen.queryByText(/delete this meal\?/i)).toBeNull()
+  })
+
+  it('opens nothing at all with no hint', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+    getPost.mockResolvedValue({ data: postData() })
+
+    renderPost('5')
+
+    await screen.findByText('Sunday Adobo')
+    expect(screen.queryByDisplayValue('Sunday Adobo')).toBeNull()
+    expect(screen.queryByText(/delete this meal\?/i)).toBeNull()
   })
 })

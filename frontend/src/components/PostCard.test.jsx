@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import PostCard from './PostCard'
 
 vi.mock('../api/posts', () => ({
@@ -28,16 +28,24 @@ const post = (over = {}) => ({
   ...over,
 })
 
-function renderCard(p) {
+function renderCard(p, props = {}) {
   return render(
     <MemoryRouter initialEntries={['/']}>
       <Routes>
-        <Route path="/" element={<PostCard post={p} />} />
+        <Route path="/" element={<PostCard post={p} {...props} />} />
         <Route path="/u/:id" element={<div>profile page</div>} />
         <Route path="/recipes/:id" element={<div>recipe page</div>} />
+        <Route path="/posts/:id" element={<Landed />} />
       </Routes>
     </MemoryRouter>,
   )
+}
+
+// Renders where a navigation landed AND what it carried, so a test can assert the ⋯ sent the right
+// intent rather than merely that it navigated.
+function Landed() {
+  const loc = useLocation()
+  return <div data-testid="landed">{`${loc.pathname} open=${loc.state?.open ?? 'none'}`}</div>
 }
 
 describe('PostCard', () => {
@@ -315,5 +323,70 @@ describe('PostCard — long text on a card', () => {
     expect(screen.getByText(LONG).className).toMatch(/line-clamp-3/)
     expect(screen.getByRole('heading', { level: 3, name: NAME }).className).toMatch(/line-clamp-2/)
     expect(screen.getByRole('heading', { level: 3 }).querySelector('button')).toBeNull()
+  })
+})
+
+// #104, reported by a real user: "I want to demote the post but don't know how to."
+//
+// Everything they wanted already existed on the post page — Edit (which is where visibility, the
+// "demote", lives) and Delete. The card never said so, so the controls were reachable only by
+// guessing that your own photo was tappable.
+describe('PostCard — your own post says it is yours to manage (#104)', () => {
+  const mine = () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+    return post({ user_id: 42 })
+  }
+
+  it('offers a ⋯ on your own card', async () => {
+    renderCard(mine(), { onOpen: () => {} })
+    expect(screen.getByRole('button', { name: /manage this meal/i })).toBeInTheDocument()
+  })
+
+  it('offers NOTHING on another person’s card', () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 1 }))
+    renderCard(post({ user_id: 42 }), { onOpen: () => {} })
+    expect(screen.queryByRole('button', { name: /manage this meal/i })).toBeNull()
+  })
+
+  it('names both things a person might want, and a way out', async () => {
+    renderCard(mine(), { onOpen: () => {} })
+    await userEvent.click(screen.getByRole('button', { name: /manage this meal/i }))
+
+    expect(screen.getByRole('button', { name: /edit this meal/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /delete this meal/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /never mind/i })).toBeInTheDocument()
+  })
+
+  it('Edit lands on the post page WITH the editor open', async () => {
+    renderCard(mine(), { onOpen: () => {} })
+    await userEvent.click(screen.getByRole('button', { name: /manage this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+
+    expect(screen.getByTestId('landed')).toHaveTextContent('/posts/1 open=edit')
+  })
+
+  it('Delete lands on the post page WITH the confirm open — it does not delete from here', async () => {
+    // A destructive action two taps from a scrolling feed is the mis-tap #92 and #98 both corrected.
+    // The card carries the intent; the confirm stays on the page that is unambiguously one post.
+    renderCard(mine(), { onOpen: () => {} })
+    await userEvent.click(screen.getByRole('button', { name: /manage this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /delete this meal/i }))
+
+    expect(screen.getByTestId('landed')).toHaveTextContent('/posts/1 open=delete')
+  })
+
+  it('"Never mind" closes the menu without going anywhere', async () => {
+    renderCard(mine(), { onOpen: () => {} })
+    await userEvent.click(screen.getByRole('button', { name: /manage this meal/i }))
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+
+    expect(screen.queryByRole('button', { name: /edit this meal/i })).toBeNull()
+    expect(screen.queryByTestId('landed')).toBeNull()
+  })
+
+  it('hides the ⋯ when the card has no destination', () => {
+    // Without onOpen there is no post page to send anyone to, so the menu would be a dead control.
+    renderCard(mine())
+    expect(screen.queryByRole('button', { name: /manage this meal/i })).toBeNull()
   })
 })

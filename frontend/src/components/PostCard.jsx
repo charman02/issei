@@ -63,6 +63,9 @@ export default function PostCard({ post, onOpen }) {
   const [asking, setAsking] = useState(false)
   const [askError, setAskError] = useState('')
   const [asked, setAsked] = useState(Boolean(post.requested_by_me))
+  // The author's own ⋯ (#104). Closed/open only — both items navigate away, so there is no second
+  // panel state to track the way the safety menu on `/u/:id` needs one.
+  const [menuOpen, setMenuOpen] = useState(false)
 
   // Tapping the author opens their profile — but for your OWN post, /u/{yourId} is the
   // read-only "other user" view of yourself; send yourself to /profile ("You") instead.
@@ -108,6 +111,55 @@ export default function PostCard({ post, onOpen }) {
         <span className="ml-auto flex-none font-display text-[12px] text-ink-soft">
           {ago(post.created_at)}
         </span>
+        {/* YOUR OWN POST, AND ONLY YOURS (#104). Reported by a real user: "I want to demote the
+            post but don't know how to."
+
+            Everything they wanted already existed — tapping the card opens the post page, which
+            has Edit (dish name, description, VISIBILITY — the "demote") and Delete. The card just
+            never said so, so the controls were reachable only by guessing.
+
+            A ⋯ rather than visible buttons, matching the safety menu on `/u/:id`: unlabelled is not
+            the same as faint, and this is a control you should find when you go looking. Nothing is
+            added to anyone else's card — same discipline as `request_count`, which is null for every
+            non-author so no tally can leak.
+
+            Both items NAVIGATE; neither acts here. The actions live on the post page and stay
+            there — a Delete two taps from a scrolling feed is the mis-tap #92 and #98 both
+            corrected — but they land on the open control rather than on a page to hunt through. */}
+        {isMine && onOpen && (
+          <div className="relative flex-none">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Manage this meal"
+              aria-expanded={menuOpen}
+              className="w-7 h-7 -mr-1 rounded-full flex items-center justify-center font-display font-black text-[15px] leading-none text-ink-soft"
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-8 z-20 sticker bg-card w-44 py-1 text-left">
+                <button
+                  onClick={() => navigate(`/posts/${post.id}`, { state: { open: 'edit' } })}
+                  className="block w-full px-3 py-2 font-display font-bold text-[13.5px] text-ink text-left"
+                >
+                  Edit this meal
+                </button>
+                <button
+                  onClick={() => navigate(`/posts/${post.id}`, { state: { open: 'delete' } })}
+                  className="block w-full px-3 py-2 font-display font-bold text-[13.5px] text-brick text-left border-t-2 border-line"
+                >
+                  Delete this meal
+                </button>
+                <button
+                  onClick={() => setMenuOpen(false)}
+                  className="block w-full px-3 py-2 font-display font-bold text-[12.5px] text-ink-soft text-left border-t-2 border-line"
+                >
+                  Never mind
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* The photo — the point of the post. In Browse (onOpen set) it's a button that
