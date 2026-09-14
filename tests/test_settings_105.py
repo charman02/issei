@@ -67,8 +67,12 @@ def test_friends_only_REFUSES_a_handoff_addressed_by_email(client, make_user):
     r = client.post(f"/recipes/{rec['id']}/handoff", json={"to_email": ben.email}, headers=ah)
 
     assert r.status_code == 404
-    # Byte-identical to an unknown user, so the refusal never reveals that the setting exists —
-    # or, worse, confirms the address belongs to a real person.
+    # The BODY is byte-identical to a block's and to an unknown user's, so the refusal never says
+    # which of those it was. It does NOT hide account existence, and the docs no longer claim it
+    # does: an address with no account gets a 201 (see the test below), so the pair tells a sender
+    # "this belongs to an account that restricts invites". Accepted deliberately — signup already
+    # answers "Email already registered" and #80 lists every user by name, so buying that back with
+    # a fake 201 would mean telling a sender their recipe was delivered when it was not.
     assert r.json()["detail"] == "User not found"
 
 

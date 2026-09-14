@@ -250,11 +250,17 @@ export default function RecipeForm({
     // abandoning the form would leave the still-saved recipe pointing at a
     // deleted image. Orphan cleanup has to be server-side and reference-aware;
     // see the note in app/routers/upload.py.
-    // Retiring the ticket is defensive: today the remove button and the picker
-    // never render at once, so no upload can be in flight here. If that ever
-    // changes (e.g. previewing the new photo while it uploads) a landing
-    // response would silently re-fill the cover the user just cleared.
+    // Retiring the ticket used to be DEFENSIVE — this comment said the remove button and the
+    // picker never render at once, so no upload could be in flight. #106 made that false: it put a
+    // "Change photo" input beside the x in the same filled state, so tapping x during a
+    // replacement upload is now reachable, and without the retire a landing response would
+    // silently re-fill the cover the person just cleared.
     retireSlot(COVER_SLOT)
+    // And clear the busy flag by hand, for the reason `retire` exists: it bumps the slot's
+    // sequence so the in-flight upload's own `finally` SKIPS `onBusy(false)` (by design — a
+    // superseded pick must not stop a newer upload's spinner). Without this the now-empty photo
+    // box kept bobbing "Uploading..." indefinitely. Same fix as PostPage's "Never mind".
+    setUploading(false)
     setCoverPhotoUrl('')
     setPhotoError('')
   }
@@ -287,6 +293,9 @@ export default function RecipeForm({
     // rather than defensive: without it a landing response would re-fill a photo
     // the user just cleared.
     retireSlot(uid)
+    // Same busy-flag reasoning as removePhoto: `retire` suppresses the upload's own
+    // `onBusy(false)`, so this row's "Uploading..." would otherwise never clear.
+    setStepUploading((prev) => ({ ...prev, [uid]: false }))
     setSteps((prev) =>
       prev.map((s) => (s.uid === uid ? { ...s, photo_url: '' } : s)),
     )

@@ -11,7 +11,7 @@ def _befriend(client, a, ah, b, bh):
     client.post(f"/friends/{fid}/accept", headers=bh)
 
 
-def _post(client, headers, dish="Adobo", description=None, photo="https://img.test/x.jpg", recipe_id=None):
+def _post(client, headers, dish="Adobo", description=None, photo="https://res.cloudinary.com/demo/image/upload/x.jpg", recipe_id=None):
     body = {"photo_url": photo, "dish_name": dish}
     if description is not None:
         body["description"] = description
@@ -36,7 +36,7 @@ def test_create_post_minimal(client, make_user):
 
 def test_dish_name_required(client, make_user):
     _, h = make_user()
-    r = client.post("/posts", json={"photo_url": "https://img.test/x.jpg"}, headers=h)
+    r = client.post("/posts", json={"photo_url": "https://res.cloudinary.com/demo/image/upload/x.jpg"}, headers=h)
     assert r.status_code == 422
 
 
@@ -271,7 +271,7 @@ def test_user_posts_friend_gated(client, make_user):
 def _post_vis(client, headers, visibility, dish="Dish"):
     r = client.post(
         "/posts",
-        json={"photo_url": "https://img.test/x.jpg", "dish_name": dish, "visibility": visibility},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/x.jpg", "dish_name": dish, "visibility": visibility},
         headers=headers,
     )
     assert r.status_code == 201
@@ -399,7 +399,7 @@ def test_all_post_endpoints_require_auth(client, make_user):
 
 
 def _own(client, headers, **over):
-    body = {"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "friends"}
+    body = {"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": "Adobo", "visibility": "friends"}
     body.update(over)
     r = client.post("/posts", json=body, headers=headers)
     assert r.status_code == 201, r.text
@@ -431,7 +431,7 @@ def test_a_partial_edit_leaves_everything_else_alone(client, make_user):
     body = client.get(f"/posts/{post['id']}", headers=ah).json()
     assert body["description"] == "keep me"
     assert body["visibility"] == "public"
-    assert body["photo_url"] == "https://img.test/a.jpg"
+    assert body["photo_url"] == "https://res.cloudinary.com/demo/image/upload/a.jpg"
 
 
 def test_an_empty_description_CLEARS_it_but_null_does_not(client, make_user):

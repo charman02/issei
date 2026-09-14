@@ -182,7 +182,9 @@ def create_post(
 
     post = Post(
         user_id=current_user.id,
-        photo_url=body.photo_url,
+        # Host-checked on CREATE too, since #106's gate pass: the rule was applied to the two
+        # PATCH routes first, which left the front door — where most photos actually enter — open.
+        photo_url=require_our_image_url(body.photo_url, what="photo"),
         dish_name=body.dish_name.strip(),
         description=(body.description or "").strip() or None,
         recipe_id=recipe_id,

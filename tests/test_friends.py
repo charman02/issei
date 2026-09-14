@@ -247,7 +247,7 @@ def _accept(client, ah, bh, b):
 def _post(client, headers, visibility="friends", dish="Dish"):
     r = client.post(
         "/posts",
-        json={"photo_url": "https://img.test/x.jpg", "dish_name": dish, "visibility": visibility},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/x.jpg", "dish_name": dish, "visibility": visibility},
         headers=headers,
     )
     assert r.status_code == 201

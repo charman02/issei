@@ -23,7 +23,7 @@ def _recipe(**over):
         from_name="Charlie",
         origin_attribution="Lola",
         description="A braise that tastes like her kitchen.",
-        cover_photo_url="https://img.test/adobo.jpg",
+        cover_photo_url="https://res.cloudinary.com/demo/image/upload/adobo.jpg",
     )
     base.update(over)
     return SimpleNamespace(**base)
@@ -50,7 +50,7 @@ class TestBuildInviteMetaRealRecipe:
         assert "Charlie passed you the recipe for Adobo" in m["description"]
 
     def test_cover_photo_is_the_preview_image(self):
-        assert build_invite_meta(_recipe(), **CTX)["image"] == "https://img.test/adobo.jpg"
+        assert build_invite_meta(_recipe(), **CTX)["image"] == "https://res.cloudinary.com/demo/image/upload/adobo.jpg"
 
     def test_url_is_origin_plus_token(self):
         assert build_invite_meta(_recipe(), **CTX)["url"] == "https://issei.app/invite/tok123"
@@ -92,9 +92,9 @@ class TestBuildInviteMetaNotFound:
 
 class TestRenderDocument:
     def test_injects_recipe_specific_og_tags(self):
-        html = render_invite_og_document(build_invite_meta(_recipe(cover_photo_url="https://img.test/a.jpg"), **CTX))
+        html = render_invite_og_document(build_invite_meta(_recipe(cover_photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg"), **CTX))
         assert '<meta property="og:title" content="Adobo — from Lola" />' in html
-        assert '<meta property="og:image" content="https://img.test/a.jpg" />' in html
+        assert '<meta property="og:image" content="https://res.cloudinary.com/demo/image/upload/a.jpg" />' in html
         assert '<meta name="twitter:card" content="summary_large_image" />' in html
         # Bounces a human who somehow lands here to the real URL.
         assert "url=https://issei.app/invite/tok123" in html
@@ -140,7 +140,7 @@ class TestInviteCardSaysWhatItShows:
 
     def test_alt_text_names_the_dish_when_there_IS_a_cover_photo(self):
         meta = build_invite_meta(
-            _recipe(cover_photo_url="https://img.test/adobo.jpg", origin_attribution="Lola"),
+            _recipe(cover_photo_url="https://res.cloudinary.com/demo/image/upload/adobo.jpg", origin_attribution="Lola"),
             **CTX,
         )
         assert meta["image_alt"] == "Adobo, from Lola"

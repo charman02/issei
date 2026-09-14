@@ -17,7 +17,7 @@ a stranger or a deleted account gets. A blocked user must not be able to detect 
 
 
 def _post(client, headers, dish="Adobo", visibility="public", recipe_id=None):
-    body = {"photo_url": "https://img.test/a.jpg", "dish_name": dish, "visibility": visibility}
+    body = {"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": dish, "visibility": visibility}
     if recipe_id is not None:
         body["recipe_id"] = recipe_id
     r = client.post("/posts", json=body, headers=headers)

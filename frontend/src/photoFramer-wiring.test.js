@@ -39,7 +39,9 @@ const callSites = files.filter(
 
 describe('the photo framer is rendered wherever it is requested (#103)', () => {
   it('finds the call sites at all, so a rename cannot quietly empty this test', () => {
-    // Today: PostComposer, RecipeForm (direct) + Profile, Welcome, PhotoNudge (via useAvatarUpload).
+    // Today SIX: PostComposer, RecipeForm, PostPage (direct — PostPage joined in #106) + Profile,
+    // Welcome, PhotoNudge (via useAvatarUpload). The floor below is deliberately looser than the
+    // exact count, so adding a seventh surface doesn't fail a test for the wrong reason.
     expect(callSites.length).toBeGreaterThanOrEqual(5)
   })
 

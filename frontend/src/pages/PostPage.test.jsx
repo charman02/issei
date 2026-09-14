@@ -600,6 +600,30 @@ describe('PostPage — replacing the photo (#106)', () => {
     expect(screen.getByLabelText(/what is it/i)).toHaveValue('Kept typing')
   })
 
+  it('"Never mind" MID-UPLOAD leaves the editor saveable — the busy flag must not stick', async () => {
+    // The ship gate found this. `retire()` bumps the slot's sequence, which makes `isCurrent()`
+    // false, which makes the upload's own `finally` SKIP `onBusy(false)` — by design, so a
+    // superseded pick can't stop a newer upload's spinner. The consequence was that backing out
+    // during the multi-second upload left `uploadingPhoto` true for the rest of the session, and
+    // the control that would have recovered it is the one it disables: "Save changes" reads
+    // `uploadingPhoto`, so the editor became permanently unsaveable and the button read
+    // "Uploading…" forever.
+    await openEditor()
+    await userEvent.upload(screen.getByLabelText('Replace the photo'), A_FILE())
+    act(() => uploadCalls[0].onBusy(true))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled(),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /never mind/i }))
+    // Re-open: the editor must be usable again.
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+
+    const save = screen.getByRole('button', { name: /save changes/i })
+    expect(save).not.toBeDisabled()
+    expect(save).toHaveTextContent(/save changes/i)
+  })
+
   it('a non-author gets no photo control at all', async () => {
     localStorage.setItem('issei_user', JSON.stringify({ id: 999 }))
     getPost.mockResolvedValue({ data: postData() })

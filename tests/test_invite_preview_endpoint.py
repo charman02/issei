@@ -53,12 +53,12 @@ def test_preview_uses_cover_photo_when_present(client, make_user):
     owner, headers = make_user()
     root = client.post(
         "/recipes",
-        json=_payload(cover_photo_url="https://img.test/adobo.jpg"),
+        json=_payload(cover_photo_url="https://res.cloudinary.com/demo/image/upload/adobo.jpg"),
         headers=headers,
     ).json()
     token = _handoff_token(client, headers, root["id"])
     body = client.get(f"/recipes/invite/{token}/preview").text
-    assert '<meta property="og:image" content="https://img.test/adobo.jpg" />' in body
+    assert '<meta property="og:image" content="https://res.cloudinary.com/demo/image/upload/adobo.jpg" />' in body
 
 
 def test_unknown_token_returns_200_with_an_honest_card_not_500(client, make_user):

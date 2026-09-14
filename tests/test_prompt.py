@@ -40,7 +40,7 @@ def _befriend(db, a, b):
 def _post(db, author, visibility="friends", dish="Adobo"):
     p = Post(
         user_id=author.id,
-        photo_url="https://img.test/a.jpg",
+        photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
         dish_name=dish,
         visibility=visibility,
     )

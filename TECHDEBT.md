@@ -456,24 +456,25 @@ narrow situations.
   the right call there for a product reason too (a different photo is a different meal) — but
   dropping a field is not a fix for this class, and the next schema to accept an image URL
   will need the same catch.
-  **UPDATE (#106): the shared validator now exists, and it is applied on TWO of the four
-  entry points.** `app/services/media.py` holds the rule (`require_our_image_url`: HTTPS +
-  a host ending `.cloudinary.com`), `PATCH /auth/me` was refactored onto it, and
-  `PATCH /posts/{id}` — which re-accepted `photo_url` when the owner reversed #98 — goes
-  through it too. So the "one shared validator" half of this item is DONE. What remains is
-  the half that was always the bigger hole: **`POST /posts` and `POST /recipes` still accept
-  an arbitrary string**, which means an edit is now stricter than a create, and the tracking-
-  pixel path is still open at the point where most photos actually enter. Two reasons it
-  wasn't closed in the same pass, both worth weighing rather than inheriting: a large number
-  of existing tests create posts and recipes with `https://img.test/...` URLs (mechanical to
-  fix, but it is a wide diff on a shipping branch), and tightening a CREATE can reject data
-  from an older deployed client, whereas tightening an EDIT only rejects a request nobody's
-  client makes. Closing it is a small, self-contained task: import the same function in
-  `create_post` and `create_recipe`, update the fixtures, and the class is gone.
-  *Where:* `app/services/media.py` (the rule), `app/routers/auth.py` + `app/routers/posts.py`
-  `update_post` (both guarded), vs `app/schemas/recipe.py` `cover_photo_url` +
-  `app/schemas/post.py` `photo_url` on CREATE (still unguarded); render sites
-  `frontend/src/components/{Avatar,CoverImage,PostCard}.jsx`.
+  **CLOSED (#106, after the ship gate). All five write surfaces now validate.**
+  `app/services/media.py` holds the rule and every route that accepts an image URL calls it:
+  `PATCH /auth/me`, `PATCH /posts/{id}`, `POST /posts`, `POST /recipes` and `PATCH /recipes/{id}`
+  (the last two via `_check_recipe_image_urls`, which covers the cover AND every step photo).
+
+  Two things are worth keeping from how this went, because both were mistakes of the same shape —
+  believing a rule was enforced because it existed somewhere.
+  1. The first pass applied it to the two PATCH routes only, and recorded the create-side gap here
+     as deferred with a cost estimate. The gate's reply was blunt and correct: with `POST /posts`
+     and `POST /recipes` still open, the validator prevented nothing an attacker couldn't do
+     through the front door, so "2 of 4 done" was really 0 of 1. The cost estimate was accurate —
+     25 fixture URLs across 12 test files — and it was also not a reason.
+  2. The count was wrong. There were FIVE surfaces, not four: `PATCH /recipes/{id}` writes
+     `cover_photo_url` and every step's `photo_url`, and that is the path #106's own new
+     "Change photo" control on the recipe form writes through. So the feature that introduced the
+     rule was itself writing past it.
+
+  What remains is not this class: the ORPHAN problem (a replaced Cloudinary asset is never deleted)
+  is recorded separately, and validation says nothing about it.
 
 - **Signup leaks account existence; forgot-password deliberately doesn't.** Signup returns
   "Email already registered" (confirms an account exists), while forgot-password always

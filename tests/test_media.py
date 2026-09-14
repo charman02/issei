@@ -97,3 +97,79 @@ def test_none_is_refused_rather_than_crashing():
     """
     with pytest.raises(HTTPException):
         require_our_image_url(None, what="photo")  # type: ignore[arg-type]
+
+
+# ============================================================================================
+# THE BACKSLASH BYPASS. Found by the ship gate on the FIRST version of this file, which trusted
+# `urlsplit(...).hostname` alone. Python and the WHATWG parser browsers use disagree about where
+# the authority ends when it contains a backslash, and a validator that trusts the wrong one is
+# worse than none: it says yes, and the browser then fetches from somewhere else.
+#
+# Verified against the real function before the fix — both of these returned True:
+#   https://evil.test\@res.cloudinary.com/x.jpg   (urlsplit host: 'res.cloudinary.com')
+#   https://evil.test\.cloudinary.com/a.jpg       (urlsplit host: 'evil.test\.cloudinary.com')
+# Node's `new URL()` reports the host of both as `evil.test`.
+# ============================================================================================
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # A backslash read as userinfo by Python, as an authority terminator by browsers.
+        "https://evil.test\@res.cloudinary.com/x.jpg",
+        "https://evil.test\@a.cloudinary.com/x.jpg?w=1",
+        "https://evil.test\\@res.cloudinary.com/x.jpg",
+        # A backslash left INSIDE the hostname, which a bare suffix check accepted.
+        "https://evil.test\.cloudinary.com/a.jpg",
+        # Userinfo without a backslash — the other half of the same trick.
+        "https://res.cloudinary.com@evil.test/a.jpg",
+        "https://user:pw@evil.test/a.jpg",
+    ],
+)
+def test_refuses_a_url_two_parsers_would_disagree_about(url):
+    assert is_our_image_url(url) is False
+    with pytest.raises(HTTPException) as exc:
+        require_our_image_url(url, what="photo")
+    assert exc.value.status_code == 422
+
+
+def test_credentials_are_refused_even_on_the_RIGHT_host():
+    """Our uploads never carry credentials, so an `@` in the authority is not one of ours."""
+    assert is_our_image_url("https://user:pw@res.cloudinary.com/a.jpg") is False
+
+
+def test_the_host_must_look_like_a_hostname():
+    """The belt to the braces: any residual parser disagreement leaves a stray delimiter behind,
+    and a strict charset refuses it whatever it turns out to be."""
+    assert is_our_image_url("https://res.cloudinary.com/a.jpg") is True
+    for bad in (
+        "https://res.cloudinary.com\u200b/a.jpg",   # zero-width space in the host
+        "https://res.cloudinary\u3002com/a.jpg",     # ideographic full stop (IDNA lookalike)
+        "https://res%2ecloudinary.com/a.jpg",        # percent-encoded dot
+    ):
+        assert is_our_image_url(bad) is False, bad
+
+
+def test_an_uppercase_host_is_still_ours():
+    """Hostnames are case-insensitive, and a client that shouts is not an attacker."""
+    assert is_our_image_url("https://RES.CLOUDINARY.COM/demo/a.jpg") is True
+
+def test_a_tab_or_newline_in_the_authority_is_NOT_a_parser_disagreement():
+    """I first wrote these as expected FAILURES, and that was wrong — worth recording why.
+
+    `urlsplit` strips ASCII tab and newline from a URL, and so does the WHATWG parser browsers
+    use. The two AGREE, and what they agree on is `evil.test.cloudinary.com` — genuinely a
+    subdomain of cloudinary.com, not of anything an attacker owns (Cloudinary does not hand out
+    arbitrary subdomains). So accepting it is correct.
+
+    The backslash cases above are different in kind: there the two parsers resolve to DIFFERENT
+    hosts and one of them IS attacker-controlled. Kept as a test rather than deleted, because the
+    next person hardening this function will reach for the same idea.
+    """
+    from urllib.parse import urlsplit
+
+    tabbed = "https://evil.test" + chr(9) + ".cloudinary.com/a.jpg"
+    newlined = "https://evil.test" + chr(10) + ".cloudinary.com/a.jpg"
+    assert urlsplit(tabbed).hostname == "evil.test.cloudinary.com"
+    assert is_our_image_url(tabbed) is True
+    assert is_our_image_url(newlined) is True

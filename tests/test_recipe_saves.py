@@ -476,7 +476,7 @@ def test_an_ask_still_names_the_asker(client, make_user):
     client.post(f"/friends/{fid}/accept", headers=fh)
     post = client.post(
         "/posts",
-        json={"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "friends"},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": "Adobo", "visibility": "friends"},
         headers=ch,
     ).json()
     client.post(f"/posts/{post['id']}/request", headers=fh)
@@ -583,7 +583,7 @@ def test_an_ask_is_still_deduped_PER_ASKER(client, make_user):
     b, bh = make_user(first_name="Cruz")
     post = client.post(
         "/posts",
-        json={"photo_url": "https://img.test/a.jpg", "dish_name": "Adobo", "visibility": "public"},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": "Adobo", "visibility": "public"},
         headers=ch,
     ).json()
     client.post(f"/posts/{post['id']}/request", headers=ah)

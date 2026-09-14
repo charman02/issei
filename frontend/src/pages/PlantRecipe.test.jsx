@@ -708,3 +708,61 @@ describe('PlantRecipe — answering a recipe request', () => {
     expect(await screen.findByText('delivery failed: no')).toBeInTheDocument()
   })
 })
+
+// ============================================================================================
+// #105 — THE CONSUMER SIDE of `default_recipe_visibility`. TESTING.md's own rule for a new setting
+// says it needs a test that exercises the CONSUMER, not just the round trip — and the first pass
+// shipped the rule while covering only the settings page that WRITES the value. The ship gate
+// caught the doc asserting a test that did not exist. This is that test.
+//
+// What makes it worth having rather than ceremonial: the reader is a three-branch fallback chain
+// (post draft → the setting → the pre-#105 profile derivation), and the middle branch is the new
+// one. A regression in it is silent — the form still renders, with the wrong audience pre-selected.
+// ============================================================================================
+
+describe('PlantRecipe — the create form starts on the author’s stated default (#105)', () => {
+  async function reachTheFormAs(cachedUser) {
+    if (cachedUser) localStorage.setItem('issei_user', JSON.stringify(cachedUser))
+    renderFlow()
+    await enterDoor(/rather fill in the form/i)
+  }
+
+  it.each([
+    ['public', /everyone/i],
+    ['friends', /friends only/i],
+    ['private', /only me/i],
+  ])('pre-selects %s from default_recipe_visibility', async (setting, label) => {
+    await reachTheFormAs({ id: 1, default_recipe_visibility: setting })
+    expect(screen.getByRole('radio', { name: label })).toBeChecked()
+  })
+
+  it('the SETTING beats the old profile derivation when both are present', async () => {
+    // A public profile used to force "Everyone". Someone who explicitly said "only me" must get
+    // that — otherwise the setting is decorative for exactly the people who changed it.
+    await reachTheFormAs({
+      id: 1,
+      profile_visibility: 'public',
+      default_recipe_visibility: 'private',
+    })
+    expect(screen.getByRole('radio', { name: /only me/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /everyone/i })).not.toBeChecked()
+  })
+
+  it('falls back to the PRE-#105 derivation for a cached user written before the field existed', async () => {
+    // Someone whose localStorage predates #105 should get what they got yesterday, not a silent
+    // change of audience on their next recipe.
+    await reachTheFormAs({ id: 1, profile_visibility: 'public' })
+    expect(screen.getByRole('radio', { name: /everyone/i })).toBeChecked()
+  })
+
+  it('still SENDS what the form is showing, not the setting it came from', async () => {
+    // The value is stored LITERALLY (#68). This is the assertion that would catch someone
+    // "simplifying" the form into reading the setting again at submit time.
+    await reachTheFormAs({ id: 1, default_recipe_visibility: 'public' })
+    await userEvent.click(screen.getByRole('radio', { name: /only me/i }))
+    await userEvent.click(screen.getByRole('button', { name: /submit-form/i }))
+
+    await waitFor(() => expect(plantRecipe).toHaveBeenCalled())
+    expect(plantRecipe.mock.calls[0][0].visibility).toBe('private')
+  })
+})

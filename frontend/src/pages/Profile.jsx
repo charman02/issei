@@ -165,6 +165,7 @@ export default function Profile() {
       (user.profile_visibility === 'public' ? 'public' : 'friends'),
   )
   const [savingDefault, setSavingDefault] = useState(false)
+  const [savingInvites, setSavingInvites] = useState(false)
   // Its OWN error line, rendered inside its own card. The first version routed this into
   // `accountError`, which lives in the Account section five cards down the page — so a failed save
   // rolled the control back correctly and explained itself somewhere the person wasn't looking.
@@ -172,6 +173,20 @@ export default function Profile() {
   const [invitesFriendsOnly, setInvitesFriendsOnly] = useState(
     user.invite_permission === 'friends',
   )
+  // A useState initializer runs ONCE, so both controls above would keep showing whatever the cache
+  // held at mount — even after `reconcile()` (which syncs GET /auth/me once per app start) landed a
+  // different value, or after the setting was changed on another device. `useCurrentUser()` already
+  // re-renders this component when the cache updates; this effect is what makes the controls
+  // follow it. Skipped while a save is in flight, so an optimistic value isn't stomped by a cache
+  // write that has not caught up yet.
+  //
+  // It matters most for the invite toggle: showing "off" for a restriction that is actually on is
+  // exactly the wrong direction for a safety control to be wrong in.
+  useEffect(() => {
+    if (savingDefault || savingInvites) return
+    if (user.default_recipe_visibility) setDefaultVisibility(user.default_recipe_visibility)
+    if (user.invite_permission) setInvitesFriendsOnly(user.invite_permission === 'friends')
+  }, [user.default_recipe_visibility, user.invite_permission, savingDefault, savingInvites])
 
   // OPTIMISTIC, then reconciled from the response — and rolled back on failure. A settings
   // control that silently keeps the new position after a failed save is the worst of the three
@@ -197,6 +212,13 @@ export default function Profile() {
   }
 
   async function onToggleInvites(next) {
+    // An in-flight guard, which the visibility picker had and this did not. A double-tap fired two
+    // PATCHes, and because each writes the switch from its OWN response, an out-of-order arrival
+    // left it displaying the opposite of what is stored — on the one control whose entire job is
+    // telling someone whether a restriction is in force. Same failure the rollback prevents,
+    // reached by racing instead of by failing.
+    if (savingInvites) return
+    setSavingInvites(true)
     setSettingsError('')
     const previous = invitesFriendsOnly
     setInvitesFriendsOnly(next)
@@ -211,6 +233,8 @@ export default function Profile() {
       setSettingsError(
         toUserMessage(err, 'Could not change that just now. Please try again.'),
       )
+    } finally {
+      setSavingInvites(false)
     }
   }
 
@@ -604,6 +628,7 @@ export default function Profile() {
           }
           on={invitesFriendsOnly}
           onChange={onToggleInvites}
+          disabled={savingInvites}
         />
       </div>
       {settingsError && (

@@ -15,7 +15,7 @@ to a handoff, so a vanishing post would take the ask with it.
 def _post(client, headers, dish="Adobo", visibility="friends"):
     r = client.post(
         "/posts",
-        json={"photo_url": "https://img.test/a.jpg", "dish_name": dish, "visibility": visibility},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": dish, "visibility": visibility},
         headers=headers,
     )
     assert r.status_code == 201, r.text

@@ -77,9 +77,17 @@ def test_cuisine_and_diet_are_capped_at_60(client, make_user):
 
 def test_an_image_url_is_bounded(client, make_user):
     """A user-supplied string rendered into an `<img src>` is a place to hide a payload. Real
-    Cloudinary URLs are ~120 chars; 500 is slack, not an invitation."""
+    Cloudinary URLs are ~120 chars; 500 is slack, not an invitation.
+
+    Can't use `_at_and_over`, which pads with "x": since #106's gate pass every image URL is also
+    HOST-checked, so a bare string of x's is refused for the wrong reason and the length wall would
+    never be exercised. Two separate walls, and this test is about the length one.
+    """
     _, h = make_user()
-    assert _at_and_over(client, h, "cover_photo_url", 500) == (201, 422)
+    stem = "https://res.cloudinary.com/demo/image/upload/"
+    at = _create(client, h, cover_photo_url=stem + "x" * (500 - len(stem)))
+    over = _create(client, h, cover_photo_url=stem + "x" * (501 - len(stem)))
+    assert (at.status_code, over.status_code) == (201, 422)
 
 
 def test_servings_and_prep_time_cannot_be_absurd_or_negative(client, make_user):
@@ -202,10 +210,10 @@ def test_the_origin_block_is_bounded_without_becoming_required(client, make_user
 def test_the_fields_that_already_had_caps_still_do(client, make_user):
     _, h = make_user()
     assert client.post(
-        "/posts", json={"photo_url": "https://img.test/a.jpg", "dish_name": "x" * 120}, headers=h
+        "/posts", json={"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": "x" * 120}, headers=h
     ).status_code == 201
     assert client.post(
-        "/posts", json={"photo_url": "https://img.test/a.jpg", "dish_name": "x" * 121}, headers=h
+        "/posts", json={"photo_url": "https://res.cloudinary.com/demo/image/upload/a.jpg", "dish_name": "x" * 121}, headers=h
     ).status_code == 422
     assert client.post(
         "/recipes/parse", json={"text": "x" * 8001}, headers=h
@@ -225,8 +233,11 @@ def test_a_posts_photo_url_is_bounded(client, make_user):
             "/posts", json={"photo_url": url, "dish_name": "Adobo"}, headers=h
         ).status_code
 
-    assert post_with("https://img.test/" + "x" * 470) == 201
-    assert post_with("https://img.test/" + "x" * 490) == 422
+    # A real host, because CREATE is host-checked now too (#106's gate pass) — the length ceiling
+    # and the host rule are separate walls and this test is about the length one.
+    stem = "https://res.cloudinary.com/demo/image/upload/"
+    assert post_with(stem + "x" * (500 - len(stem))) == 201
+    assert post_with(stem + "x" * (501 - len(stem))) == 422
     # And "" is still refused, as before — a post is a photo plus a name.
     assert post_with("") == 422
 

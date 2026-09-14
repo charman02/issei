@@ -24,7 +24,7 @@ def _recipe_payload(name="Adobo", visibility="friends"):
 def _make_post(client, headers, dish="Sinigang", visibility="friends"):
     return client.post(
         "/posts",
-        json={"photo_url": "https://img.test/x.jpg", "dish_name": dish, "visibility": visibility},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/x.jpg", "dish_name": dish, "visibility": visibility},
         headers=headers,
     )
 

@@ -39,6 +39,7 @@ from app.schemas.recipe import (
 )
 from app.services.scaling import scale_ingredient
 from app.services.blocks import blocked_ids, is_blocked
+from app.services.media import require_our_image_url
 from app.services.notifications import notify
 from app.services.sharing import effective_visibility, can_view
 from app.services.friends import are_friends
@@ -78,6 +79,25 @@ def _keeper_count(recipe, viewer, db) -> Optional[int]:
     )
 
 
+def _check_recipe_image_urls(payload) -> None:
+    """Host-check every image URL on a recipe write — the cover and each step's photo.
+
+    #106 shipped the shared rule and applied it to `PATCH /posts/{id}` and `PATCH /auth/me`, and the
+    ship gate then pointed out that the "Change photo" control #106 added to the RECIPE form writes
+    through `PATCH /recipes/{id}`, which had no check at all. So the feature that introduced the
+    rule was itself writing past it. Both recipe write paths go through here now, which closes the
+    class rather than the instance: five write surfaces accept an image URL, and five validate.
+
+    `None` is untouched — for a cover it means "no photo", which is legitimate. A blank string is
+    refused by the rule, which is correct here: a recipe cover is cleared by sending `null`.
+    """
+    if getattr(payload, "cover_photo_url", None) is not None:
+        payload.cover_photo_url = require_our_image_url(payload.cover_photo_url, what="photo")
+    for step in getattr(payload, "steps", None) or []:
+        if getattr(step, "photo_url", None) is not None:
+            step.photo_url = require_our_image_url(step.photo_url, what="photo")
+
+
 def _attach_growth_fields(recipe, db):
     """Compute the growth-state counts the frontend reads. Small N per request."""
     cooks = db.query(CookEvent).filter(CookEvent.recipe_id == recipe.id).all()
@@ -102,6 +122,7 @@ def create_recipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _check_recipe_image_urls(recipe_in)
     new_recipe = Recipe(
         user_id=current_user.id,
         name=recipe_in.name,
@@ -259,10 +280,18 @@ def handoff_recipe(
         if is_blocked(current_user.id, recipient.id, db):
             raise HTTPException(status_code=404, detail="User not found")
         # WHO MAY PRE-ADDRESS A HANDOFF TO THIS PERSON (#105). "friends" requires an accepted
-        # friendship; "anyone" (the default, and today's behaviour) checks nothing. Same 404 body
-        # as an unknown user and as a block, so a refusal never distinguishes "they don't take
-        # unsolicited recipes" from "no such account" — otherwise the setting leaks, and worse,
-        # confirms the address belongs to a real person.
+        # friendship; "anyone" (the default, and today's behaviour) checks nothing.
+        #
+        # The 404 BODY is byte-identical to a block's and to an unknown user's, so a refusal never
+        # says WHICH of those it was. Be precise about what that does and does not hide, because
+        # the first version of this comment claimed more than it delivers: a refusal is a 404 while
+        # an address with NO account behind it gets a 201 and a pending invite, so the pair does
+        # tell a sender "this address belongs to an account that restricts invites". That is a real
+        # signal and it is accepted rather than hidden — the app already discloses account
+        # existence more directly (signup answers "Email already registered", and since #80 every
+        # user is listed in the directory by name), so paying for it here with a fake 201 would
+        # mean telling a sender their recipe was delivered when it was not. Lying to the sender is
+        # the worse trade.
         #
         # The LINK-ONLY handoff is deliberately untouched: no recipient means nothing to check,
         # and the token is the capability this product is built on.
@@ -1264,6 +1293,12 @@ def patch_recipe(
     )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+
+    # Host-check the cover and every step photo BEFORE anything is written, so a bad URL anywhere in
+    # the payload leaves the recipe exactly as it was rather than half-updated. This is the surface
+    # #106's own "Change photo" control writes through, and it had no check until the ship gate said
+    # so — the feature that introduced the rule was writing past it.
+    _check_recipe_image_urls(recipe_in)
 
     # Which child collections did the client actually send? Use the dumped
     # set to detect presence, but read the values off the Pydantic model so

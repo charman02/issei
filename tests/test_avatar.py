@@ -80,7 +80,7 @@ def test_photo_url_shows_on_posts_feed(client, make_user):
     client.patch("/auth/me", json={"photo_url": "https://res.cloudinary.com/issei/avatars/me.jpg"}, headers=mh)
     client.post(
         "/posts",
-        json={"photo_url": "https://img.test/x.jpg", "dish_name": "Adobo"},
+        json={"photo_url": "https://res.cloudinary.com/demo/image/upload/x.jpg", "dish_name": "Adobo"},
         headers=mh,
     )
     feed = client.get("/posts/feed", headers=mh).json()

@@ -447,6 +447,14 @@ export default function PostPage() {
                     // Retire the slot so an in-flight upload can't write into a draft that no
                     // longer exists — the same reason PostComposer retires on remove.
                     uploader.current.retire('post-edit')
+                    // AND clear the busy flag by hand. `retire` bumps the slot's sequence, which
+                    // makes `isCurrent()` false, which makes the upload's own `finally` SKIP
+                    // `onBusy(false)` (photoUpload.js) — by design, so a superseded pick can't
+                    // stop a newer upload's spinner. The consequence here is that backing out
+                    // mid-upload left `uploadingPhoto` true for the rest of the session, and the
+                    // control that would have recovered it is the one it disables: "Save changes"
+                    // reads `uploadingPhoto`, so the editor was permanently unsaveable.
+                    setUploadingPhoto(false)
                     setDraft(null)
                     setSaveError('')
                     setPhotoError('')
