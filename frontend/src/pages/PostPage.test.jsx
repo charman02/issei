@@ -763,11 +763,68 @@ describe('PostPage — attach a recipe after publishing (#99)', () => {
     expect(label).not.toMatch(/delete|remove|discard/i)
   })
 
-  it('hides the attach controls while the edit form or the delete confirm is open', async () => {
+  it('hides the attach controls while the EDIT FORM is open', async () => {
     // One consequential decision at a time; the same rule the edit/delete pair already follows.
     await openAsAuthor({ recipe_id: null })
     await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
 
     expect(screen.queryByRole('button', { name: /attach a recipe/i })).toBeNull()
+  })
+
+  it('hides them while the DELETE CONFIRM is open too', async () => {
+    // The other half of the same guard, and the more consequential panel to leave an attach button
+    // beside. It was unasserted: the first version of the test above named the delete confirm and
+    // only clicked Edit, so deleting `!confirmingDelete` from the render gate failed nothing.
+    await openAsAuthor({ recipe_id: null })
+    await userEvent.click(screen.getByRole('button', { name: /^delete$/i }))
+
+    expect(screen.queryByRole('button', { name: /attach a recipe/i })).toBeNull()
+  })
+
+  it('WARNS on the "Change recipe" path too, where a pending ask can coexist with a link', async () => {
+    // The gate caught this: the caption was gated on `!post.recipe_id`, which assumed a linked
+    // recipe and a pending ask are mutually exclusive. They are not. `request_recipe` deliberately
+    // allows an ask when a recipe IS linked but the asker can't read it — a private recipe on a
+    // public meal — so the author lands on "Change recipe" with people waiting, and tapping it
+    // mints grants and notifies them. Suppressing the warning there hid the one act it exists for.
+    await openAsAuthor({ recipe_id: 7, request_count: 2 })
+
+    expect(screen.getByRole('button', { name: /change recipe/i })).toBeInTheDocument()
+    expect(screen.getByText(/also sends it to the 2 people who asked/i)).toBeInTheDocument()
+  })
+
+  it('the busy label lands on the button that was pressed, not its neighbour', async () => {
+    // One shared flag put "Working…" on Unlink while an attach from "Change recipe" ran — feedback
+    // for one act appearing on the destructive-sounding control beside it.
+    await openAsAuthor({ recipe_id: 7 })
+    let release
+    fulfillPost.mockReturnValue(new Promise((r) => { release = r }))
+
+    await userEvent.click(screen.getByRole('button', { name: /change recipe/i }))
+    await userEvent.click(await screen.findByText('Adobo'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /working/i })).toBeInTheDocument(),
+    )
+    // Unlink is disabled but still READS "Unlink" — it is not the thing in progress.
+    expect(screen.getByRole('button', { name: /^unlink$/i })).toBeDisabled()
+    release({ data: postData({ recipe_id: 8 }) })
+  })
+
+  it('Edit and Delete are unavailable mid-attach, so a stale response cannot overwrite an edit', async () => {
+    // attach/detach end in an unconditional setPost(data); a fulfill response is a snapshot from
+    // BEFORE an edit, so an edit saved while one is outstanding would be silently reverted.
+    await openAsAuthor({ recipe_id: null })
+    let release
+    fulfillPost.mockReturnValue(new Promise((r) => { release = r }))
+
+    await userEvent.click(screen.getByRole('button', { name: /attach a recipe/i }))
+    await userEvent.click(await screen.findByText('Adobo'))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /edit this meal/i })).toBeDisabled(),
+    )
+    expect(screen.getByRole('button', { name: /^delete$/i })).toBeDisabled()
+    release({ data: postData({ recipe_id: 7 }) })
   })
 })

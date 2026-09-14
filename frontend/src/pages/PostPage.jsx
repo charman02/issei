@@ -103,12 +103,16 @@ export default function PostPage() {
 
   // Attaching / unlinking a recipe after the post is published (#99).
   const [pickerOpen, setPickerOpen] = useState(false)
+  // TWO flags, not one: a single shared flag put "Working…" on Unlink while an attach started from
+  // "Change recipe" was running — feedback for one act landing on the destructive-sounding control
+  // beside it. Each button still disables BOTH, because only one of these should ever be in flight.
   const [attaching, setAttaching] = useState(false)
+  const [detaching, setDetaching] = useState(false)
   const [attachError, setAttachError] = useState('')
 
   async function attach(recipe) {
     setPickerOpen(false)
-    if (attaching) return
+    if (attaching || detaching) return
     setAttaching(true)
     setAttachError('')
     try {
@@ -127,8 +131,8 @@ export default function PostPage() {
   }
 
   async function detach() {
-    if (attaching) return
-    setAttaching(true)
+    if (attaching || detaching) return
+    setDetaching(true)
     setAttachError('')
     try {
       const { data } = await detachRecipe(post.id)
@@ -136,7 +140,7 @@ export default function PostPage() {
     } catch (err) {
       setAttachError(toUserMessage(err, 'Couldn’t unlink that. Try again.'))
     } finally {
-      setAttaching(false)
+      setDetaching(false)
     }
   }
 
@@ -268,6 +272,14 @@ export default function PostPage() {
     setSaveError('')
     setConfirmingDelete(false)
     setDeleteError('')
+    // #99's three, added because the comment above says EVERY one and meant it: a picker left open
+    // across the id change would attach post 5's chosen recipe to post 6, which is the same trap as
+    // the draft, and a stuck `attaching` would leave the new post's controls disabled with no way to
+    // clear them.
+    setPickerOpen(false)
+    setAttaching(false)
+    setDetaching(false)
+    setAttachError('')
   }, [id])
 
   if (error) {
@@ -404,30 +416,37 @@ export default function PostPage() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPickerOpen(true)}
-                    disabled={attaching}
+                    disabled={attaching || detaching}
                     className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
                   >
-                    Change recipe
+                    {attaching ? 'Working…' : 'Change recipe'}
                   </button>
                   <button
                     onClick={detach}
-                    disabled={attaching}
+                    disabled={attaching || detaching}
                     className="flex-none rounded-full bg-cream text-ink-soft border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
                   >
-                    {attaching ? 'Working…' : 'Unlink'}
+                    {detaching ? 'Working…' : 'Unlink'}
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={() => setPickerOpen(true)}
-                  disabled={attaching}
+                  disabled={attaching || detaching}
                   className="w-full inline-flex items-center justify-center gap-1.5 rounded-[14px] border-2 border-dashed border-ink/50 bg-card py-3 font-display font-bold text-[13.5px] text-ink-soft active:translate-y-[1px] transition-transform disabled:opacity-50"
                 >
                   {attaching ? 'Attaching…' : 'Attach a recipe'}
                 </button>
               )}
-              {/* Said before the tap, not after. Attaching answers everyone waiting. */}
-              {!post.recipe_id && post.request_count > 0 && (
+              {/* Said before the tap, not after. Attaching answers everyone still waiting.
+                  NOT gated on "nothing attached", which is what it was first and which got it
+                  backwards: a pending ask and an attached recipe routinely COEXIST. `request_recipe`
+                  deliberately allows an ask when a recipe is linked but the asker can't read it
+                  (a private recipe on a public meal — the response nulls `recipe_id` for them), so
+                  a public post can collect asks with a recipe already attached. The author sees
+                  "Change recipe" in that state, and tapping it mints grants on the new recipe and
+                  notifies those people — the exact act this sentence exists to disclose. */}
+              {post.request_count > 0 && (
                 <p className="font-display italic text-[12.5px] text-ink-soft mt-1.5 leading-snug">
                   {post.request_count === 1
                     ? 'This also sends it to the 1 person who asked.'
@@ -449,6 +468,11 @@ export default function PostPage() {
           {isMine && !draft && !confirmingDelete && (
             <div className="mt-4 pt-3 border-t-2 border-line flex gap-2">
               <button
+                // Disabled mid-attach: `attach`/`detach` end in an unconditional `setPost(data)`,
+                // and a fulfill response is a snapshot from BEFORE an edit — so opening and saving
+                // an edit while one is outstanding lets the later response overwrite it. The attach
+                // controls already hide while a draft is open; this is the same rule in reverse.
+                disabled={attaching || detaching}
                 onClick={() =>
                   setDraft({
                     dish_name: post.dish_name,
@@ -457,13 +481,14 @@ export default function PostPage() {
                     photo_url: post.photo_url,
                   })
                 }
-                className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+                className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
               >
                 Edit this meal
               </button>
               <button
                 onClick={() => setConfirmingDelete(true)}
-                className="flex-none rounded-full bg-cream text-brick border-2 border-ink px-3.5 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
+                disabled={attaching || detaching}
+                className="flex-none rounded-full bg-cream text-brick border-2 border-ink px-3.5 py-2 font-display font-bold text-[13.5px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
               >
                 Delete
               </button>
