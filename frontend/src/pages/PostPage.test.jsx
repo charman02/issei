@@ -9,8 +9,12 @@ vi.mock('../api/posts', () => ({
   retractRequest: vi.fn(),
   deletePost: vi.fn(),
   updatePost: vi.fn(),
+  // #99 — attaching after publishing goes through fulfillPost (attaching IS answering); the
+  // unlink direction is its own route.
+  fulfillPost: vi.fn(),
+  detachRecipe: vi.fn(),
 }))
-vi.mock('../api/client', () => ({ default: {}, toUserMessage: (e, f) => f }))
+vi.mock('../api/client', () => ({ default: { get: vi.fn() }, toUserMessage: (e, f) => f }))
 // #106 — the photo-replace path. A controllable uploader: `upload()` records its options so a test
 // can land a URL, an error or a busy flag at the exact moment it wants to. Mocked for the same
 // reason RecipeForm.test.jsx mocks the framer — a real one is a modal only a human can dismiss,
@@ -34,7 +38,16 @@ vi.mock('../lib/usePhotoFramer', () => ({
     framing: false,
   }),
 }))
-import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
+import {
+  getPost,
+  requestRecipe,
+  retractRequest,
+  deletePost,
+  updatePost,
+  fulfillPost,
+  detachRecipe,
+} from '../api/posts'
+import client from '../api/client'
 import PostPage from './PostPage'
 
 const postData = (over = {}) => ({
@@ -68,6 +81,9 @@ function renderPost(id = '5', state = undefined) {
 }
 
 beforeEach(() => {
+  client.get.mockReset()
+  fulfillPost.mockReset()
+  detachRecipe.mockReset()
   vi.clearAllMocks()
   localStorage.clear()
   localStorage.setItem('issei_user', JSON.stringify({ id: 1 })) // viewer is not the author
@@ -632,5 +648,126 @@ describe('PostPage — replacing the photo (#106)', () => {
 
     expect(screen.queryByRole('button', { name: /edit this meal/i })).toBeNull()
     expect(screen.queryByLabelText('Replace the photo')).toBeNull()
+  })
+})
+
+// ============================================================================================
+// #99 — ATTACHING A RECIPE AFTER THE POST IS PUBLISHED, and unlinking it.
+//
+// The gap: a recipe could only reach a post at CREATE time (the composer, or writing one mid-post
+// per #81) or via fulfill, which needs somebody to have asked. A cook who posted the meal on
+// Tuesday and wrote the recipe on Thursday had no way to connect them.
+//
+// The backend already allowed it — `post.recipe_id` is set outside fulfill's pending loop — so what
+// these tests are really about is the SURFACE and the honesty of its copy.
+// ============================================================================================
+
+describe('PostPage — attach a recipe after publishing (#99)', () => {
+  const MY_RECIPES = [
+    { id: 7, name: 'Adobo', cover_photo_url: null, origin_attribution: null },
+    { id: 8, name: 'Sinigang', cover_photo_url: null, origin_attribution: null },
+  ]
+
+  async function openAsAuthor(over = {}) {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 42 }))
+    getPost.mockResolvedValue({ data: postData(over) })
+    // RecipePicker fetches the caller's own recipes through client.get('/recipes').
+    client.get.mockResolvedValue({ data: MY_RECIPES })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+  }
+
+  it('offers "Attach a recipe" on your own post that has none', async () => {
+    await openAsAuthor({ recipe_id: null })
+    expect(screen.getByRole('button', { name: /attach a recipe/i })).toBeInTheDocument()
+  })
+
+  it('does NOT offer it on someone else’s post', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 999 }))
+    getPost.mockResolvedValue({ data: postData({ recipe_id: null }) })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+
+    expect(screen.queryByRole('button', { name: /attach a recipe/i })).toBeNull()
+    // They get the ask instead — the one action a non-author has.
+    expect(screen.getByRole('button', { name: /ask for the recipe/i })).toBeInTheDocument()
+  })
+
+  it('attaches through fulfillPost, which is the same act as answering', async () => {
+    // One endpoint on purpose. A separate "attach quietly" route would recreate the #98 loose end:
+    // asks left pending under an already-attached recipe.
+    await openAsAuthor({ recipe_id: null })
+    fulfillPost.mockResolvedValue({ data: postData({ recipe_id: 7 }) })
+
+    await userEvent.click(screen.getByRole('button', { name: /attach a recipe/i }))
+    await userEvent.click(await screen.findByText('Adobo'))
+
+    await waitFor(() => expect(fulfillPost).toHaveBeenCalledWith(5, 7))
+    expect(await screen.findByRole('button', { name: /see the recipe/i })).toBeInTheDocument()
+  })
+
+  it('WARNS that attaching also sends it to whoever asked — before the tap', async () => {
+    // The cook is about to answer people. Saying so afterwards would be telling them what they
+    // already did.
+    await openAsAuthor({ recipe_id: null, request_count: 3 })
+    expect(screen.getByText(/also sends it to the 3 people who asked/i)).toBeInTheDocument()
+  })
+
+  it('says it in the singular for one person', async () => {
+    await openAsAuthor({ recipe_id: null, request_count: 1 })
+    expect(screen.getByText(/also sends it to the 1 person who asked/i)).toBeInTheDocument()
+  })
+
+  it('says nothing about asks when nobody has asked', async () => {
+    // Same discipline as the count itself: never render a zero on someone's own meal.
+    await openAsAuthor({ recipe_id: null, request_count: 0 })
+    expect(screen.queryByText(/also sends it/i)).toBeNull()
+  })
+
+  it('offers Change and Unlink once a recipe is attached', async () => {
+    await openAsAuthor({ recipe_id: 7 })
+    expect(screen.getByRole('button', { name: /change recipe/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^unlink$/i })).toBeInTheDocument()
+    // And the reader-facing link is still there — the controls are additions, not replacements.
+    expect(screen.getByRole('button', { name: /see the recipe/i })).toBeInTheDocument()
+  })
+
+  it('unlinks through detachRecipe and drops the link', async () => {
+    await openAsAuthor({ recipe_id: 7 })
+    detachRecipe.mockResolvedValue({ data: postData({ recipe_id: null }) })
+
+    await userEvent.click(screen.getByRole('button', { name: /^unlink$/i }))
+
+    await waitFor(() => expect(detachRecipe).toHaveBeenCalledWith(5))
+    expect(await screen.findByRole('button', { name: /attach a recipe/i })).toBeInTheDocument()
+  })
+
+  it('surfaces a failure instead of silently doing nothing', async () => {
+    await openAsAuthor({ recipe_id: 7 })
+    detachRecipe.mockRejectedValue(new Error('nope'))
+
+    await userEvent.click(screen.getByRole('button', { name: /^unlink$/i }))
+
+    // This file's toUserMessage stub returns the FALLBACK, so the assertion is on the copy the
+    // page itself chose — which is the part worth pinning anyway.
+    expect(await screen.findByText(/couldn.{0,3}t unlink that/i)).toBeInTheDocument()
+    // The recipe is still shown as attached, because the server still has it.
+    expect(screen.getByRole('button', { name: /see the recipe/i })).toBeInTheDocument()
+  })
+
+  it('never calls "unlink" a delete — the recipe is not going anywhere', async () => {
+    // The scariest possible misreading on this page, and the reason DELETE lives in its own
+    // confirm: a cook must not think unlinking removes the recipe from their kitchen.
+    await openAsAuthor({ recipe_id: 7 })
+    const label = screen.getByRole('button', { name: /^unlink$/i }).textContent
+    expect(label).not.toMatch(/delete|remove|discard/i)
+  })
+
+  it('hides the attach controls while the edit form or the delete confirm is open', async () => {
+    // One consequential decision at a time; the same rule the edit/delete pair already follows.
+    await openAsAuthor({ recipe_id: null })
+    await userEvent.click(screen.getByRole('button', { name: /edit this meal/i }))
+
+    expect(screen.queryByRole('button', { name: /attach a recipe/i })).toBeNull()
   })
 })

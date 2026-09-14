@@ -66,8 +66,11 @@ class PostUpdate(BaseModel):
         mints a grant per pending requester, marks the asks fulfilled and notifies them. A quiet
         `recipe_id` here would attach the recipe while leaving every ask pending — the cook's own
         card would keep reading "1 person asked for this" about a recipe already on the post.
-        Attaching to an EXISTING post that nobody asked about has no home yet; that's a feature
-        with a UI, not a field to leave half-wired in a schema.
+        Attaching to an EXISTING post now HAS a home (#99), and it is still not this field:
+        `POST /{id}/fulfill` already set `post.recipe_id` outside its pending-requester loop, so on
+        a post nobody asked about it simply attaches. `PostPage` surfaces that, and
+        `DELETE /{id}/recipe` unlinks. One endpoint for both cases precisely because attaching IS
+        answering — which is the loose end that got this field dropped in the first place.
 
     Also not editable: the author. A post is somebody saying "I made this", so transferring one
     would make the sentence false.

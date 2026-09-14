@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useParams, useNavigate } from 'react-router-dom'
-import { getPost, requestRecipe, retractRequest, deletePost, updatePost } from '../api/posts'
+import {
+  getPost,
+  requestRecipe,
+  retractRequest,
+  deletePost,
+  updatePost,
+  fulfillPost,
+  detachRecipe,
+} from '../api/posts'
 import VisibilityChoice from '../components/VisibilityChoice'
 import { toUserMessage } from '../api/client'
 import BackButton from '../components/BackButton'
@@ -10,6 +18,7 @@ import { toUtcMs } from '../utils/time'
 import { createUploader, PHOTO_ACCEPT } from '../lib/photoUpload'
 import { usePhotoFramer } from '../lib/usePhotoFramer'
 import PhotoFramer from '../components/PhotoFramer'
+import RecipePicker from '../components/RecipePicker'
 
 const fullName = (p) => `${p.author_first_name} ${p.author_last_name}`.trim()
 
@@ -91,6 +100,45 @@ export default function PostPage() {
   const { frame, framerProps } = usePhotoFramer()
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState('')
+
+  // Attaching / unlinking a recipe after the post is published (#99).
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [attaching, setAttaching] = useState(false)
+  const [attachError, setAttachError] = useState('')
+
+  async function attach(recipe) {
+    setPickerOpen(false)
+    if (attaching) return
+    setAttaching(true)
+    setAttachError('')
+    try {
+      // `fulfillPost` is the attach path. Named for the case where people HAVE asked — it mints a
+      // grant per pending requester and notifies them — and it also just attaches when nobody has,
+      // because `post.recipe_id` is set outside that loop server-side. One endpoint, because
+      // attaching IS answering: a second "attach quietly" route would be the #98 loose end again,
+      // leaving asks pending under an already-attached recipe.
+      const { data } = await fulfillPost(post.id, recipe.id)
+      setPost(data)
+    } catch (err) {
+      setAttachError(toUserMessage(err, 'Couldn’t attach that recipe. Try again.'))
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  async function detach() {
+    if (attaching) return
+    setAttaching(true)
+    setAttachError('')
+    try {
+      const { data } = await detachRecipe(post.id)
+      setPost(data)
+    } catch (err) {
+      setAttachError(toUserMessage(err, 'Couldn’t unlink that. Try again.'))
+    } finally {
+      setAttaching(false)
+    }
+  }
 
   function onPickNewPhoto(e) {
     return uploader.current.upload({
@@ -239,6 +287,9 @@ export default function PostPage() {
     <div className="min-h-screen bg-cream px-5 pt-4 pb-10">
       {/* The framing step (#103) for a replacement photo (#106). A null file renders nothing. */}
       {framerProps?.file && <PhotoFramer {...framerProps} />}
+      {/* Your own recipes, to attach (#99) — the same sheet the composer uses, so "attach one"
+          means the same thing before and after publishing. */}
+      {pickerOpen && <RecipePicker onPick={attach} onClose={() => setPickerOpen(false)} />}
       <div className="mb-3">
         <BackButton to="/browse" label="Back" />
       </div>
@@ -331,6 +382,64 @@ export default function PostPage() {
                 ? '1 person asked for this →'
                 : `${post.request_count} people asked for this →`}
             </button>
+          )}
+
+          {/* ATTACH A RECIPE AFTER THE FACT (#99). The gap this closes: a recipe could only
+              reach a post at CREATE time (the composer, or writing one mid-post per #81) or via
+              `fulfill`, which needs somebody to have asked. So a cook who posted the meal on
+              Tuesday and wrote the recipe on Thursday had no way to connect them, and one who
+              attached the wrong recipe could only delete the post.
+
+              It sits HERE, with the recipe link, rather than in the edit form — because it is not
+              a caption edit. `PATCH /posts/{id}` deliberately refuses `recipe_id` (#98): attaching
+              quietly there would leave every pending ask still pending, with the cook's own card
+              reading "1 person asked for this" underneath an already-attached recipe.
+
+              ATTACHING IS ANSWERING, and the copy says so BEFORE the tap when anyone is waiting.
+              `fulfillPost` mints a grant per pending requester and notifies them, which is right —
+              but it is a bigger act than "link my recipe", so the person doing it should know. */}
+          {isMine && !draft && !confirmingDelete && (
+            <div className="mt-3">
+              {post.recipe_id ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPickerOpen(true)}
+                    disabled={attaching}
+                    className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    Change recipe
+                  </button>
+                  <button
+                    onClick={detach}
+                    disabled={attaching}
+                    className="flex-none rounded-full bg-cream text-ink-soft border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    {attaching ? 'Working…' : 'Unlink'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setPickerOpen(true)}
+                  disabled={attaching}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-[14px] border-2 border-dashed border-ink/50 bg-card py-3 font-display font-bold text-[13.5px] text-ink-soft active:translate-y-[1px] transition-transform disabled:opacity-50"
+                >
+                  {attaching ? 'Attaching…' : 'Attach a recipe'}
+                </button>
+              )}
+              {/* Said before the tap, not after. Attaching answers everyone waiting. */}
+              {!post.recipe_id && post.request_count > 0 && (
+                <p className="font-display italic text-[12.5px] text-ink-soft mt-1.5 leading-snug">
+                  {post.request_count === 1
+                    ? 'This also sends it to the 1 person who asked.'
+                    : `This also sends it to the ${post.request_count} people who asked.`}
+                </p>
+              )}
+              {attachError && (
+                <p className="mt-2">
+                  <span className="error-pill">{attachError}</span>
+                </p>
+              )}
+            </div>
           )}
 
           {/* OWNER CONTROLS — edit and delete, as buttons rather than a text link. Delete used

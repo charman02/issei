@@ -695,6 +695,50 @@ def fulfill_post(
     )
 
 
+@router.delete("/{post_id}/recipe", response_model=PostResponse)
+def detach_recipe(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Unlink the recipe from your own post (#99). Author-only; 404 for anyone else.
+
+    THE OTHER HALF OF ATTACHING, and the only part #99 actually needed on the server —
+    `POST /{post_id}/fulfill` already attached a recipe to an EXISTING post, because
+    `post.recipe_id = recipe.id` sits outside its pending-requester loop. On a post nobody had
+    asked about, that loop simply does nothing and the attach happens on its own. So the gap
+    #99 describes was a missing SURFACE plus this route, not a missing mechanism.
+
+    **Detaching answers nobody and takes nothing back**, which is the whole reason it can be a
+    plain DELETE rather than a mirror of fulfil:
+
+      - Grants already minted SURVIVE. Someone who asked and was answered genuinely received
+        that dish; unlinking the post is the cook tidying their own feed, not an unsend — the
+        same rule blocking follows (#85), and `can_view`'s grant branch is what carries their
+        access, never the post's link.
+      - Requests already marked `fulfilled` STAY fulfilled. They were: a recipe was handed over.
+        Re-opening them would put names back on `/requests` for an ask that was answered.
+      - Nobody is notified. "X removed a link" is not news, and the recipe is still on the
+        recipient's Kept shelf either way.
+
+    Idempotent — detaching a post that has no recipe is a 200 with `recipe_id: null`, not a 404.
+    The 404s here are about the POST, not about whether it happened to be linked, so a
+    double-tap on a slow connection is harmless rather than an error the client has to explain.
+    """
+    post = db.query(Post).filter(Post.id == post_id, Post.user_id == current_user.id).first()
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    post.recipe_id = None
+    db.commit()
+    db.refresh(post)
+    counts, mine = _request_context([post], current_user, db)
+    return _to_response(
+        post, current_user, set(),
+        viewer_id=current_user.id, request_counts=counts, my_requested_post_ids=mine,
+    )
+
+
 @router.get("/{post_id}", response_model=PostResponse)
 def get_post(
     post_id: int,

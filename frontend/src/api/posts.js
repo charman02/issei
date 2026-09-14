@@ -47,3 +47,8 @@ export const getIncomingRequests = () => client.get('/posts/requests/incoming')
 // requester, so a PRIVATE recipe is delivered without its visibility changing.
 export const fulfillPost = (postId, recipeId) =>
   client.post(`/posts/${postId}/fulfill`, { recipe_id: recipeId })
+
+// Unlink the recipe from your own post (#99). The attach direction is `fulfillPost` — which is
+// named for what it does when people HAVE asked, and quietly just attaches when nobody has,
+// because `post.recipe_id` is set outside its pending loop.
+export const detachRecipe = (postId) => client.delete(`/posts/${postId}/recipe`)
