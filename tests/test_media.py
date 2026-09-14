@@ -173,3 +173,127 @@ def test_a_tab_or_newline_in_the_authority_is_NOT_a_parser_disagreement():
     assert urlsplit(tabbed).hostname == "evil.test.cloudinary.com"
     assert is_our_image_url(tabbed) is True
     assert is_our_image_url(newlined) is True
+
+
+# ============================================================================================
+# EVERY WRITE SURFACE, PINNED. The closure agent's finding: with the three NEW enforcement points
+# deleted, the whole backend suite stayed green — so 3 of 5 surfaces were guarded but unpinned, and
+# the next refactor could quietly remove them. Each test below fails if its own call is deleted.
+#
+# The hostile URL is the BACKSLASH bypass rather than a plain foreign host, so these double as a
+# regression test for the parser-disagreement hole at every entry point rather than only in the
+# predicate's own unit test.
+# ============================================================================================
+
+HOSTILE = "https://evil.test" + chr(92) + "@res.cloudinary.com/x.jpg"
+FOREIGN = "https://evil.test/tracker.gif"
+OK = "https://res.cloudinary.com/demo/image/upload/v1/ok.jpg"
+
+
+def _recipe_body(**over):
+    body = {
+        "name": "Adobo",
+        "visibility": "private",
+        "steps": [{"content": "Simmer", "position": 0}],
+    }
+    body.update(over)
+    return body
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_POST_recipes_refuses_a_foreign_cover(client, make_user, bad):
+    _, h = make_user()
+    r = client.post("/recipes", json=_recipe_body(cover_photo_url=bad), headers=h)
+    assert r.status_code == 422
+    assert "uploaded through issei" in r.json()["detail"]
+    # And nothing was created.
+    assert client.get("/recipes", headers=h).json() == []
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_POST_recipes_refuses_a_foreign_STEP_photo(client, make_user, bad):
+    """The step branch is its own line in the helper, so it needs its own test."""
+    _, h = make_user()
+    r = client.post(
+        "/recipes",
+        json=_recipe_body(steps=[{"content": "Fry", "position": 0, "photo_url": bad}]),
+        headers=h,
+    )
+    assert r.status_code == 422
+    assert client.get("/recipes", headers=h).json() == []
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_PATCH_recipes_refuses_a_foreign_cover_and_changes_NOTHING(client, make_user, bad):
+    """This is the surface #106's own "Change photo" control writes through.
+
+    The check runs before any write, so a hostile URL alongside a legitimate rename must leave the
+    rename unapplied too — a half-updated recipe is the failure mode that would be hardest to spot.
+    """
+    _, h = make_user()
+    rec = client.post("/recipes", json=_recipe_body(cover_photo_url=OK), headers=h).json()
+
+    r = client.patch(
+        f"/recipes/{rec['id']}", json={"name": "Renamed", "cover_photo_url": bad}, headers=h
+    )
+
+    assert r.status_code == 422
+    fresh = client.get(f"/recipes/{rec['id']}", headers=h).json()
+    assert fresh["name"] == "Adobo"
+    assert fresh["cover_photo_url"] == OK
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_PATCH_recipes_refuses_a_foreign_STEP_photo_and_changes_NOTHING(client, make_user, bad):
+    _, h = make_user()
+    rec = client.post("/recipes", json=_recipe_body(), headers=h).json()
+
+    r = client.patch(
+        f"/recipes/{rec['id']}",
+        json={"name": "Renamed", "steps": [{"content": "Fry", "position": 0, "photo_url": bad}]},
+        headers=h,
+    )
+
+    assert r.status_code == 422
+    fresh = client.get(f"/recipes/{rec['id']}", headers=h).json()
+    assert fresh["name"] == "Adobo"
+    assert fresh["steps"][0]["content"] == "Simmer"
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_POST_posts_refuses_a_foreign_photo(client, make_user, bad):
+    """The front door. It was open until the gate pointed out that guarding only the PATCH routes
+    meant the rule prevented nothing an attacker couldn't do here instead."""
+    _, h = make_user()
+    r = client.post("/posts", json={"photo_url": bad, "dish_name": "Adobo"}, headers=h)
+    assert r.status_code == 422
+    assert "uploaded through issei" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("bad", [HOSTILE, FOREIGN])
+def test_PATCH_auth_me_refuses_a_foreign_avatar(client, make_user, bad):
+    _, h = make_user()
+    r = client.patch("/auth/me", json={"photo_url": bad}, headers=h)
+    assert r.status_code == 422
+    assert client.get("/auth/me", headers=h).json()["photo_url"] is None
+
+
+def test_every_surface_still_ACCEPTS_one_of_our_own_uploads(client, make_user):
+    """The other half: five refusals are worthless if the rule also refuses real uploads."""
+    _, h = make_user()
+    rec = client.post(
+        "/recipes",
+        json=_recipe_body(
+            cover_photo_url=OK, steps=[{"content": "Fry", "position": 0, "photo_url": OK}]
+        ),
+        headers=h,
+    )
+    assert rec.status_code == 201
+    rid = rec.json()["id"]
+    assert client.patch(f"/recipes/{rid}", json={"cover_photo_url": OK}, headers=h).status_code == 200
+    post = client.post("/posts", json={"photo_url": OK, "dish_name": "Adobo"}, headers=h)
+    assert post.status_code == 201
+    assert client.patch(
+        f"/posts/{post.json()['id']}", json={"photo_url": OK}, headers=h
+    ).status_code == 200
+    assert client.patch("/auth/me", json={"photo_url": OK}, headers=h).status_code == 200
