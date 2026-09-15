@@ -1,6 +1,6 @@
 # Future Roadmap
 
-*Current state verified against the code on **2026-09-11**. Re-verify before trusting any
+*Current state verified against the code on **2026-09-15**. Re-verify before trusting any
 claim here; this file has drifted a full release cycle behind before.*
 
 This document outlines planned features and improvements for Issei — a full-stack app for
@@ -11,7 +11,7 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 687
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 703
 backend tests, 948 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
@@ -290,12 +290,14 @@ carries notifications with it; family sharing was cut; language translation move
    meant NOT reusing the feed's SQL, whose correctness lives in a Python `can_view_post` filter
    rather than in the query.
 
-   **What genuinely remains:** (a) **four secrets** — `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`,
-   `VAPID_SUBJECT`, `CRON_SECRET` — which nothing works without and everything degrades cleanly
-   around: until they are set, `is_configured()` is False, every send is a logged no-op and the cron
-   route 404s. See `infra/RUNBOOK.md` "Step 1b", and note the ORDER (SSM parameters BEFORE the
-   task-definition entries, or the deploy rolls back). (b) **One thing no automated test on this
-   machine can reach**: a real end-to-end delivery. Headless Chromium refuses
+   **What genuinely remains:** (a) the four secrets — `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`,
+   `VAPID_SUBJECT`, `CRON_SECRET` — **are created as of 2026-09-15 and the `secrets[]` entries are
+   committed**, so what is left of this item is one deploy. The degradation story still holds for a
+   deploy WITHOUT them: `is_configured()` False, every send a logged no-op, the cron route 404ing.
+   See `infra/RUNBOOK.md` "Step 1b", and note the ORDER has THREE parts, not two: SSM parameters,
+   then the execution-role IAM grant, then the task-definition entries. Skipping the middle one
+   fails the task at startup with an empty log group, which is the failure that looks like a
+   mystery. (b) **One thing no automated test on this machine can reach**: a real end-to-end delivery. Headless Chromium refuses
    `pushManager.subscribe` outright ("Registration failed - permission denied") because there is no
    push service behind it, so the browser→FCM/APNs→device leg is verified only by the unit round-trip
    in `tests/test_push.py` (which decrypts what the sender produces) plus the live subscribe/rotate

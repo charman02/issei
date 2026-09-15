@@ -29,11 +29,17 @@ yours to execute and watch.
 - From `infra/`: `npm install` (already done in this worktree if `node_modules/` exists).
 - The 6 REQUIRED app secrets, available in the repo-root `.env` (DATABASE_URL, JWT_SECRET,
   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, OPENROUTER_API_KEY).
-- Plus 4 OPTIONAL ones for push notifications (#89): VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY,
-  VAPID_SUBJECT, CRON_SECRET. Every one defaults to `""`, and unset means OFF rather than
-  broken — `services/push.is_configured()` is False, each send is a logged no-op, and
-  `POST /notifications/run-daily-prompt` answers 404. So the stack deploys and runs fine
-  without them; see "Step 1b" below when you want notifications to actually fire.
+- Plus 4 for push notifications (#89): VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_SUBJECT,
+  CRON_SECRET. **These are REQUIRED TOO now — all ten parameters must exist before any deploy.**
+  They were optional until the four `secrets[]` entries were committed to
+  `.aws/task-definition.json`; ECS now resolves all ten when a task starts, so a missing one is
+  `ResourceInitializationError: unable to pull secrets` and a circuit-breaker rollback.
+
+  Keep the distinction straight, because "optional" is still half true: the VALUES are optional to
+  the app's BEHAVIOUR — with them empty `services/push.is_configured()` is False, each send is a
+  logged no-op and `POST /notifications/run-daily-prompt` answers 404. The PARAMETERS are not
+  optional to the DEPLOY. And SSM cannot store an empty SecureString, so in practice a successful
+  deploy means all four hold real values and push is live. See "Step 1b".
 
 Set these once per shell session:
 ```bash
@@ -97,13 +103,19 @@ aws ssm get-parameters-by-path --path /issei --region "$AWS_REGION" \
 
 ## Step 1b — Push notifications (#89), when you want them ON
 
-Skip this entirely to ship with notifications off. Nothing breaks: all four settings default to
-`""`, `is_configured()` returns False, every send is a logged no-op, and the cron route 404s.
+**THIS IS NO LONGER SKIPPABLE.** It was, until the four `secrets[]` entries were committed to
+`.aws/task-definition.json`. A first deploy into a fresh account — or this one after a
+`cdk destroy` and rebuild — now needs all four parameters to exist before the task will start. The
+CODE still degrades gracefully with empty values (`is_configured()` False, sends are logged no-ops,
+the cron route 404s), but you can no longer REACH that state through a deploy, because SSM will not
+store an empty SecureString.
 
-**THE ORDER MATTERS AND IT IS THE OPPOSITE OF WHAT YOU MIGHT DO.** Create the SSM parameters
-FIRST. ECS resolves every `secrets[]` entry when a task starts, so a task definition that
-references `/issei/VAPID_PRIVATE_KEY` before that parameter exists fails to start — and the
-circuit breaker rolls the deploy back. Do not add the entries "ready for later".
+**THE ORDER MATTERS AND IT IS THE OPPOSITE OF WHAT YOU MIGHT DO.** Parameters first, then the IAM
+grant, and only then let a deploy run. ECS resolves every `secrets[]` entry when a task starts, so
+a reference to a parameter that does not exist yet fails to start and the circuit breaker rolls the
+deploy back — with an EMPTY log group, because the container never ran. The entries are already
+committed, which is what turns this from advice into a precondition: the trade for never having to
+remember step 5 is that steps 3 and 4 are now mandatory.
 
 1. **Generate the keypair.** A P-256 ECDSA key, stored as base64url of the raw 32-byte private
    scalar and the raw 65-byte uncompressed public point:
@@ -199,14 +211,23 @@ circuit breaker rolls the deploy back. Do not add the entries "ready for later".
    `curl --fail-with-body` exits non-zero and the run goes red at :30 every hour, with an email
    each time.
 
-7. **Verify:** `curl -s https://api.issei.app/notifications/vapid-key` should report
+7. **Verify — AND MIND THE ORDER, because the obvious one burns the thing it checks.** Install on
+   the phone and subscribe BEFORE pressing "Daily prompt" by hand. A dispatch with zero
+   subscriptions still claims a `PromptSend` row (user, local_date) for every due user and counts
+   them `failed` — deliberate, and pinned by
+   `tests/test_prompt.py::test_a_due_user_with_NO_devices_is_not_an_error`, because they were
+   genuinely due and nothing server-side can install an app for them. So testing the wiring first
+   consumes YOUR OWN local date and no nudge can arrive that evening. On a run with no devices
+   expect `{"candidates": N, "sent": 0, "failed": N}` — that is correct, not broken.
+
+   `curl -s https://api.issei.app/notifications/vapid-key` should report
    `configured: true` with a public key — it answers `configured: false` rather than 404ing when
    unset, so that one call distinguishes "not wired" from "broken". Then a manual
    `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404 (safe to press
    twice: `prompt_sends`' UNIQUE (user, local_date) refuses a double-send).
 
-   **The PWA shell shipped 2026-09-10 (commit `91660ef`), so these four secrets are now the last
-   thing standing between the app and a real notification** — this step used to end by saying the
+   **The PWA shell shipped 2026-09-10 (commit `91660ef`) and the four parameters were created
+   2026-09-15, so what stands between the app and a real notification is a deploy plus one phone** — this step used to end by saying the
    client half was still missing. After setting them, the end-to-end check needs a PHONE, because
    nothing on the dev machine can do it (headless Chromium refuses `pushManager.subscribe` outright:
    there is no push service behind it). On the phone: open `https://issei.app`, install it via
@@ -327,9 +348,12 @@ Removes the VPC, ALB, ECS service, log group, IAM roles, OIDC provider. Then:
 ```bash
 # the ECR repo holding the pushed image is a CDK asset repo; images may linger.
 # Optional cleanup if you want zero footprint:
+# ALL TEN. The four push parameters are as required as the six now that the task definition
+# references them, so a teardown that leaves them behind and a rebuild elsewhere fails to start.
 aws ssm delete-parameters --names \
   /issei/DATABASE_URL /issei/JWT_SECRET /issei/CLOUDINARY_CLOUD_NAME \
   /issei/CLOUDINARY_API_KEY /issei/CLOUDINARY_API_SECRET /issei/OPENROUTER_API_KEY \
+  /issei/VAPID_PRIVATE_KEY /issei/VAPID_PUBLIC_KEY /issei/VAPID_SUBJECT /issei/CRON_SECRET \
   --region "$AWS_REGION"
 ```
 The CDK **bootstrap** stack (`CDKToolkit`) is fine to leave — it costs ~nothing and
@@ -348,7 +372,12 @@ Each of these is itself a "Dive Deep" story worth writing down.
 
 - **Task fails health checks / stuck "PENDING → STOPPED" loop.** Read the stopped
   task's *Stopped reason* in the ECS console and the CloudWatch logs. Usual causes:
-  a secret missing from SSM (Step 1) → the app crashes on `Settings()` at import; or
+  a secret missing from SSM (Step 1 or 1b) → **the container never starts at all**: the Stopped
+  reason reads `ResourceInitializationError: unable to pull secrets` and the log group is EMPTY.
+  This line used to say "the app crashes on `Settings()` at import" — it does not; `Settings()` is
+  never reached, which is precisely why an empty log reads as a mystery. The same failure appears if
+  the parameter exists but the EXECUTION ROLE lacks read on it (Step 1b, step 4), and the two are
+  indistinguishable from outside, so check both. Or
   the container can't reach Neon (check the task's security-group egress + that the
   DATABASE_URL is the correct pooler host with `sslmode=require`).
 - **Health check flapping though the app is up.** The ALB target group hits

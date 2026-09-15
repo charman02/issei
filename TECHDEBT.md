@@ -128,8 +128,9 @@ strangers arrive. Security/privacy first.
   signal. *Fix, when someone decides:* the cheap version is refusing to repeat an identical count on
   consecutive days, using the `friend_count` already stored on the previous row — no migration
   needed. Deliberately not done unilaterally: it is a product call about how insistent this app is
-  allowed to be, and nothing can reach a real inbox until the secrets exist (the client half shipped
-  2026-09-10).
+  allowed to be, and nothing had reached a real inbox while the secrets were unset (the client half
+  shipped 2026-09-10; the parameters were created 2026-09-15, so this is now gated on a deploy and
+  one phone rather than on configuration).
   *Where:* `app/services/prompt.py`, `app/models/prompt_send.py`.
 
 - **No end-to-end push delivery has ever been observed.** (#89)
@@ -141,8 +142,8 @@ strangers arrive. Security/privacy first.
   `AbortError: Registration failed - permission denied`, since there is no push service behind it.
   So the browser→FCM/APNs→device leg is inferred from the RFCs, not measured. *Why it's a ledger
   entry and not a fix:* it cannot be automated on this machine at all — it needs one real phone,
-  once, after the VAPID secrets are set, plus an iOS device added to the home screen to confirm the
-  install-first path. Until then, "notifications work" is an untested claim, and the honest phrasing
+  once — the VAPID secrets exist as of 2026-09-15, so the blocker is now purely that no phone has
+  been used — plus an iOS device added to the home screen to confirm the install-first path. Until then, "notifications work" is an untested claim, and the honest phrasing
   is "every layer we can reach is verified". *Where:* `frontend/public/sw.js`,
   `frontend/src/lib/push.js`, `app/services/push.py`.
 

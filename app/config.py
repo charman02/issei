@@ -47,10 +47,18 @@ class Settings(BaseSettings):
     # needs it to subscribe, so it is served to the client — but it lives here rather than in
     # the frontend bundle so a rotation is a deploy and not a rebuild.
     #
-    # ADDING THESE TO PROD MEANS FOUR EDITS AND ONLY ONE OF THEM SHIPS: the SSM parameter,
-    # `ssmParams` in infra/lib/issei-stack.ts, `secrets[]` in .aws/task-definition.json (this is
-    # the one the pipeline actually renders), and this class. Miss the task-definition entry and
-    # the variable is simply absent in prod while the stack file looks correct.
+    # ADDING THESE TO PROD MEANS FIVE STEPS AND ONLY ONE OF THEM SHIPS:
+    #   1. the SSM parameter itself
+    #   2. an IAM grant of `ssm:GetParameters` on that ARN to the ECS EXECUTION ROLE — the step
+    #      that fails the deploy, and the one this comment used to omit. The existing secrets are
+    #      readable because `ecs.Secret.fromSsmParameter` auto-granted read on exactly those; the
+    #      pipeline never runs `cdk`, so a new `secrets[]` entry extends nothing.
+    #   3. `ssmParams` in infra/lib/issei-stack.ts (does NOT ship — kept in step so it can't drift)
+    #   4. `secrets[]` in .aws/task-definition.json — THIS is the one the pipeline renders
+    #   5. this class
+    # Miss 4 and the variable is simply absent in prod while the stack file looks correct. Miss 2
+    # and the container never starts, with an empty log group. `tests/test_deploy_config.py` now
+    # pins 3, 4 and 5 against each other; 1 and 2 live in AWS and only a deploy can prove them.
     vapid_private_key: str = ""
     vapid_public_key: str = ""
     # The "sub" claim in the VAPID JWT — a mailto: or https: URL a push service can contact if

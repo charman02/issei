@@ -55,7 +55,7 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-Baselines as measured on this branch: **687 backend tests**, **948 frontend tests in 61 files**. Both suites are fast and safe to run — do that rather than quoting these numbers later.
+Baselines as measured on this branch: **703 backend tests**, **948 frontend tests in 61 files**. Both suites are fast and safe to run — do that rather than quoting these numbers later.
 
 ## Environment
 

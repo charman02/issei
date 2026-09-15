@@ -99,9 +99,12 @@ and go private; here the SG is the right-sized control.
 
 ### 4. Secrets in SSM Parameter Store (SecureString), injected by the task
 Six REQUIRED secrets (DB URL, JWT secret, Cloudinary ×3, OpenRouter key) live in SSM as
-SecureStrings, plus four OPTIONAL ones for push notifications (#89: VAPID ×3 and CRON_SECRET —
-unset means notifications are OFF rather than broken, so the stack runs fine without them; see
-RUNBOOK Step 1b). All of them live as
+SecureStrings, plus four for push notifications (#89: VAPID ×3 and CRON_SECRET). **All TEN are now required for
+a deploy**: the task definition references every one by ARN, so a missing parameter is
+`ResourceInitializationError` and a rollback. The four were optional until their `secrets[]` entries
+were committed — and the values are still optional to BEHAVIOUR (empty means notifications OFF
+rather than broken), but SSM cannot store an empty SecureString, so a successful deploy means they
+hold real values and push is live. See RUNBOOK Step 1b. All of them live as
 encrypted SecureStrings under `/issei/*`. The task definition references them by
 ARN, so ECS injects them as environment variables at container start — **they are
 never in the image, the repo, the task-def JSON, or CloudFormation output.** Standard
