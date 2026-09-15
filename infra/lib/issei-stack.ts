@@ -91,6 +91,13 @@ export class IsseiStack extends cdk.Stack {
       'CLOUDINARY_API_KEY',
       'CLOUDINARY_API_SECRET',
       'OPENROUTER_API_KEY',
+      // Push notifications (#89). Adding a name here ALSO grants the execution role read on that
+      // parameter, which is the half `.aws/task-definition.json` cannot express — see the note in
+      // infra/RUNBOOK.md Step 1b about doing it by hand when the pipeline is what deploys.
+      'VAPID_PRIVATE_KEY',
+      'VAPID_PUBLIC_KEY',
+      'VAPID_SUBJECT',
+      'CRON_SECRET',
     ];
     const secrets: Record<string, ecs.Secret> = {};
     for (const name of ssmParams) {

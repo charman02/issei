@@ -149,22 +149,61 @@ circuit breaker rolls the deploy back. Do not add the entries "ready for later".
    variable is set nowhere in this file, so a copy-paste passed `--region ""`. Step 1's identical
    loop always had it right.
 
-4. **Then wire them, in both places, because only one of them ships:**
+4. **GRANT THE EXECUTION ROLE READ ON THE FOUR NEW PARAMETERS. This step is easy to miss and it
+   is the one that fails the deploy.**
+
+   The six existing secrets are readable because `ecs.Secret.fromSsmParameter` in the CDK stack
+   auto-granted the execution role read on *exactly those six ARNs*. The pipeline renders
+   `.aws/task-definition.json`, **not** CDK — so adding four `secrets[]` entries there does not
+   extend that grant. Without this the task dies at startup with
+   `ResourceInitializationError: unable to pull secrets`, the circuit breaker rolls the deploy back,
+   and the cause looks like a mystery because the task definition is correct.
+
+   An inline policy rather than `cdk deploy`, for the reason named at the top of
+   `.github/workflows/daily-prompt.yml`: a `cdk deploy` from a laptop registers a new revision of
+   the SAME task-definition family, built from the operator's working tree, and points the live
+   service at it — replacing the running production image.
+
+   ```bash
+   ROLE=$(aws ecs describe-task-definition      --task-definition IsseiStackTaskDefC777D49A --region "$AWS_REGION"      --query 'taskDefinition.executionRoleArn' --output text | sed 's|.*/||')
+   echo "$ROLE"   # IsseiStack-TaskDefExecutionRole...
+
+   aws iam put-role-policy --role-name "$ROLE" --policy-name issei-push-secrets      --region "$AWS_REGION" --policy-document "$(python - <<'JSON'
+   import json
+   base = "arn:aws:ssm:us-west-2:069091212126:parameter/issei/"
+   names = ["VAPID_PRIVATE_KEY", "VAPID_PUBLIC_KEY", "VAPID_SUBJECT", "CRON_SECRET"]
+   print(json.dumps({"Version": "2012-10-17", "Statement": [
+       {"Effect": "Allow", "Action": "ssm:GetParameters",
+        "Resource": [base + n for n in names]}]}))
+   JSON
+   )"
+   ```
+
+   Console equivalent: **IAM → Roles →** search the role name → **Add permissions → Create inline
+   policy → JSON**, same document, name it `issei-push-secrets`.
+
+5. **Then wire them, in both places, because only one of them ships:**
    - `ssmParams` in `infra/lib/issei-stack.ts` — used by `cdk deploy`.
    - `secrets[]` in `.aws/task-definition.json` — **this is the one the GitHub Actions pipeline
      actually renders on every push.** Miss it and the variables are simply absent in production
      while the stack file looks correct, which is a silent no-op rather than an error.
 
-5. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs hourly:
+6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs hourly:
    - `CRON_KEY` — the same value as `/issei/CRON_SECRET`.
    - `API_URL` — e.g. `https://api.issei.app` (no trailing slash).
 
-   The workflow exits 0 with "nothing to do" while either is unset. Set `CRON_KEY` only AFTER the
-   server has `CRON_SECRET`, or the route 404s, `curl --fail-with-body` exits non-zero, and the
-   workflow goes red every hour.
+   The workflow exits 0 with "nothing to do" while **either** is unset, which is what makes the
+   order flexible: `API_URL` alone is harmless and can go in at any time. Set `CRON_KEY` only AFTER
+   the server has `CRON_SECRET` — with both present the workflow starts POSTing, and an unset
+   server secret DISABLES the route (404 rather than open, deliberately), so
+   `curl --fail-with-body` exits non-zero and the run goes red at :30 every hour, with an email
+   each time.
 
-6. **Verify:** `GET /notifications/vapid-key` should report `configured: true`, and a manual
-   `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404.
+7. **Verify:** `curl -s https://api.issei.app/notifications/vapid-key` should report
+   `configured: true` with a public key — it answers `configured: false` rather than 404ing when
+   unset, so that one call distinguishes "not wired" from "broken". Then a manual
+   `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404 (safe to press
+   twice: `prompt_sends`' UNIQUE (user, local_date) refuses a double-send).
 
    **The PWA shell shipped 2026-09-10 (commit `91660ef`), so these four secrets are now the last
    thing standing between the app and a real notification** — this step used to end by saying the
