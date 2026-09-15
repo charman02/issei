@@ -201,6 +201,15 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
 screen and was missed by three separate recounts of this list — and, since #103,
 `components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep.
+Since #107 the ban is also asserted OUTSIDE the frontend for the first time:
+`tests/test_notify_push.py` sweeps the `BODIES` table (all seven notification types) **and**
+`friend_post_payload`, which is the one push body with no `BODIES` entry and so was missed by the
+parametrised sweep — the docs gate caught that, after this paragraph had already claimed "every
+line". Push copy needs its own guard because a lock-screen notification is user-facing text that no
+rendered-screen assertion can reach and that cannot be corrected once delivered. Count it as a
+separate axis rather than a fifteenth frontend file. Its regex is the WIDE form below; the first
+version used the narrow `their`-only one, which is the precise mistake the next paragraph exists to
+warn about.
 The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
@@ -417,13 +426,19 @@ third on the card is deliberate, not an inconsistency.
 
 A whole new body of user-facing copy arrived with push — permission prompts, install
 instructions, a Home nudge, quiet-hours warnings, the notification bodies themselves — and it
-sits closer to the product's promises than a settings screen usually does. Five rules:
+sits closer to the product's promises than a settings screen usually does. Six rules:
 
-1. **Never describe an unwired switch as working.** `notify_people` is stored and read by
-   nothing, so `NotificationSettings` renders **no switch for it**. A control that changes
-   nothing is worse than a missing one: switching it off reads as a promise the app then
-   breaks in the other direction. The same applies to any preference added ahead of its
-   sender.
+1. **Never describe an unwired switch as working.** The rule stands; the example resolved.
+   `notify_people` was stored and read by nothing, so `NotificationSettings` rendered **no
+   switch for it** — a control that changes nothing is worse than a missing one, because
+   switching it off reads as a promise the app then breaks in the other direction. #107 wired
+   the sender (`services/notify_push.py`), so the switch now exists and the ORDER is the point:
+   the control shipped the day the delivery did, not before. The same applies to any preference
+   added ahead of its sender. A corollary the cadence added: **never offer two controls that
+   describe the same delivery**, because "when friends post" has two coherent answers (as it
+   happens, or once a day) and they are alternatives — two independent switches would send four
+   notifications for three posts, and the fourth would summarise three the person had already
+   been shown.
 2. **The daily nudge counts PEOPLE and only ever says what is true.** "3 friends posted since
    you last looked" is derived from a `can_view_post` re-check, so it excludes a friend's
    private post and a blocked person's post. Zero sends nothing at all — never a generic
@@ -436,9 +451,22 @@ sits closer to the product's promises than a settings screen usually does. Five 
    elsewhere in this file forbid showing on screen — a recipe-request count is the cook's
    alone, a keeper count has no names, and a lock screen is the most public surface the app
    has.
-5. **Don't claim delivery that hasn't been observed.** As of 2026-09-10 every layer we can
+5. **Who is named, and to whom.** #107 added a rule to this register, so here it is in full: a
+   KEEPER is never named to the cook (#96 — keeping is a bookmark addressed to nobody, and the
+   anonymity is re-applied at the push boundary, twice, because a lock screen is read by whoever
+   is holding the phone); a REQUESTER is named only to the cook, only on `/requests`; and a
+   CLAIMANT **is** named to the cook — "Ben has your Adobo now." That last one is new, and its
+   reasoning is the inverse of keeping's: claiming a handoff is addressed TO the cook, because
+   you are accepting something they chose to send you. One edge, accepted rather than papered
+   over: a link-only invite can be forwarded, so this can name someone the cook never addressed.
+   They put the link into the world, so the signal is theirs to have — but it IS a disclosure,
+   and it belongs recorded here rather than in a test docstring.
+6. **Don't claim delivery that hasn't been observed.** As of 2026-09-15 every layer we can
    test is verified and no notification has yet arrived on a real device (see TECHDEBT). Until
    one has, the truthful phrasing is "web push is implemented", not "notifications work".
+   #107 substantially widened WHAT is delivered — every person-to-person type, plus an optional
+   per-post push — without widening that verification, so the gap this rule describes is now
+   bigger than when it was written, not smaller.
 
 ### Never claim a shopping list or unit conversion
 
@@ -476,7 +504,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**703 backend tests**, **948 frontend tests in 61 files**. Endpoint and test counts have
+**803 backend tests**, **961 frontend tests in 61 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

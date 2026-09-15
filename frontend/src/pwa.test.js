@@ -121,6 +121,20 @@ describe('the service worker', () => {
     expect(pushHandler).toMatch(/typeof payload !== 'object'/)
   })
 
+  it('never defaults the notification tag to a constant', () => {
+    // A `tag` makes a notification REPLACE any earlier one carrying the same tag. This used to
+    // read `tag: payload.tag || 'issei'`, which meant every payload that didn't set one collapsed
+    // onto every other one — so "Ben asked for your Adobo" silently overwrote "Ana asked for your
+    // Adobo" and Ana's ask left nothing on the phone. The senders now pass unique tags
+    // (`notification-<id>`, `post-<id>`), and the safe behaviour is what forgetting gives you.
+    const pushHandler = swCode.slice(
+      swCode.indexOf("addEventListener('push'"),
+      swCode.indexOf("addEventListener('notificationclick'"),
+    )
+    expect(pushHandler).toMatch(/tag:\s*payload\.tag\s*,/)
+    expect(pushHandler).not.toMatch(/tag:\s*payload\.tag\s*\|\|/)
+  })
+
   it('focuses a window even when navigating it is not allowed', () => {
     // `WindowClient.navigate()` rejects for a client this worker doesn't control, and
     // `includeUncontrolled: true` is what puts such clients in the list. An unguarded await there

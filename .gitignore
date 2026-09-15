@@ -23,3 +23,7 @@ frontend/tests/visual/
 
 # Brainstorming visual companion + agentic scratch
 .superpowers/
+
+# Vitest's own cache, written at the REPO ROOT rather than under frontend/ — so it escapes
+# frontend/.gitignore and a `git add -A` would have committed it. Caught by the ship gate.
+.vite/

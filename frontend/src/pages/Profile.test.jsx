@@ -515,7 +515,14 @@ describe('You page carries the notification settings (#89)', () => {
     expect(
       screen.getByRole('switch', { name: /notify me on this device/i }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: /daily nudge/i })).toBeInTheDocument()
+    // "When friends post" is a three-way CADENCE, not a toggle — the daily nudge and an instant
+    // push are alternatives, so both switched on would deliver four notifications for three posts.
+    expect(
+      screen.getByRole('radiogroup', { name: /when friends post/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: /when someone reaches you/i }),
+    ).toBeInTheDocument()
   })
 })
 

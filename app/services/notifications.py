@@ -31,6 +31,23 @@ NOTIFICATION_TYPES = {
     # change what keeping MEANS and could chill it; a bare count gives the cook the signal
     # without costing the reader their privacy.
     "recipe_kept",
+    # THE SIGNATURE ACT, which until now happened in total silence. Someone handed you a
+    # recipe — not because you asked in the app (that is `request_fulfilled`), but because
+    # they wanted you to have it. `handoff_recipe` called `notify()` zero times, so the grant
+    # simply appeared on the Kept shelf with nothing anywhere telling you it had arrived: the
+    # one act this whole product is built around was the only one with no notification.
+    #
+    # Distinct from `request_fulfilled` because the OCCASION is different, and #102 already
+    # made that distinction load-bearing in the sender's own message ("You asked for my
+    # Adobo" vs "I wanted you to have it"). The copy here mirrors it.
+    "recipe_arrived",
+    # The other half of the same loop, for the COOK: the person you sent it to has it now
+    # (#32). Fires when a grant is actually claimed or accepted, never when it is minted —
+    # sending is not the same as landing, and the gap between them is exactly the thing a
+    # sender has no way to see. NAMED, not anonymous like `recipe_kept`: claiming a handoff
+    # is addressed TO the cook (you are accepting something they chose to send you),
+    # whereas keeping a published recipe is a bookmark addressed to nobody.
+    "recipe_claimed",
 }
 
 # Types whose ACTOR is never disclosed to the recipient (#96). Kept here, beside the vocabulary,

@@ -101,7 +101,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             # switch as `undefined` (reading as off) for exactly one page load.
             "timezone": user.timezone,
             "notify_hour": user.notify_hour,
-            "notify_prompt": user.notify_prompt,
+            "notify_posts": user.notify_posts,
             "notify_people": user.notify_people,
             "quiet_from": user.quiet_from,
             "quiet_to": user.quiet_to,
@@ -231,7 +231,7 @@ def update_me(
     for field in (
         "timezone",
         "notify_hour",
-        "notify_prompt",
+        "notify_posts",
         "notify_people",
         "quiet_from",
         "quiet_to",
@@ -239,6 +239,13 @@ def update_me(
         value = getattr(update, field)
         if value is not None:
             setattr(current_user, field, value)
+
+    # The deprecated `notify_prompt` boolean, honoured only when the new field is absent — see
+    # AccountUpdate in app/schemas/user.py. An older client build sending `false` here means "stop nudging me", and
+    # discarding it because the column was renamed would tell someone their opt-out worked when
+    # it didn't.
+    if update.notify_posts is None and update.notify_prompt is not None:
+        current_user.notify_posts = "daily" if update.notify_prompt else "off"
 
     db.commit()
     db.refresh(current_user)

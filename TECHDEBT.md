@@ -98,24 +98,68 @@ strangers arrive. Security/privacy first.
   flagged:* it's a performance optimization that can become a leak if used carelessly. *Where:*
   `app/services/sharing.py`; callers in `app/routers/posts.py`, `recipes.py`, `friends.py`.
 
-- **`notify_people` is an API-visible switch that nothing consults.** (#89)
-  The column exists, `UserResponse` exposes it, login returns it, `PATCH /auth/me` writes it — and
-  no code reads it, because person-to-person pushes are not wired: `services/notifications.py`'s
-  `notify()` is untouched by #89 and does not import `services/push.py`. The owner's decision was
-  "every notification type pushes"; only the daily prompt does. **The client half resolved half of
-  this by omission** (2026-09-10): `NotificationSettings.jsx` deliberately renders NO switch for it,
-  because a control that changes nothing is worse than a missing one — switching it off would read
-  as a promise the app then breaks in the other direction — and a test pins the switch COUNT at two
-  so one can't be added back before the push is wired. What remains is that the FIELD is still
-  writable through `PATCH /auth/me` and consulted by nothing, and no test fails if whoever wires the
-  pushes forgets to read it: the three tests that touch it (`tests/test_prompt.py`, `tests/test_push_subscriptions.py`, `frontend/src/components/NotificationSettings.test.jsx`) assert only that it has NO effect — on the daily nudge, and on the switches the UI renders. *Why it's a ledger entry and not a fix:* wiring it properly needs a decision about
-  WHERE, and the seam is genuinely awkward — `notify()` deliberately does not commit, so a push
-  sent from inside it can fire for a row whose transaction then rolls back, and pushing after each
-  caller's commit means touching every call site. *The trap to remember when it is wired:*
-  `recipe_kept` is ANONYMOUS (#96), and the actor IS in hand at `notify()` time — the router is
-  what strips it today, so a payload built at notify() time would carry the keeper's name straight
-  onto a lock screen. That anonymity has to be re-enforced at the push boundary, which is a second
-  place, not the same one. *Where:* `app/models/user.py`, `app/services/notifications.py`.
+- **RESOLVED (#107): `notify_people` has a consumer.**
+  Was: an API-visible switch that nothing read, because `notify()` never reached `push.py`.
+  `app/services/notify_push.py` is the seam this entry said was awkward, and the awkwardness was
+  real — it is resolved by committing the row FIRST and pushing from a FastAPI `BackgroundTasks`
+  task on its own session, so nothing is ever sent for a transaction that rolls back and no user
+  waits on a third party. Both traps this entry flagged were live and are now covered: the
+  `recipe_kept` anonymity IS re-enforced at the push boundary (twice, in `deliver` and again in the
+  copy table — a mutation test found the first layer unpinned and there is now a test that isolates
+  it), and the switch has a UI control plus a test that it changes delivery rather than only that
+  it exists. Left here as a closed entry rather than deleted, because the ORDERING argument is the
+  reusable part: a notification that cannot be recalled must not precede its own commit.
+
+- **`users.notify_prompt` is a live column that nothing reads, ON PURPOSE, for one release.**
+  (#107)
+  The cadence migration (`b3c4d5e6f7a8`) adds `notify_posts` and backfills it but deliberately
+  does NOT drop `notify_prompt`, and the model no longer declares it. That asymmetry exists
+  because of the ORDER in `.github/workflows/deploy.yml`: `alembic upgrade head` runs, THEN the
+  image is built and pushed, THEN ECS rolls. So the old task serves traffic against the new
+  schema for the whole window — and its model still selects `notify_prompt`, which means dropping
+  the column in the same deploy is `ProgrammingError` 500s on every authenticated request, on a
+  `desiredCount: 1` service, with `/health` still green because it never touches `users`. Nothing
+  would alarm; the deploy would look clean. Worse, a health-check failure would roll ECS back to
+  an image that cannot talk to the database at all.
+  *What to do — and it is TWO more releases, not one:*
+  **Release 2:** delete `notify_prompt` from `app/models/user.py`. No migration. After this rolls,
+  no running code selects the column. (This is the step that cannot be skipped, and the one it is
+  tempting to skip.) Also the moment to delete the deprecated alias from `AccountUpdate` and the
+  `notify_prompt` fallback in `NotificationSettings.jsx`'s `cadenceOf`, since by then no old
+  frontend build is plausibly still live.
+  **Release 3:** a migration with `op.drop_column("users", "notify_prompt")` inside a
+  `batch_alter_table`. Model and schema agree again.
+  Neither can be folded into release 1: dropping the column while release 1's task is still
+  serving is the outage above, and stopping the model from declaring it in release 1 would trip
+  `tests/test_migrations.py::test_migrated_schema_matches_models`, which forbids ANY
+  model/migration drift and has no exemption mechanism — punching the first hole in an absolute
+  guard to save a deploy is the worse trade.
+  *Why it's here and not just a comment:* a column nothing reads is the exact defect this file has
+  an entry about elsewhere, so it needs an explicit expiry rather than looking like an oversight.
+  Found by the ship gate.
+  *Where:* `alembic/versions/b3c4d5e6f7a8_*.py`, `app/models/user.py`, `app/schemas/user.py`,
+  `frontend/src/components/NotificationSettings.jsx`.
+
+- **A handoff addressed to an EMAIL that already has an account is unreachable in-app, forever.**
+  (found during #107)
+  `handoff_recipe` resolves `to_email` to a `User` for its two permission checks (#105) but
+  deliberately does NOT bind the grant to that account — it stays `state="pending"` with
+  `to_user_id` NULL, which the comment there explains as "a different feature". The consequence
+  was not visible until this task went looking: `GET /recipes/shared` filters on `to_user_id`, and
+  `can_view`'s grant branch requires both `accepted` AND a matching `to_user_id`, so the recipient
+  can neither see the invite nor read the recipe. The signup auto-accept in `routers/auth.py`
+  matches `to_email` on account CREATION, which for an existing account ran long before this row
+  existed. So the grant is dead unless the sender also texts the invite link — and because the
+  recipient can't reach it, #107 deliberately does not write a `recipe_arrived` notification on
+  that path (a notification linking to a 404 is worse than silence).
+  *The fix is roughly one line* — bind the resolved account and mark it accepted, exactly as the
+  `to_user_id` path does. *Why it's a ledger entry:* it changes what the app's signature endpoint
+  STORES (an instant grant instead of a pending invite), which moves the dedupe key and the state
+  the recipient sees, and the existing comment fenced that off on purpose. Owner's call.
+  `tests/test_handoff_notifications.py::test_an_EMAIL_addressed_handoff_notifies_nobody_because_nobody_could_open_it`
+  pins the current behaviour AND says it should flip to expecting a notification when this is
+  fixed. *Where:* `app/routers/recipes.py` (`handoff_recipe`, `shared_with_me`),
+  `app/routers/auth.py`.
 
 - **The daily prompt can repeat the same sentence forever.** (#89)
   `last_feed_seen_post_id` only advances via `POST /posts/feed/seen`, which the client calls when

@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, StringConstraints, field_validator
 
 # Ceilings, per the #100 convention. These matter more than most: `endpoint` sits under a UNIQUE
 # index, and an unbounded string there raises "index row size exceeds maximum" on Postgres for a
@@ -116,40 +116,13 @@ class VapidKeyResponse(BaseModel):
     configured: bool
 
 
-class NotificationPrefs(BaseModel):
-    """The two switches plus quiet hours, as returned on the user.
-
-    Server-owned, NOT in the client's `issei_prefs` localStorage bag where the other settings
-    toggles live. That distinction is the whole point: a push is delivered with the browser closed,
-    by a server that cannot read localStorage — so a preference stored there would look correct in
-    every test and in local use, and a user who turned notifications OFF would keep receiving them.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    timezone: Optional[str] = None
-    notify_hour: int
-    notify_prompt: bool
-    notify_people: bool
-    quiet_from: int
-    quiet_to: int
-
-
-class NotificationPrefsUpdate(BaseModel):
-    """Partial update. `None` means "leave it alone", as everywhere else in this app.
-
-    Hours are bounded 0-23 rather than trusted: an out-of-range `notify_hour` is not a validation
-    nicety but a user who is never due again, since the scheduler compares it against a real clock
-    hour and nothing would ever match.
-    """
-
-    # An IANA name, sent by the client from Intl.DateTimeFormat().resolvedOptions().timeZone.
-    # Bounded but not checked against the tz database here — an unknown zone degrades to "never
-    # due" in `services/prompt.local_now()`, with a log, rather than 422ing someone whose browser
-    # reports a zone this Python build hasn't heard of.
-    timezone: Optional[Annotated[str, StringConstraints(max_length=64)]] = None
-    notify_hour: Optional[int] = Field(default=None, ge=0, le=23)
-    notify_prompt: Optional[bool] = None
-    notify_people: Optional[bool] = None
-    quiet_from: Optional[int] = Field(default=None, ge=0, le=23)
-    quiet_to: Optional[int] = Field(default=None, ge=0, le=23)
+# NOTHING LIVES HERE FOR NOTIFICATION PREFERENCES, deliberately.
+#
+# #89 defined `NotificationPrefs` and `NotificationPrefsUpdate` in this file and then put the
+# preferences on `UserResponse` / `AccountUpdate` instead — which is right, because they are facts
+# about a PERSON and the client already reconciles the user object on every app start. The two
+# models here were never imported by any router or any test: dead code that read like an API.
+#
+# They were removed rather than migrated when `notify_prompt` became `notify_posts`, because the
+# alternative was updating a second, unreachable copy of the same vocabulary and hoping the next
+# person noticed which one the app actually reads. See `app/schemas/user.py` for the real ones.

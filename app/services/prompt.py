@@ -102,7 +102,11 @@ def is_due(user: User, now_local: Optional[datetime]) -> bool:
     `notify_hour` sitting inside a user's own quiet window is a coherent "not for now" rather than
     a bug to route around.
     """
-    if now_local is None or not user.notify_prompt:
+    # `== "daily"` IS THE EXCLUSIVITY. Someone on "instant" already hears about each friend's
+    # post as it lands, so nudging them at 18:00 about the same posts is a fourth notification
+    # describing three they were already shown. `!= "off"` would look equivalent and would ship
+    # exactly that; a test pins the difference.
+    if now_local is None or user.notify_posts != "daily":
         return False
     if now_local.hour < user.notify_hour:
         return False
@@ -235,7 +239,7 @@ def run_daily_prompt(db: Session) -> dict:
     # predicates that need no clock arithmetic, so they belong here rather than in Python.
     candidates = (
         db.query(User)
-        .filter(User.timezone.isnot(None), User.notify_prompt.is_(True))
+        .filter(User.timezone.isnot(None), User.notify_posts == "daily")
         .all()
     )
 

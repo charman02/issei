@@ -44,6 +44,18 @@ function lineFor(n) {
       return what
         ? `Someone kept your ${what}.`
         : 'Someone kept one of your recipes.'
+    case 'recipe_arrived':
+      // The unprompted send, and the wording is lifted from the sender's OWN default message
+      // for this exact occasion ("I wanted you to have it", `defaultInviteMessage`). That is
+      // what separates it from `request_fulfilled` above: both deliver a recipe, but one
+      // answers a question you asked and this one doesn't. "Sent you" would collapse the
+      // difference #102 went to trouble to draw.
+      return what ? `${who} wanted you to have ${what}.` : `${who} sent you a recipe.`
+    case 'recipe_claimed':
+      // The cook's side of the same handoff. Deliberately NOT "kept" — that word means the
+      // bookmark (`recipe_kept`), which is anonymous, and reusing it here would make two
+      // different acts look like one act with inconsistent privacy.
+      return what ? `${who} has your ${what} now.` : `${who} opened the recipe you sent.`
     case 'friend_request':
       return `${who} wants to be friends.`
     case 'friend_accept':
@@ -66,6 +78,12 @@ function targetFor(n) {
   // Opens the recipe itself — the cook's own, so there's no access question. No keeper list
   // to link to, because there isn't one and never will be.
   if (n.type === 'recipe_kept') return n.recipe_id ? `/recipes/${n.recipe_id}` : null
+  // Both halves of the handoff open the recipe. The recipient holds an accepted grant (the
+  // notification is only written where that is true, see handoff_recipe) and the cook owns it,
+  // so neither can land on a 404 — and `recipe_id` is already nulled by the API when the recipe
+  // was soft-deleted, which is the case where the line reads but doesn't link.
+  if (n.type === 'recipe_arrived' || n.type === 'recipe_claimed')
+    return n.recipe_id ? `/recipes/${n.recipe_id}` : null
   if (n.type === 'friend_request') return '/friends'
   if (n.type === 'friend_accept' && n.actor_id) return `/u/${n.actor_id}`
   if (n.post_id) return `/posts/${n.post_id}`

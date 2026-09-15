@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 703
-backend tests, 948 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 803
+backend tests, 961 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -301,9 +301,15 @@ carries notifications with it; family sharing was cut; language translation move
    `pushManager.subscribe` outright ("Registration failed - permission denied") because there is no
    push service behind it, so the browser→FCM/APNs→device leg is verified only by the unit round-trip
    in `tests/test_push.py` (which decrypts what the sender produces) plus the live subscribe/rotate
-   routes. It needs one phone, once. (c) Two ledgered decisions in TECHDEBT: person-to-person pushes
-   aren't wired, so `notify_people` is inert and has no switch in the UI; and the prompt can repeat
-   the same sentence indefinitely for someone who never opens Home. Bring swipe-back to web first.
+   routes. It needs one phone, once. (c) **Person-to-person pushes are now wired (#107)** — that half of
+   this entry is closed: `services/notify_push.py` delivers every notification type, `notify_people`
+   has a switch, and "when friends post" became a three-way cadence (`instant` | `daily` | `off`)
+   because an instant push and the daily nudge describe the same posts and both-on would
+   double-deliver. #107 also added the two notification types the handoff never had — the recipient
+   learns a recipe arrived, and the COOK learns it landed, which is the return half of #32 below.
+   What remains ledgered in TECHDEBT: the prompt can repeat the same sentence indefinitely for
+   someone who never opens Home, and a handoff addressed to the email of an account that already
+   exists produces a grant nobody can reach.
 2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report

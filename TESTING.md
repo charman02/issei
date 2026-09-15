@@ -378,7 +378,7 @@ files, and each one fails **silently** when wrong:
   every worker fetch would go to an invalid URL. The API base arrives in the registration's query
   string instead (`/sw.js?api=…`), which the browser persists with the registration so it survives
   a cold worker start weeks later.
-→ `frontend/src/pwa.test.js` (13 test cases over the manifest, `index.html` and `sw.js`).
+→ `frontend/src/pwa.test.js` (14 test cases over the manifest, `index.html` and `sw.js` — the fourteenth, added by #107, pins that `sw.js` never defaults a notification's `tag` to a constant again; see invariant 16).
 
 **What no test here can reach:** a real end-to-end delivery. Headless Chromium refuses
 `pushManager.subscribe` outright — "Registration failed - permission denied" — because there is no
@@ -386,3 +386,49 @@ push service behind it, so the browser→FCM/APNs→device leg is covered only b
 `tests/test_push.py`'s round trip (which decrypts what the sender produces, from the receiver's
 side) plus the live subscribe/rotate routes. Treat one real phone as a required manual step before
 claiming notifications work.
+
+
+### Invariant 16 — a push must never precede its own commit, and two events must never collapse into one
+
+Three rules, all introduced by #107 when `notify()` was finally wired to `push.send()`. Each one
+is a thing that cannot be undone once it has happened, which is what makes them invariants rather
+than preferences: a notification on a lock screen cannot be recalled, edited or explained.
+
+1. **A push is sent only AFTER the row it describes is committed.** `notify()` deliberately does
+   not commit, so that a notification lands in the transaction of the act that caused it. That
+   makes the push a strictly later step: `notify_push.queue()` reads `row.id`, which is `None`
+   before a flush, and every router calls it *after* its own `db.commit()` — **including inside
+   the two `try/except IntegrityError` blocks** (`save_recipe`, `request_recipe`,
+   `request_friend`), where the rollback branch discards the notification along with the write
+   that lost the race. Get this backwards and a phone buzzes about an ask that never happened.
+   The ordering is invisible in a diff, which is why it is pinned twice: a unit test asserting
+   that `queue()` before a commit schedules nothing, and a mutation of `handoff_recipe` that
+   moves `queue()` above `db.commit()` and goes red.
+   → `tests/test_notify_push.py::test_queue_before_a_commit_would_send_nothing`
+
+2. **`recipe_kept`'s anonymity is re-applied at the push boundary.** The row stores `actor_id`
+   because `notify()` needs it, so the suppression happens on the way out — and there are now
+   TWO ways out, the API (`list_notifications`) and a push. Both must strip it. The push side
+   suppresses twice over, in `deliver` and again in the copy table, because a lock-screen leak
+   is read by whoever is holding the phone and cannot be corrected. A mutation test found the
+   `deliver` layer initially unpinned (the copy hardcoded "Someone", so removing the guard
+   changed no result), which is exactly how a redundant layer gets refactored away.
+   → `tests/test_notify_push.py::test_deliver_withholds_the_name_even_if_the_copy_would_print_it`
+
+3. **Every notification carries a UNIQUE `tag`, and "no tag" is not the same as "don't
+   collapse".** A `tag` makes a notification REPLACE any earlier one sharing it. The daily nudge
+   wants that. Person-to-person notifications must not: "Ben asked for your Adobo" overwriting
+   "Ana asked for your Adobo" loses Ana with nothing left on the phone to show she asked. The
+   first version of #107 simply omitted `tag` and asserted its absence — which passed while
+   achieving the opposite, because `sw.js` defaulted it to the constant `'issei'`. So the rule is
+   two-sided: senders pass an explicit unique tag (`notification-<id>`, `post-<id>`), and `sw.js`
+   defaults to NO tag, so the safe behaviour is what forgetting gives you. An explicit tag is
+   also the only fix that reaches a service worker already installed on someone's phone.
+   → `tests/test_notify_push.py::test_a_payload_carries_a_UNIQUE_tag_so_two_people_cannot_collapse_into_one`,
+   `test_two_friends_cooking_are_two_notifications_not_one`, and `frontend/src/pwa.test.js`'s
+   "never defaults the notification tag to a constant"
+
+**Also worth knowing, though not an invariant:** the "a friend posted" push writes **no inbox
+row at all** — the inbox is for things addressed to you, and its persistent counterpart is the
+feed's `is_new` mark (invariant 10). A test asserts the absence of the row, because adding one
+later would look like a fix and would in fact turn the inbox into a second feed and bury the asks.

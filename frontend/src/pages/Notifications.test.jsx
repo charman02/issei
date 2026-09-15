@@ -170,6 +170,57 @@ describe('Notifications — issei’s first inbox (#79)', () => {
     expect(await screen.findByText(/nothing new/i)).toBeInTheDocument()
   })
 
+  // --- the handoff finally announces itself (both directions) ---
+
+  it('tells the recipient someone WANTED them to have it, not that they asked', async () => {
+    // The unprompted send. `request_fulfilled` already covers "you asked, here it is"; wording
+    // both "sent you" would collapse the distinction #102 built the two message chips around.
+    renderPage([
+      note({ type: 'recipe_arrived', post_id: null, recipe_id: 9, subject: 'Adobo' }),
+    ])
+    expect(await screen.findByText(/Ana Cruz wanted you to have Adobo/i)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/asked/i)
+  })
+
+  it('an arrival opens the recipe it delivered', async () => {
+    renderPage([
+      note({ type: 'recipe_arrived', post_id: null, recipe_id: 9, subject: 'Adobo' }),
+    ])
+    await userEvent.click(await screen.findByRole('button', { name: /wanted you to have/i }))
+    expect(await screen.findByText('recipe page')).toBeInTheDocument()
+  })
+
+  it('tells the cook their recipe landed, and NAMES the person', async () => {
+    // The return half of the handoff (#32) — the thing a sender has never been able to see.
+    // Named, unlike `recipe_kept`: claiming is addressed TO the cook.
+    renderPage([
+      note({ type: 'recipe_claimed', post_id: null, recipe_id: 9, subject: 'Adobo' }),
+    ])
+    expect(await screen.findByText(/Ana Cruz has your Adobo now/i)).toBeInTheDocument()
+  })
+
+  it('a claim never borrows the word "kept", which means the anonymous bookmark', async () => {
+    // Two different acts with two different privacy rules. Sharing a verb between them makes the
+    // anonymity of the other one look like an inconsistency, or a leak.
+    renderPage([
+      note({ type: 'recipe_claimed', post_id: null, recipe_id: 9, subject: 'Adobo' }),
+    ])
+    await screen.findByText(/has your Adobo now/i)
+    expect(document.body.textContent).not.toMatch(/kept/i)
+  })
+
+  it('both handoff lines still read when the recipe is gone', async () => {
+    // The FK SET NULLs, so a notification outlives its subject and the API drops the id. The
+    // line has to survive that without printing "undefined" or linking nowhere.
+    renderPage([
+      note({ id: 1, type: 'recipe_arrived', post_id: null, recipe_id: null, subject: null }),
+      note({ id: 2, type: 'recipe_claimed', post_id: null, recipe_id: null, subject: null }),
+    ])
+    expect(await screen.findByText(/Ana Cruz sent you a recipe/i)).toBeInTheDocument()
+    expect(screen.getByText(/Ana Cruz opened the recipe you sent/i)).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/undefined|null/i)
+  })
+
   it('never says voice, audio, recording or listen', async () => {
     // POSITIONING: a per-step note is TYPED text. A new user-facing surface is exactly where
     // that claim gets made by accident.
@@ -178,6 +229,8 @@ describe('Notifications — issei’s first inbox (#79)', () => {
       note({ id: 1, type: 'recipe_request' }),
       note({ id: 2, type: 'request_fulfilled', recipe_id: 9, subject: 'Adobo' }),
       note({ id: 3, type: 'friend_request', subject: null }),
+      note({ id: 4, type: 'recipe_arrived', post_id: null, recipe_id: 9, subject: 'Adobo' }),
+      note({ id: 5, type: 'recipe_claimed', post_id: null, recipe_id: 9, subject: 'Adobo' }),
     ])
     await screen.findByText(/asked you for your Sinigang/i)
     expect(document.body.textContent).not.toMatch(BANNED)

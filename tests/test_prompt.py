@@ -263,7 +263,22 @@ def test_the_same_hour_in_two_timezones_is_two_different_moments(db_session, mak
 def test_the_nudge_switch_turns_it_off(db_session, make_user):
     me, _ = make_user()
     me.timezone = "Asia/Manila"
-    me.notify_prompt = False
+    me.notify_posts = "off"
+    db_session.commit()
+    assert prompt.is_due(me, _local("Asia/Manila", 18)) is False
+
+
+def test_INSTANT_is_not_daily_and_that_is_the_whole_point(db_session, make_user):
+    """The exclusivity, in the one line that implements it.
+
+    Someone on "instant" is pushed as each friend posts, so the 18:00 nudge would be a fourth
+    notification summarising three they have already been shown. `is_due` tests `== "daily"`; the
+    tempting `!= "off"` reads as equivalent and ships exactly that double delivery. Which is why
+    this test exists rather than only the on/off pair above.
+    """
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_posts = "instant"
     db_session.commit()
     assert prompt.is_due(me, _local("Asia/Manila", 18)) is False
 
@@ -282,8 +297,8 @@ def test_quiet_hours_beat_the_send_hour(db_session, make_user):
 
 
 def test_the_people_switch_does_not_affect_the_daily_nudge(db_session, make_user):
-    """Two switches, two meanings: `notify_people` is a person reaching you, `notify_prompt` is the
-    app nudging you. Turning off one must not silently turn off the other."""
+    """Two settings, two meanings: `notify_people` is a person reaching you, `notify_posts` is the
+    app bringing you the feed. Turning off one must not silently turn off the other."""
     me, _ = make_user()
     me.timezone = "Asia/Manila"
     me.notify_people = False
@@ -431,7 +446,22 @@ def test_the_nudge_switch_excludes_them_in_SQL(db_session, make_user, monkeypatc
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
     me = _due_user(db_session, make_user)
-    me.notify_prompt = False
+    me.notify_posts = "off"
+    db_session.commit()
+    assert prompt.run_daily_prompt(db_session)["candidates"] == 0
+
+
+def test_an_INSTANT_user_is_excluded_from_the_daily_run_in_SQL(
+    db_session, make_user, monkeypatch
+):
+    """The same exclusivity as `is_due`, but at the candidate query — because the SQL filter and
+    the Python predicate are two separate places that both have to agree, and the SQL one is the
+    cheap-looking `.is_(True)` that a rename would quietly turn into "everyone"."""
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    me = _due_user(db_session, make_user)
+    me.notify_posts = "instant"
     db_session.commit()
     assert prompt.run_daily_prompt(db_session)["candidates"] == 0
 

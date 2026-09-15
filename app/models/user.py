@@ -54,7 +54,9 @@ class User(Base):
     last_feed_seen_post_id: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     # --- Notifications (#89) ------------------------------------------------------------
-    # SIX columns, all on the PERSON rather than on a device, because that is what they are
+    # SEVEN columns as of #107 — six live ones plus the `notify_prompt` tombstone at the end of
+    # this block, which is a dead column kept for one release for the deploy-ordering reason
+    # explained there. All on the PERSON rather than on a device, because that is what they are
     # about: turning the daily nudge off shouldn't depend on which phone you're holding. The
     # devices themselves live in `push_subscriptions`.
     #
@@ -70,13 +72,57 @@ class User(Base):
     # The hour (0-23, in `timezone`) the daily prompt fires. A column rather than a constant so
     # the hour can move — per user later, or globally now — without a migration.
     notify_hour: Mapped[int] = mapped_column(nullable=False, server_default="18")
-    # TWO switches, not one and not five. One master switch forces a choice between "hear when a
+    # TWO settings, not one and not five. One master switch forces a choice between "hear when a
     # friend asks for your Adobo" and "don't be nudged daily", which people resolve as OFF. Five
     # per-type switches are a settings page for an app that currently sends nobody anything.
-    #   notify_prompt = the app nudging YOU ("3 friends posted since you last looked")
+    #   notify_posts  = hearing that FRIENDS POSTED — the app bringing you the feed
     #   notify_people = a PERSON reaching you (every type in NOTIFICATION_TYPES)
-    notify_prompt: Mapped[bool] = mapped_column(nullable=False, server_default="1")
+    #
+    # `notify_posts` REPLACED the boolean `notify_prompt`, and it is a CADENCE rather than an
+    # on/off because the two ways of hearing about a friend's post are alternatives, not
+    # additions:
+    #
+    #   "daily"   the 18:00 nudge — "3 friends posted since you last looked" (the old True)
+    #   "instant" a push as each friend posts, and NO daily nudge
+    #   "off"     neither (the old False)
+    #
+    # Two independent switches were the obvious build and they are wrong: the nudge summarises
+    # exactly the posts an instant push has already announced, so switching both on delivers four
+    # notifications for three posts, and the fourth one tells you about three things you were
+    # already told about. `prompt.is_due` therefore tests `== "daily"`, which is the single line
+    # that makes the exclusivity real; a test pins it.
+    #
+    # Migrated from `notify_prompt` value-for-value (True → "daily", False → "off") so nobody's
+    # existing choice changed, and "daily" stays the default because the daily nudge is the
+    # retention mechanism the whole feature was built for.
+    #
+    # `AccountUpdate` still accepts `notify_prompt` as a deprecated alias — see the note there —
+    # because Vercel and ECS deploy independently, and silently ignoring someone's "don't
+    # interrupt me" is not an acceptable deploy-window behaviour.
+    notify_posts: Mapped[str] = mapped_column(nullable=False, server_default="daily")
     notify_people: Mapped[bool] = mapped_column(nullable=False, server_default="1")
+    # DEAD COLUMN, KEPT ON PURPOSE FOR ONE MORE RELEASE. Nothing reads it — `notify_posts` above
+    # replaced it — and yes, "a column nothing reads" is the exact defect this codebase deletes
+    # things over. It is here anyway because the alternative is a production outage, and the
+    # reason is the ORDER in `.github/workflows/deploy.yml`: `alembic upgrade head` runs FIRST,
+    # then the image is built and pushed, then ECS rolls. So the OLD task serves traffic against
+    # the new schema for the whole window. Drop this column in the same deploy that stops
+    # declaring it and the old task emits `SELECT ... users.notify_prompt ...` on every
+    # authenticated request → `ProgrammingError` 500s across the whole API, on a
+    # `desiredCount: 1` service, with `/health` still green because it never touches `users`.
+    # Nothing would alarm. A health-check failure would then roll ECS back to an image that
+    # cannot talk to the database at all. Found by the ship gate.
+    #
+    # Removing a column therefore takes THREE releases under this pipeline, and this is release
+    # one:
+    #   1. (this one) add `notify_posts`, backfill, stop READING `notify_prompt`. Both declared,
+    #      both present — so `tests/test_migrations.py::test_migrated_schema_matches_models`,
+    #      which forbids ANY model/migration drift and has no exemption mechanism, stays green.
+    #   2. stop DECLARING it here. No migration. Now no running code selects it.
+    #   3. a migration that drops it. Model and schema agree again.
+    # Skipping step 2 is what causes the outage; skipping step 3 leaves this comment lying.
+    # Tracked in TECHDEBT with that sequence written out.
+    notify_prompt: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     # Quiet hours, in `timezone`, as hours-of-day. Kept even though sending is already local,
     # because a person's day is not the same as their timezone's: 22:00-08:00 is the default and
     # someone who works nights will want it inverted.

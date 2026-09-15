@@ -76,9 +76,17 @@ self.addEventListener('push', (event) => {
     body: payload.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    // `tag` collapses a repeat onto the previous one instead of stacking — the daily prompt sends
-    // "daily-prompt" for exactly that reason, so two unopened days don't become a pile.
-    tag: payload.tag || 'issei',
+    // `tag` makes this notification REPLACE any earlier one carrying the same tag, instead of
+    // stacking. That is wanted for a repeat of one message — the daily prompt sends the constant
+    // "daily-prompt" so two unopened days don't become a pile — and actively harmful between two
+    // different events.
+    //
+    // THIS USED TO DEFAULT TO THE CONSTANT `'issei'`, which was a trap: it meant every payload
+    // that didn't think about tagging collapsed onto every other one, so "Ben asked for your
+    // Adobo" silently replaced "Ana asked for your Adobo" and Ana's ask left no trace on the
+    // phone. Every sender now passes an explicit unique tag (`notification-<id>`, `post-<id>`),
+    // and the default here is NO tag, so the safe behaviour is what you get by forgetting.
+    tag: payload.tag,
     // Where a tap goes. Carried through `data` because `notificationclick` gets the notification,
     // not the original push event.
     data: { url: payload.url || '/' },

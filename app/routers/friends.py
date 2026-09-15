@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ from app.schemas.friend import (
 from app.schemas.report import ReportUserIn
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.friends import existing_friendship, friend_ids
+from app.services import notify_push
 from app.services.notifications import ANONYMOUS_TYPES, notify
 from app.services.sharing import can_view, can_view_post
 
@@ -65,6 +66,7 @@ def _users_by_id(ids, db):
 @router.post("/request", response_model=FriendResponse, status_code=status.HTTP_201_CREATED)
 def request_friend(
     body: FriendRequestIn,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -94,13 +96,14 @@ def request_friend(
             existing.state = "accepted"
             # Requesting back is an accept, so the original requester hears the same thing
             # they'd hear from the accept endpoint (#79's one inbox).
-            notify(
+            accepted = notify(
                 db,
                 user_id=existing.requester_id,
                 type="friend_accept",
                 actor_id=current_user.id,
             )
             db.commit()
+            notify_push.queue(background_tasks, [accepted])
             db.refresh(existing)
         return _to_friend_response(
             existing, current_user.id, _users_by_id([current_user.id, body.to_user_id], db)
@@ -111,9 +114,12 @@ def request_friend(
     )
     f.set_pair()
     db.add(f)
-    notify(db, user_id=body.to_user_id, type="friend_request", actor_id=current_user.id)
+    asked = notify(db, user_id=body.to_user_id, type="friend_request", actor_id=current_user.id)
     try:
         db.commit()
+        # After the commit and inside the try, like every other notify site: the IntegrityError
+        # branch below rolls this row back with the request that lost the race.
+        notify_push.queue(background_tasks, [asked])
     except IntegrityError:
         # A concurrent request for the same unordered pair won the race and tripped
         # uq_friendship_pair. Roll back and return whichever row exists now, so a
@@ -136,6 +142,7 @@ def request_friend(
 @router.post("/{friendship_id}/accept", response_model=FriendResponse)
 def accept_friend(
     friendship_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -155,8 +162,11 @@ def accept_friend(
         raise HTTPException(status_code=404, detail="Request not found")
     if f.state != "accepted":
         f.state = "accepted"
-        notify(db, user_id=f.requester_id, type="friend_accept", actor_id=current_user.id)
+        accepted = notify(
+            db, user_id=f.requester_id, type="friend_accept", actor_id=current_user.id
+        )
         db.commit()
+        notify_push.queue(background_tasks, [accepted])
         db.refresh(f)
     return _to_friend_response(
         f, current_user.id, _users_by_id([f.requester_id, f.addressee_id], db)

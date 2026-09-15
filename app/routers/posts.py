@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -15,6 +15,7 @@ from app.models.recipe_request import RecipeRequest
 from app.schemas.post import FeedSeenIn, PostCreate, PostResponse, PostUpdate, PostWithRequesters
 from app.schemas.notification import FulfillRequest, RequesterSummary
 from app.services.friends import are_friends, friend_ids
+from app.services import notify_push
 from app.services.notifications import notify
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.media import require_our_image_url
@@ -158,6 +159,7 @@ def _request_context(posts, viewer: User, db: Session):
 @router.post("", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 def create_post(
     body: PostCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -193,6 +195,11 @@ def create_post(
     db.add(post)
     db.commit()
     db.refresh(post)
+    # Tell friends who asked to hear immediately (`notify_posts == "instant"`). NO inbox row for
+    # this one — the feed's #97 read-mark is its persistent half; see notify_push's section
+    # comment. On CREATE only: an edit must not resurface a post as new, which is the same rule
+    # PATCH /posts/{id} already follows for `is_new`.
+    notify_push.queue_friend_post(background_tasks, post.id)
     # The author owns any linked recipe (verified above), so it's viewable to them.
     return _to_response(
         post, current_user, {recipe_id} if recipe_id else set(), viewer_id=current_user.id
@@ -447,6 +454,7 @@ def incoming_requests(
 )
 def request_recipe(
     post_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -500,7 +508,7 @@ def request_recipe(
     # row is impossible), and it is also the correct meaning: you are asking again.
     if existing is None:
         db.add(RecipeRequest(post_id=post.id, requester_id=current_user.id))
-        notify(
+        asked = notify(
             db,
             user_id=post.user_id,
             type="recipe_request",
@@ -512,12 +520,15 @@ def request_recipe(
         )
         try:
             db.commit()
+            # Inside the `try`, after the commit: the rollback branch below discards the
+            # notification along with the losing request, and a push must never outlive its row.
+            notify_push.queue(background_tasks, [asked])
         except IntegrityError:
             # Two taps raced the unique pair constraint. One request is the right outcome.
             db.rollback()
     elif existing.state == "fulfilled":
         existing.state = "pending"
-        notify(
+        asked = notify(
             db,
             user_id=post.user_id,
             type="recipe_request",
@@ -528,6 +539,7 @@ def request_recipe(
             dedupe=True,
         )
         db.commit()
+        notify_push.queue(background_tasks, [asked])
     counts, mine = _request_context([post], current_user, db)
     return _to_response(
         post, post.user, viewable,
@@ -608,6 +620,7 @@ def retract_request(
 def fulfill_post(
     post_id: int,
     body: FulfillRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -665,6 +678,10 @@ def fulfill_post(
             Handoff.to_user_id.isnot(None),
         )
     }
+    # Collected rather than pushed inside the loop, so every delivery happens after ONE commit.
+    # notify() returns None for a suppressed row (answering your own ask), and `queue` filters
+    # those, so nothing here needs to re-ask that question.
+    answered = []
     for req in pending:
         if req.requester_id != current_user.id and req.requester_id not in already:
             db.add(
@@ -677,16 +694,23 @@ def fulfill_post(
             )
             already.add(req.requester_id)
         req.state = "fulfilled"
-        notify(
-            db,
-            user_id=req.requester_id,
-            type="request_fulfilled",
-            actor_id=current_user.id,
-            post_id=post.id,
-            recipe_id=recipe.id,
+        answered.append(
+            notify(
+                db,
+                user_id=req.requester_id,
+                type="request_fulfilled",
+                actor_id=current_user.id,
+                post_id=post.id,
+                recipe_id=recipe.id,
+            )
         )
     post.recipe_id = recipe.id
     db.commit()
+    # THE ONE CALL SITE THAT PUSHES TO SEVERAL PEOPLE AT ONCE — answering four asks is four
+    # deliveries. Precisely why `queue` defers this past the response: the cook's screen must not
+    # wait on four round trips to Apple and Google, and one slow push service must not make
+    # answering people feel broken.
+    notify_push.queue(background_tasks, answered)
     db.refresh(post)
     counts, mine = _request_context([post], current_user, db)
     return _to_response(

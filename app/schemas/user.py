@@ -51,7 +51,7 @@ class UserResponse(UserBase):
     # nullable because every account predating #89 has none.
     timezone: Optional[str] = None
     notify_hour: int = 18
-    notify_prompt: bool = True
+    notify_posts: str = "daily"
     notify_people: bool = True
     quiet_from: int = 22
     quiet_to: int = 8
@@ -127,7 +127,19 @@ class AccountUpdate(BaseModel):
     # due again — a silent opt-out they didn't ask for.
     timezone: Optional[Annotated[str, StringConstraints(max_length=64)]] = None
     notify_hour: Optional[int] = Field(default=None, ge=0, le=23)
-    notify_prompt: Optional[bool] = None
+    # HOW OFTEN you hear that friends posted, not whether. A `Literal` so a typo is a 422 rather
+    # than a stored value that silently matches no branch and turns notifications off — the same
+    # reasoning as `visibility` and `invite_permission`.
+    notify_posts: Optional[Literal["instant", "daily", "off"]] = None
     notify_people: Optional[bool] = None
     quiet_from: Optional[int] = Field(default=None, ge=0, le=23)
     quiet_to: Optional[int] = Field(default=None, ge=0, le=23)
+    # DEPRECATED ALIAS for `notify_posts`, kept only for the deploy window.
+    #
+    # Pydantic ignores unknown fields, so dropping this outright would give an older frontend
+    # build a cheerful 200 for a request that changed nothing — and Vercel and ECS deploy
+    # independently, so that window is real. For a note on a handoff that trade was fine (#102);
+    # for "stop interrupting me" it is not, because the person is told it worked. So the old
+    # boolean is still honoured, mapped True -> "daily" / False -> "off" in `update_me`, and
+    # `notify_posts` wins if a client somehow sends both.
+    notify_prompt: Optional[bool] = None

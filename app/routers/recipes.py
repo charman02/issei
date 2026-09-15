@@ -2,7 +2,7 @@ from typing import Optional
 import secrets
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -40,6 +40,7 @@ from app.schemas.recipe import (
 from app.services.scaling import scale_ingredient
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.media import require_our_image_url
+from app.services import notify_push
 from app.services.notifications import notify
 from app.services.sharing import effective_visibility, can_view
 from app.services.friends import are_friends
@@ -214,6 +215,7 @@ def create_recipe(
 def handoff_recipe(
     recipe_id: int,
     handoff_in: HandoffIn,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -322,7 +324,36 @@ def handoff_recipe(
         token=secrets.token_urlsafe(32),
     )
     db.add(handoff)
+    # TELL THE RECIPIENT. Until this line the app's signature act was the only one that
+    # happened in silence: a grant appeared on someone's Kept shelf and nothing anywhere said
+    # so. Same transaction as the grant, per notify()'s contract.
+    #
+    # ONLY WHERE THE GRANT IS ACCEPTED — i.e. bound to a user id. An email-addressed handoff is
+    # `pending` with `to_user_id` NULL, and can_view's grant branch requires BOTH accepted and a
+    # matching to_user_id, so a notification on that path would link to a recipe the recipient
+    # gets a 404 on. (There is a real bug underneath that, noted in TECHDEBT: a pending
+    # email-addressed grant to an address that ALREADY has an account is unreachable in-app
+    # forever, because `GET /recipes/shared` filters on to_user_id and the signup auto-accept in
+    # auth.py already ran years earlier. Binding the grant to that account is a one-line fix
+    # that changes what handoff_recipe STORES, which is a decision of its own — see the note at
+    # `recipient` above, which fenced exactly this off.)
+    #
+    # The idempotent early-return above already makes a second grant per (recipe, grantee)
+    # impossible, so `dedupe` is not load-bearing here; it is set for consistency with every
+    # other repeatable-act notification, and so that a future change to that idempotency can't
+    # turn re-sending into an inbox flood.
+    arrival = None
+    if resolved_user is not None:
+        arrival = notify(
+            db,
+            user_id=resolved_user.id,
+            type="recipe_arrived",
+            actor_id=current_user.id,
+            recipe_id=recipe.id,
+            dedupe=True,
+        )
     db.commit()
+    notify_push.queue(background_tasks, [arrival])
     db.refresh(handoff)
     return handoff
 
@@ -647,6 +678,7 @@ def kept_recipes(
 @router.post("/{recipe_id}/save", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
 def save_recipe(
     recipe_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -691,7 +723,7 @@ def save_recipe(
         # keep is one tap each way; without it a cook's inbox fills with the same line, the
         # exact flood already fixed on the ask path (#79). While it's unread, one line stands
         # for "this got kept", however many times it was toggled.
-        notify(
+        kept = notify(
             db,
             user_id=recipe.user_id,
             type="recipe_kept",
@@ -701,6 +733,10 @@ def save_recipe(
         )
         try:
             db.commit()
+            # Only once the row is really there. The IntegrityError branch below rolls the
+            # notification back with the save that lost the race, and a push for a row that no
+            # longer exists would be the one notification nobody could ever open.
+            notify_push.queue(background_tasks, [kept])
         except IntegrityError:
             # A concurrent keep for the same (user, recipe) won the race and tripped
             # uq_recipe_save_user_recipe. The check above only avoids a round-trip; the
@@ -937,9 +973,65 @@ def field_suggestions(
     return FieldSuggestions(sources=sources, cuisines=cuisines)
 
 
+def _notify_cook_of_claim(db: Session, *, handoff: Handoff, claimer: User):
+    """Tell the cook their recipe landed — the return half of the handoff (#32).
+
+    A sender has never had any way to know. They mint a grant, text the link, and that is the
+    end of the information they get: `handoff_recipe` returns, and whether the person ever
+    opened it is invisible from every surface in the app. This is the one notification the
+    product's own reason for existing implies, and it was missing.
+
+    Extracted because THREE code paths claim a grant — `accept_handoff`, and two of
+    `claim_invite`'s branches — and each has a different way of deciding it just happened.
+    Getting the "just happened" test wrong in one of them means either a silent claim or a
+    notification on every idempotent re-claim, so the message itself lives in one place and
+    each caller only answers the state question.
+
+    NAMED, not anonymous. Claiming is addressed TO the cook: you are accepting something they
+    chose to send you. That is the opposite of `recipe_kept`, where a stranger bookmarks a
+    recipe you published and the identity is deliberately withheld. For a LINK-ONLY invite this
+    means the cook learns the name of whoever claimed the link, which may be someone they
+    didn't send it to directly — that is the intended signal, not a leak: the claimer took an
+    action on the cook's recipe, and the cook is the one who put the link into the world.
+
+    No `dedupe`: each caller has already established that this grant was unaccepted a moment
+    ago, so the act happens exactly once per grant by construction.
+
+    **BLOCK-GATED BY HAND, and this is the only notification in the app that needs to be.**
+    Every other producer is already behind a block check by the time it can fire: `handoff_recipe`
+    checks `is_blocked` explicitly, `save_recipe` and `request_recipe` gate on
+    `can_view`/`can_view_post`, `request_friend`/`accept_friend` check by hand, and `block_user`
+    deletes the pending asks that would otherwise reach `fulfill_post`. `claim_invite` and
+    `accept_handoff` deliberately carry NO block check — #88's locked decision is that a token
+    minted BEFORE a block stays claimable, because the token is the capability and the cook chose
+    to send it — which was harmless for as long as those two routes called `notify()` zero times.
+    Making them producers turned that exemption into a channel from a blocked person INTO the
+    blocker's inbox, carrying their name and photo, and onto their lock screen where it cannot be
+    recalled. `block_user`'s own sweep deletes existing notifications between the pair precisely
+    because "you won't see each other anywhere" would otherwise be false; minting a new one after
+    the block is the same falsehood, later.
+    Found by the ship gate, which reproduced it end to end.
+
+    **The claim still succeeds — only the telling is suppressed.** That keeps #88 intact: the
+    grant is minted, the recipe is readable, and the person who was blocked is not told anything
+    either (they get their normal 200). Returning None here is the same shape as `notify()`'s own
+    self-notify suppression.
+    """
+    if is_blocked(handoff.from_user_id, claimer.id, db):
+        return None
+    return notify(
+        db,
+        user_id=handoff.from_user_id,
+        type="recipe_claimed",
+        actor_id=claimer.id,
+        recipe_id=handoff.recipe_id,
+    )
+
+
 @router.post("/handoffs/{handoff_id}/accept", response_model=HandoffResponse)
 def accept_handoff(
     handoff_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -963,9 +1055,16 @@ def accept_handoff(
         is_recipient = h.to_email is not None and h.to_email == current_user.email
     if not is_recipient:
         raise HTTPException(status_code=404, detail="Invite not found")
+    # Read the state BEFORE mutating it, so the cook is told once — when the grant actually
+    # changes hands — and not again on every idempotent re-accept.
+    was_unaccepted = h.state != "accepted"
     h.to_user_id = current_user.id
     h.state = "accepted"
+    claimed = (
+        _notify_cook_of_claim(db, handoff=h, claimer=current_user) if was_unaccepted else None
+    )
     db.commit()
+    notify_push.queue(background_tasks, [claimed])
     db.refresh(h)
     return h
 
@@ -1101,6 +1200,7 @@ def preview_invite_card(token: str, db: Session = Depends(get_db)):
 @router.post("/invite/{token}/claim", response_model=HandoffResponse)
 def claim_invite(
     token: str,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -1114,9 +1214,18 @@ def claim_invite(
 
     # Already this user's grant (or an unclaimed one) → accept it in place.
     if h.to_user_id is None or h.to_user_id == current_user.id:
+        # An UNCLAIMED grant is the one being taken for the first time; `to_user_id == me`
+        # is a re-claim of my own, which must stay silent (this endpoint is idempotent, and
+        # so is its notification). Tested as the state question rather than folded into the
+        # branch above, because that branch deliberately serves both cases.
+        was_unclaimed = h.to_user_id is None
         h.to_user_id = current_user.id
         h.state = "accepted"
+        claimed = (
+            _notify_cook_of_claim(db, handoff=h, claimer=current_user) if was_unclaimed else None
+        )
         db.commit()
+        notify_push.queue(background_tasks, [claimed])
         db.refresh(h)
         return h
 
@@ -1132,7 +1241,9 @@ def claim_invite(
     if mine is not None:
         if mine.state != "accepted":
             mine.state = "accepted"
+            claimed = _notify_cook_of_claim(db, handoff=mine, claimer=current_user)
             db.commit()
+            notify_push.queue(background_tasks, [claimed])
             db.refresh(mine)
         return mine
 
@@ -1145,7 +1256,9 @@ def claim_invite(
         token=secrets.token_urlsafe(32),
     )
     db.add(grant)
+    claimed = _notify_cook_of_claim(db, handoff=grant, claimer=current_user)
     db.commit()
+    notify_push.queue(background_tasks, [claimed])
     db.refresh(grant)
     return grant
 
