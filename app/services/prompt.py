@@ -200,6 +200,32 @@ def prompt_payload(count: int) -> Optional[dict]:
     }
 
 
+# WHY SOMEBODY DIDN'T GET NUDGED. A vocabulary, because the first version of `run_daily_prompt`
+# returned one `skipped` counter covering five unrelated situations — and the day the owner asked
+# "why didn't the nudge arrive last night?" the honest answer was that the log could not tell you.
+# Answering it took reading the GitHub Actions API, computing per-timezone send windows, and
+# re-deriving `is_due` by hand. That is archaeology for a question the job should just answer.
+#
+# Same discipline as `tests/test_deploy_config.py`: when a question keeps costing an hour, make the
+# system state the answer instead of making the next person derive it.
+SKIP_REASONS = (
+    # is_due said no:
+    "hour_not_reached",  # their local hour hasn't come round yet today
+    "quiet_hours",  # their hour HAS passed, but the catch-up landed inside their quiet window
+    # ...and past is_due:
+    "no_unseen_friend_activity",  # ZERO SENDS NOTHING — nobody they follow has posted since
+    "no_device",  # notifications on, nothing installed anywhere yet
+    "already_sent_today",  # a earlier run in this local day claimed it
+)
+
+
+def _skip_reason(user: User, now_local: datetime) -> str:
+    """Which half of `is_due` refused. Only called when `is_due` is already False."""
+    if now_local.hour < user.notify_hour:
+        return "hour_not_reached"
+    return "quiet_hours"
+
+
 def run_daily_prompt(db: Session) -> dict:
     """Send the daily nudge to everyone who is due. Returns a summary for the caller's logs.
 
@@ -217,6 +243,12 @@ def run_daily_prompt(db: Session) -> dict:
     IDEMPOTENT BY THE DATABASE, not by this function. The insert is what fails on a duplicate, so
     two concurrent runs (a manually re-triggered cron, an overlapping deploy) cannot both send.
     Checking first and inserting after would leave exactly the window this exists to close.
+
+    THE SUMMARY NAMES EVERY SKIP (`reasons`), and that is not cosmetic. A single `skipped` count
+    made "the nudge didn't arrive" unanswerable from the logs — the five situations it covered
+    range from "working exactly as designed" (nobody they follow posted) to "this person can never
+    receive anything" (no device registered), and telling them apart needed the database. See
+    SKIP_REASONS.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -232,9 +264,22 @@ def run_daily_prompt(db: Session) -> dict:
     # isn't switched on yet" and "everyone silently loses today".
     if not push_service.is_configured():
         log.info("prompt: VAPID not configured, daily run is a no-op")
-        return {"candidates": 0, "sent": 0, "skipped": 0, "failed": 0, "configured": False}
+        return {
+            "candidates": 0,
+            "sent": 0,
+            "skipped": 0,
+            "failed": 0,
+            "reasons": {},
+            "configured": False,
+        }
 
     sent = skipped = failed = 0
+    reasons: dict[str, int] = {}
+
+    def note(reason: str) -> None:
+        nonlocal skipped
+        skipped += 1
+        reasons[reason] = reasons.get(reason, 0) + 1
     # Only users who could be due at all. `timezone IS NOT NULL` and the switch are cheap SQL
     # predicates that need no clock arithmetic, so they belong here rather than in Python.
     candidates = (
@@ -246,7 +291,9 @@ def run_daily_prompt(db: Session) -> dict:
     for user in candidates:
         now_local = local_now(user)
         if not is_due(user, now_local):
-            skipped += 1
+            # `now_local` cannot be None here: the SQL above requires a timezone, and an
+            # unparseable one already returned None from `local_now` and logged.
+            note(_skip_reason(user, now_local) if now_local else "hour_not_reached")
             continue
 
         count = friends_who_posted(user, db)
@@ -255,10 +302,25 @@ def run_daily_prompt(db: Session) -> dict:
             # Nothing worth saying. Deliberately NOT recorded as sent: if a friend posts later
             # today, this person should still be reachable — recording it would mean an empty
             # feed at 18:00 costs them the whole evening.
-            skipped += 1
+            note("no_unseen_friend_activity")
             continue
 
-        # Claim the day first. A duplicate here means another run already has it.
+        # NO DEVICE IS CHECKED BEFORE THE DAY IS CLAIMED, and that ordering is the same argument
+        # the `payload is None` branch above makes for itself. Record-before-send is right for a
+        # TRANSIENT failure — one missed nudge beats two nudges. "Nobody has registered a phone"
+        # is not transient and is knowable before claiming, so claiming it would mean someone who
+        # installs the app at 19:00 has already spent that evening. It was previously counted as a
+        # `failed` delivery, which was doubly wrong: it isn't a failure, and it burned the day.
+        subs = (
+            db.query(PushSubscription)
+            .filter(PushSubscription.user_id == user.id)
+            .all()
+        )
+        if not subs:
+            note("no_device")
+            continue
+
+        # Claim the day. A duplicate here means another run already has it.
         try:
             db.add(
                 PromptSend(
@@ -270,14 +332,9 @@ def run_daily_prompt(db: Session) -> dict:
             db.commit()
         except IntegrityError:
             db.rollback()
-            skipped += 1
+            note("already_sent_today")
             continue
 
-        subs = (
-            db.query(PushSubscription)
-            .filter(PushSubscription.user_id == user.id)
-            .all()
-        )
         delivered = False
         for sub in subs:
             status = send(sub.endpoint, sub.p256dh, sub.auth, payload)
@@ -300,6 +357,8 @@ def run_daily_prompt(db: Session) -> dict:
         "sent": sent,
         "skipped": skipped,
         "failed": failed,
+        # Named, so the Actions log answers "why didn't it arrive" without a database.
+        "reasons": reasons,
     }
     log.info("prompt: daily run %s", summary)
     return summary

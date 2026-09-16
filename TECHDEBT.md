@@ -161,6 +161,28 @@ strangers arrive. Security/privacy first.
   fixed. *Where:* `app/routers/recipes.py` (`handoff_recipe`, `shared_with_me`),
   `app/routers/auth.py`.
 
+- **The daily nudge's trigger drops ~75% of its runs, and nothing inside the app can fix that.**
+  (#89, measured 2026-09-16)
+  GitHub Actions cron is the trigger, and over the first week of runs the Actions API reports 39
+  runs against a target of 156 — 5-7 per day instead of 24, a median gap of 4.2 hours and a worst
+  gap of 7.6. Every dropped run still shows the workflow as green, so the failure is an absence.
+  `is_due`'s catch-up design absorbs drift, but not indefinitely: quiet hours close the door, so the
+  window in which a nudge can go out is `notify_hour` → `quiet_from`, four hours on the defaults. A
+  4.2-hour median gap against a 4-hour window means the window is missed about as often as it is
+  hit — measured against the real run history, America/Los_Angeles got 4 of 7 nights and
+  Asia/Manila 3 of 6, while America/New_York happened to get 7 of 7.
+  *What was done:* the cron went from hourly to every 10 minutes, which buys enough attempts that a
+  four-hour window survives a 75% loss rate, and `tests/test_prompt.py` now pins the frequency
+  against the default send window so the two cannot drift apart. That is a mitigation, not a fix.
+  *The actual fix:* a trigger that does not drop runs — EventBridge Scheduler pointed at the same
+  URL, which the workflow was written to be swappable for. The reason it wasn't done that way
+  originally still stands and is the awkward part: the deploy pipeline never runs `cdk`, and the CDK
+  task-definition Family is byte-identical to the one `deploy.yml` re-renders, so a `cdk deploy`
+  merely to add a schedule would point the live service at whatever image is in the operator's
+  working tree. Adding the rule outside CDK (console or CLI) works but then the infrastructure
+  isn't in the repo. Neither is bad enough to rush; the mitigation covers the observed loss rate.
+  *Where:* `.github/workflows/daily-prompt.yml`, `app/services/prompt.py`, `infra/`.
+
 - **The daily prompt can repeat the same sentence forever.** (#89)
   `last_feed_seen_post_id` only advances via `POST /posts/feed/seen`, which the client calls when
   the friends feed renders. So a person who never opens Home gets "3 friends posted since you last

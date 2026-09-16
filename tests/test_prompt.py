@@ -14,6 +14,8 @@ from `COUNT(*)` and invisible in any fixture that gives each friend exactly one 
 every other fixture in this repo, hence `test_one_friend_posting_three_times_is_ONE_friend`.
 """
 
+import pathlib
+import re
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 
@@ -510,14 +512,165 @@ def test_all_of_a_users_devices_get_it(db_session, make_user, monkeypatch):
 
 
 def test_a_due_user_with_NO_devices_is_not_an_error(db_session, make_user, monkeypatch):
-    """Preferences on, zero subscriptions — someone who has not installed it anywhere. The day is
-    still claimed, because they were genuinely due and nothing here can install an app for them."""
+    """Preferences on, zero subscriptions — someone who has not installed it anywhere.
+
+    THIS TEST'S NAME AND ITS ASSERTION USED TO DISAGREE: it said "is not an error" and asserted
+    `failed == 1`, and its docstring argued the day should still be claimed. Both halves were
+    wrong, and the file's own reasoning is what shows it — the `payload is None` branch refuses to
+    claim the day precisely because "an empty feed at 18:00 [must not] cost them the whole
+    evening". "No phone registered at 18:00" is the same situation: not transient, knowable before
+    claiming, and someone who installs the app at 19:00 should still get that evening's nudge.
+    So it is a named SKIP, not a failure, and the day stays available.
+    """
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
-    _due_user(db_session, make_user)
+    me = _due_user(db_session, make_user)
     summary = prompt.run_daily_prompt(db_session)
     assert summary["sent"] == 0
-    assert summary["failed"] == 1
+    assert summary["failed"] == 0, "no phone is not a delivery failure"
+    assert summary["reasons"] == {"no_device": 1}
+    # THE DAY IS NOT SPENT: nothing was claimed, so installing later today still works.
+    from app.models.prompt_send import PromptSend
+
+    assert db_session.query(PromptSend).count() == 0
+
+
+def test_installing_later_the_same_day_still_gets_the_nudge(
+    db_session, make_user, monkeypatch
+):
+    """The consequence of the above, stated as the behaviour someone would actually notice.
+
+    Before the fix this was impossible: the first run claimed the day, so granting permission that
+    evening bought you nothing until tomorrow — which is exactly the evening a new install is most
+    likely to happen.
+    """
+    from app.models.push_subscription import PushSubscription
+
+    sent_to = []
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.services.push.send",
+        lambda endpoint, p256dh, auth, payload: (sent_to.append(endpoint), 201)[1],
+    )
+    me = _due_user(db_session, make_user)
+
+    # 18:05, no phone yet.
+    assert prompt.run_daily_prompt(db_session)["reasons"] == {"no_device": 1}
+    assert sent_to == []
+
+    # They install and grant permission at, say, 19:30.
+    db_session.add(
+        PushSubscription(
+            user_id=me.id,
+            endpoint="https://push.example/just-installed",
+            p256dh="k" * 20,
+            auth="a" * 16,
+        )
+    )
+    db_session.commit()
+
+    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+    assert sent_to == ["https://push.example/just-installed"]
+
+
+# --- the summary has to say WHY, or "it didn't arrive" is unanswerable ---
+
+
+def test_every_skip_is_named(db_session, make_user, monkeypatch):
+    """One `skipped` counter covered five unrelated situations, and the day the owner asked why the
+    nudge hadn't arrived, the log could not tell them. Answering it took the GitHub Actions API,
+    a per-timezone send-window calculation and re-deriving `is_due` by hand — archaeology for a
+    question the job should just answer."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    _due_user(db_session, make_user)
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["skipped"] == 1
+    assert summary["reasons"] == {"no_unseen_friend_activity": 1}
+    # And the count still balances, so `reasons` can't drift away from `skipped`.
+    assert sum(summary["reasons"].values()) == summary["skipped"]
+
+
+def test_the_hour_not_yet_reached_is_named_separately_from_quiet_hours(
+    db_session, make_user, monkeypatch
+):
+    """The two halves of `is_due` fail for opposite reasons and want opposite responses: "not yet"
+    resolves itself on the next run, while "quiet hours" means this person gets nothing today and
+    the run that could have reached them was missed. Collapsing them hides which one happened —
+    and it is the second that indicates a trigger-reliability problem."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
+    me = _due_user(db_session, make_user)
+
+    # notify_hour ahead of the current local hour → "not yet".
+    now_local = prompt.local_now(me)
+    assert now_local is not None
+    me.notify_hour = (now_local.hour + 2) % 24
+    me.quiet_from = me.quiet_to = 0  # equal bounds mean no quiet hours at all
+    db_session.commit()
+    if me.notify_hour > now_local.hour:  # only meaningful when it hasn't wrapped past midnight
+        assert prompt.run_daily_prompt(db_session)["reasons"] == {"hour_not_reached": 1}
+
+    # Hour passed, but the catch-up lands inside their quiet window → "quiet_hours".
+    me.notify_hour = 0
+    me.quiet_from = now_local.hour
+    me.quiet_to = (now_local.hour + 1) % 24
+    db_session.commit()
+    assert prompt.run_daily_prompt(db_session)["reasons"] == {"quiet_hours": 1}
+
+
+def test_already_sent_is_named(db_session, make_user, monkeypatch):
+    """The idempotence path. A manual re-run of the cron is explicitly supported, so this reason
+    appearing is normal and must not read as a fault."""
+    from app.models.push_subscription import PushSubscription
+
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 4)
+    me = _due_user(db_session, make_user)
+    db_session.add(
+        PushSubscription(
+            user_id=me.id, endpoint="https://push.example/a", p256dh="k" * 20, auth="a" * 16
+        )
+    )
+    db_session.commit()
+
+    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+    second = prompt.run_daily_prompt(db_session)
+    assert second["sent"] == 0
+    assert second["reasons"] == {"already_sent_today": 1}
+
+
+def test_the_unconfigured_summary_has_the_same_shape(monkeypatch, db_session):
+    """The early return is a different code path, and a caller reading `reasons` must not have to
+    guard for its absence."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: False)
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["configured"] is False
+    assert summary["reasons"] == {}
+
+
+def test_every_reason_the_code_can_emit_is_in_the_vocabulary():
+    """`SKIP_REASONS` exists so the list is readable in one place; it is only honest if it matches
+    what the function actually emits. Checked by reading the source, because the alternative is
+    constructing all five situations and hoping none is missed."""
+    import inspect
+
+    source = inspect.getsource(prompt.run_daily_prompt) + inspect.getsource(
+        prompt._skip_reason
+    )
+    emitted = set(re.findall(r'note\("([a-z_]+)"\)', source)) | set(
+        re.findall(r'return "([a-z_]+)"', source)
+    )
+    assert emitted, "found no reasons in the source — the regex has drifted"
+    assert emitted <= set(prompt.SKIP_REASONS), (
+        f"emitted but undocumented: {emitted - set(prompt.SKIP_REASONS)}"
+    )
+    assert set(prompt.SKIP_REASONS) == emitted, (
+        f"documented but never emitted: {set(prompt.SKIP_REASONS) - emitted}"
+    )
 
 
 # --- the review findings, each with the failure it reproduced ---
@@ -601,3 +754,58 @@ def test_an_UNCONFIGURED_deploy_does_not_burn_everyones_day(db_session, make_use
     assert summary["sent"] == 0
     assert summary.get("configured") is False
     assert db_session.query(PromptSend).count() == 0, "claimed a day it could not deliver"
+
+
+# --- the trigger and the send window are only safe RELATIVE to each other ---
+
+
+def _cron_minutes():
+    """The minute field of the daily-prompt schedule, as a sorted list."""
+    import re as _re
+
+    text = pathlib.Path(".github/workflows/daily-prompt.yml").read_text(encoding="utf-8")
+    m = _re.search(r'-\s*cron:\s*"([^"]+)"', text)
+    assert m, "no cron expression found in .github/workflows/daily-prompt.yml"
+    minute_field, hour_field = m.group(1).split()[0], m.group(1).split()[1]
+    assert hour_field == "*", f"this test assumes an every-hour schedule, got {hour_field!r}"
+    if minute_field.startswith("*/"):
+        step = int(minute_field[2:])
+        return list(range(0, 60, step))
+    return sorted(int(x) for x in minute_field.split(","))
+
+
+def test_the_cron_fires_far_more_often_than_the_send_window_is_wide():
+    """THE BUG THIS ENCODES, which cost a night's nudge and an hour of archaeology.
+
+    `is_due` needs the local hour to have reached `notify_hour` AND to be outside quiet hours, so
+    the window in which a nudge can actually go out is `notify_hour` → `quiet_from`: four hours on
+    the defaults. The schedule said hourly, which sounds like four chances per window — but GitHub
+    drops most scheduled runs (measured: 39 runs in 6.5 days against a target of 156, a median gap
+    of 4.2 hours), so a 4-hour window was missed about as often as it was hit. Every dropped run
+    still reported the workflow green, and the failure is an absence, so nobody finds out.
+
+    The guard is the RATIO, not either number alone: the nominal interval has to be small enough
+    that the window survives a large drop rate. Six attempts per hour against a four-hour window is
+    24 nominal chances, which holds up at the ~75% loss rate actually observed.
+    """
+    from app.models.user import User
+
+    notify_hour = int(User.__table__.c.notify_hour.server_default.arg)
+    quiet_from = int(User.__table__.c.quiet_from.server_default.arg)
+    window_hours = quiet_from - notify_hour
+    assert window_hours > 0, "the default notify_hour must sit before the quiet boundary"
+
+    minutes = _cron_minutes()
+    per_hour = len(minutes)
+    nominal_attempts = per_hour * window_hours
+    assert nominal_attempts >= 12, (
+        f"only {nominal_attempts} scheduled attempts land inside the {window_hours}h send window "
+        f"({per_hour}/hour). GitHub drops roughly three quarters of them, so this is not enough "
+        "headroom — raise the cron frequency or widen the window."
+    )
+
+
+def test_the_cron_avoids_the_top_of_the_hour():
+    """GitHub's scheduled-run queue is measurably worse at :00, where every other cron on the
+    platform is pointed. Documented in the workflow; asserted so a later edit doesn't undo it."""
+    assert 0 not in _cron_minutes()

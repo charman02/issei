@@ -11,7 +11,7 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 803
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 811
 backend tests, 961 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
@@ -280,7 +280,7 @@ carries notifications with it; family sharing was cut; language translation move
    **THE BACKEND HALF SHIPPED (2026-09-09), THE PWA SHELL THE DAY AFTER (2026-09-10.)** Backend:
    per-device subscription storage, the VAPID sender (RFC 8292 + 8291, on `cryptography` and `httpx`
    — no new dependency), quiet hours, the at-most-once send log, the "N friends posted" count, and an
-   hourly GitHub Actions cron. Client: a web manifest with a maskable icon, the iOS-only meta tags, a
+   GitHub Actions cron every 10 minutes (hourly lost nudges: the send window is only four hours wide and GitHub drops ~75% of scheduled runs). Client: a web manifest with a maskable icon, the iOS-only meta tags, a
    push-only service worker (no caching, deliberately), `lib/push.js`, a Notifications section on the
    You page, a one-time nudge on Home, and `timezone` captured at login. The backend went first
    because none of it depended on which shell won.
