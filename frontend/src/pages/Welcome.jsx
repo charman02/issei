@@ -5,7 +5,7 @@ import IsseiMeaning from '../components/IsseiMeaning'
 import Wordmark from '../components/Wordmark'
 import Avatar from '../components/Avatar'
 import { loadPrefs, setPref } from '../lib/prefs'
-import { enable, pushAvailability } from '../lib/push'
+import { enable, primeVapidKey, pushAvailability } from '../lib/push'
 import { PHOTO_ACCEPT } from '../lib/photoUpload'
 import { useAvatarUpload } from '../lib/useAvatarUpload'
 import PhotoFramer from '../components/PhotoFramer'
@@ -20,15 +20,24 @@ import PhotoFramer from '../components/PhotoFramer'
 // `replace` — so it occupies no history entry and no back gesture can return to
 // it.
 //
-// WHY (NOW) FOUR PANELS, AND WHY THAT ISN'T DRIFT. Two panels TEACH — what issei is for, and how to use
+// WHY (NOW) FOUR PANELS, AND WHY THAT ISN'T DRIFT. TWO panels TEACH and TWO are single optional
+// ACTIONS — a profile photo, then the notifications ask (#110). The rule was always "at most two
+// TEACHING panels", never "at most three panels", and each action step has a fallback elsewhere for
+// anyone who skips: the You-page nudge (#77) and Home's `NotifyNudge`. The photo step used to be
+// last and is now second-last, because the notifications ask spends an irrevocable browser
+// permission and belongs behind the smaller yes rather than in front of it.
+//
+// The paragraphs below predate the fourth panel and describe the photo step as "the last thing
+// before you're in" and the badge as reading "1 of 3". Both were corrected in place; what survives
+// is the reasoning, which is unchanged. Two panels TEACH — what issei is for, and how to use
 // it — and the rule used to be "never three", because a third TEACHING panel is a
-// carousel and testers punished tap-heavy onboarding. The third panel added here is
-// NOT teaching: it's a single ACTION (add a profile photo). An action step as the
-// last thing before "you're in" is the standard onboarding shape (it converts because
-// it's isolated and prominent), and it's categorically different from another wall of
-// text to absorb. It stays honest by being genuinely optional — Skip in the header and
-// "Open my kitchen" both finish with or without a photo, no hard gate. So the rule is
-// really "at most two TEACHING panels"; the photo step is the exception that proves it.
+// carousel and testers punished tap-heavy onboarding. The two panels added since are
+// NOT teaching: each is a single ACTION (add a profile photo; allow notifications). An
+// isolated, prominent action step converts, and it is categorically different from
+// another wall of text to absorb. Both stay honest by being genuinely optional — Skip in
+// the header finishes from anywhere, neither is a hard gate, and each has a fallback for
+// skippers elsewhere in the app. So the rule is really "at most two TEACHING panels";
+// the action steps are the exception that proves it.
 // (The You page also nudges anyone who skips — see #77 — so this panel maximizes
 // photo adoption without becoming a gate.)
 //
@@ -77,7 +86,7 @@ export function hasSeenWelcome() {
 }
 
 // The eyebrow badge — reused on both panels so the panel count is stated up
-// front. "1 of 3" is a promise that this is short; a bare dot row isn't.
+// front. "1 of 4" is a promise that this is short; a bare dot row isn't.
 function StepBadge({ children }) {
   return (
     <span className="inline-block font-display font-bold uppercase tracking-[0.14em] text-[10.5px] text-ink bg-saffron border-2 border-ink rounded-full px-3 py-1">
@@ -143,6 +152,33 @@ export default function Welcome() {
   const [availability] = useState(pushAvailability)
   const [notify, setNotify] = useState('idle') // idle | busy | on | error
   const [notifyError, setNotifyError] = useState('')
+
+  // PRIME THE SERVER KEY ON MOUNT, NOT ON THE TAP — the constraint is in `lib/push.js`'s own
+  // header and this panel was the only one of three call sites to skip it.
+  //
+  // `enable()` awaits `primeVapidKey()` (an uncached GET) BEFORE `Notification.requestPermission()`,
+  // and the permission prompt has to be reached while the tap's USER ACTIVATION is still live —
+  // WebKit's window is a couple of seconds, while this app's axios client allows 45s because the API
+  // can cold-start. So on a slow connection or a cold ECS task, an unprimed tap means Safari refuses
+  // the prompt outright.
+  //
+  // The HAZARD is WebKit-specific, but the BUTTON is not — `pushAvailability()` returns 'ready' for
+  // desktop Chrome/Edge/Firefox and Android Chrome too; what iOS-in-a-tab returns is 'install-first',
+  // which renders the Add-to-Home-Screen copy instead and never reaches this button. An earlier
+  // version of this comment said an installed iPhone was "the ONLY platform where this button
+  // renders", which would tell the next person the priming is an iOS-only concern. It isn't: it is
+  // cheap everywhere and load-bearing on the platform most of this audience is on.
+  //
+  // `NotifyNudge` and `NotificationSettings` both prime in a mount effect with a comment saying why;
+  // this one didn't. Found by the ship gate.
+  useEffect(() => {
+    // `.catch(() => {})` is the convention `lib/push.js`'s own header states, and both sibling
+    // call sites follow it: on a failed GET the function nulls its cache and RE-THROWS inside the
+    // chain, so an unhandled rejection would land on the one screen every new account passes
+    // through. Swallowing is right here — this is a prefetch, and the tap path re-fetches and
+    // surfaces its own message.
+    if (availability === 'ready') primeVapidKey().catch(() => {})
+  }, [availability])
 
   async function askForNotifications() {
     setNotify('busy')
@@ -318,11 +354,32 @@ export default function Welcome() {
            should be asked up front, and the person-level preferences already default to on, so the
            browser permission was the only thing still unasked.
 
+           THE THREE LINES MAP 1:1 ONTO THE THREE SETTINGS, and they have to, because this is a
+           consent screen and it was WRONG. The first version said "Two things, and nothing else:"
+           over two bullets — and both ship gates independently found that false. Nine kinds of push
+           can reach a new account on the defaults, and the two bullets covered four; uncovered were
+           `recipe_kept`, `recipe_claimed`, `friend_request`, `friend_accept`, and — worst — the
+           FRIEND-POST push, which is on by default and is likely the highest-volume notification
+           the person will ever get. A post is emphatically not a recipe in this product, so "sends
+           you one" could not be read to cover it.
+
+           Over-specifying is the same harm as under-specifying on the one screen whose entire job
+           is buying an irrevocable permission with an honest disclosure: the person consented to a
+           scope the app doesn't keep. And the test asserted the false sentence, which is the #103
+           PhotoFramer shape exactly — copy claiming a behaviour that doesn't exist, held in place by
+           a test.
+
+           Three lines is now both honest AND complete, because "kinds" is the axis the settings
+           already use: `notify_people`, `notify_friend_posts`, `notify_prompt_me`. Anything new must
+           either fit one of these three or add a fourth line here as well as a fourth switch.
+
            WHY THE SYSTEM DIALOG IS NOT FIRED ON MOUNT, which is the version of "ask on first
            launch" that costs you the user. A permission prompt is ONE SHOT: a decline sets
            `denied` for the origin permanently, and no web app can ask again — the person has to go
-           into browser settings. So the panel spends a screen naming the two things that actually
-           arrive BEFORE the dialog appears, and the dialog is behind a tap. A primed ask converts;
+           into browser settings. So the panel spends a screen naming what actually arrives — THREE
+           lines, one per gate; see the block above, which is also where the first version's false
+           "two things, and nothing else" is recorded — BEFORE the dialog appears, and the dialog is
+           behind a tap. A primed ask converts;
            a cold one at the coldest possible moment is how an app loses people who would have said
            yes later. `NotifyNudge` encodes the same rule from the other end: it hides on `denied`,
            because they answered.
@@ -346,12 +403,14 @@ export default function Welcome() {
             {availability === 'ready' ? (
               <>
                 <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
-                  Two things, and nothing else:
+                  Three kinds. You can switch any of them off later:
                 </p>
                 <ul className="mt-4 space-y-3 max-w-xs">
                   <NotifyLine>
-                    When someone asks you for a recipe — or sends you one.
+                    When someone reaches you — asks for a recipe, sends you one, adds you as
+                    a friend.
                   </NotifyLine>
+                  <NotifyLine>When a friend shares a meal.</NotifyLine>
                   <NotifyLine>
                     A nudge to share what you cooked. You choose how often.
                   </NotifyLine>
@@ -405,9 +464,14 @@ export default function Welcome() {
               </>
             ) : (
               <>
+                {/* NOT "everything still shows up in your inbox", which the first version said and
+                  which is false twice: the daily nudge writes no notification row at all (see
+                  `services/prompt.py` — it imports `PromptSend`, never `Notification`), and the
+                  friend-post push deliberately writes none either, because the feed's `is_new` mark
+                  is its persistent half. Naming what DOES land is both true and more useful. */}
                 <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
-                  This browser can&rsquo;t do notifications — everything still shows up in
-                  your inbox when you open issei.
+                  This browser can&rsquo;t do notifications. Asks and arrivals still wait for
+                  you in your inbox; the daily nudge just won&rsquo;t reach you.
                 </p>
                 <button onClick={done} className="btn-primary !mt-7">
                   Open my kitchen →

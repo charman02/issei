@@ -92,9 +92,15 @@ alone — re-run it):
 5. **No false audio/recording claims in the UI (POSITIONING).**
    The words `voice` / `recording` / `audio` / `listen` / `in their own words`
    appear nowhere a user or screen reader can reach. Dictation is speak-to-type;
-   the utterance is discarded. **FOURTEEN test files** carry the guard, and they are
-   not confined to the mic UI — the claim reappears on any new user-facing surface,
-   which is why the count is a floor and not a fixed number. Ten use the wide regex
+   the utterance is discarded. **FOURTEEN FRONTEND test files** carry the guard, plus
+   **FOUR in the backend suite** — eighteen in all, and this doc covers both suites, so
+   the bare number used to read as the total and wasn't. The backend four are
+   `test_notify_push.py` and `test_prompt.py` (the push bodies, #107/#108) and
+   `test_invite_og.py` + `test_invite_preview_endpoint.py` (the OpenGraph unfurl card,
+   since 2026-08-18) — three surfaces no rendered-screen assertion can reach: a lock
+   screen, an unfurl card and a web manifest. They are not confined to the mic UI —
+   the claim reappears on any new user-facing surface, which is why the count is a
+   floor and not a fixed number. THIRTEEN use the wide regex
    (`in (their|your|his|her)( own)? words`); re-grep rather than trusting this list.
    → `DictateButton`, `PasteRecipe`, `RecipeForm`, `RecipeBody`, `PhotoFramer`,
      `NotificationSettings`, `NotifyNudge`, `Notifications`, `UserProfile`,
@@ -308,9 +314,19 @@ Two more properties of the same function, both of which were bugs first:
   single post, which is every other fixture here.
   → `test_one_friend_posting_three_times_is_ONE_friend`.
 
-### Invariant 14 — the daily nudge is at-most-once per person per LOCAL day
+### Invariant 14 — the nudge comes at most once per person per LOCAL day, and no more often than they asked
 
-Enforced by `prompt_sends`' UNIQUE (user_id, local_date), not by the code that sends. That ordering
+#109 GENERALISED THIS INVARIANT RATHER THAN ADDING A SECOND ONE. The rule used to be flatly
+"at most once a local day"; it is now "at most once every `notify_prompt_every_days` local days",
+of which once-a-day is the FLOOR CASE — `notify_prompt_every_days` defaults to 1, so the sentence
+above is still exactly true for every account that hasn't changed it, and the day the column shipped
+nothing moved. That is why it is one predicate (`days_since_last_prompt` vs the person's setting)
+and not two rules sitting beside each other.
+
+The once-a-day floor is enforced by `prompt_sends`' UNIQUE (user_id, local_date), not by the code
+that sends; anything ABOVE the floor is enforced only in Python (`prompt_window_reason`), because a
+minimum GAP is not something a UNIQUE constraint can express. So the constraint is the backstop for
+the case a re-run can cause, and the code is the whole story for a deliberate weekly cadence. That ordering
 is the point: no trigger is once-per-day on its own — an in-process tick double-fires during a
 rolling deploy, EventBridge is at-least-once by contract, and a GitHub Actions cron can be re-run
 by hand. So `is_due` can safely use CATCH-UP semantics ("has their hour passed today?") which is
@@ -327,7 +343,10 @@ never left the building.
 → `test_a_SECOND_run_the_same_day_sends_NOTHING`,
 `test_someone_who_ALREADY_POSTED_today_is_not_prompted`, `test_an_empty_FEED_still_gets_the_prompt` (the anti-circularity one),
 `test_an_UNCONFIGURED_deploy_does_not_burn_everyones_day`,
-`test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it`.
+`test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it`,
+`test_the_frequency_is_a_MINIMUM_GAP_in_local_days`,
+`test_the_default_frequency_IS_the_old_behaviour`,
+`test_nudged_recently_is_NAMED_separately_from_already_sent_today`.
 
 ### Invariant 12 — a block must never hide someone from being REPORTED
 

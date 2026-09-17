@@ -232,24 +232,27 @@ strangers arrive. Security/privacy first.
   one phone rather than on configuration).
   *Where:* `app/services/prompt.py`, `app/models/prompt_send.py`.
 
-- **No end-to-end push delivery has ever been observed.** (#89)
-  Every leg is tested except the one that leaves the building. `tests/test_push.py` decrypts what the
-  sender produces from the RECEIVER's side (which is how the zero-salt bug was caught), the
-  subscribe/rotate/prompt routes are verified live against a running API, and `lib/push.js` is unit
-  tested against a stubbed `PushManager` — but nothing here has watched a notification arrive on a
-  device, because **headless Chromium refuses to subscribe at all**: `pushManager.subscribe` throws
-  `AbortError: Registration failed - permission denied`, since there is no push service behind it.
-  So the browser→FCM/APNs→device leg is inferred from the RFCs, not measured. *Why it's a ledger
-  **RESOLVED 2026-09-17: it happened.** A production daily prompt arrived on an installed iOS
-  home-screen app and tapping it opened the composer. Kept as a closed entry because the
-  reasoning is reusable — the leg no CI can reach is the one that decides whether the feature
-  exists — and because the resolution is PARTIAL: the transport is proven, each type's own copy
-  and URL is not, and Android is not.
-  *Why it was a ledger entry and not a fix:* it could not be automated on this machine at all — it needed one real phone,
-  once — the VAPID secrets exist as of 2026-09-15, so the blocker is now purely that no phone has
-  been used — plus an iOS device added to the home screen to confirm the install-first path. Until then, "notifications work" is an untested claim, and the honest phrasing
-  is "every layer we can reach is verified". *Where:* `frontend/public/sw.js`,
-  `frontend/src/lib/push.js`, `app/services/push.py`.
+- **RESOLVED 2026-09-17 (PARTIALLY): end-to-end push delivery has now been observed once.** (#89)
+  A production daily prompt arrived on an installed iOS home-screen app, and tapping it opened the
+  composer. That closes the leg nothing in CI can reach.
+
+  **BE PRECISE ABOUT WHAT IS AND ISN'T PROVEN, because the whole value of this entry was that
+  precision.** Proven: the TRANSPORT — server → FCM/APNs → an installed iOS device → the service
+  worker's `notificationclick` navigating. NOT proven: any individual notification other than the
+  daily prompt (the seven `NOTIFICATION_TYPES` and the friend-post push share that transport but
+  each has its own copy and its own URL, and none has been watched arriving), and Android entirely.
+  `POSITIONING.md` rule 6 carries the same split and is the authority on what may be SAID:
+  "push notifications work" is now sayable; "a recipe-request notification arrives" is not, yet.
+
+  *Kept rather than deleted because the reasoning is reusable:* every other leg was tested and the
+  one that left the building was not, and that was the one deciding whether the feature existed at
+  all. `tests/test_push.py` decrypts what the sender produces from the RECEIVER's side (which is how
+  the zero-salt bug was caught), the subscribe/rotate/prompt routes are verified live against a
+  running API, and `lib/push.js` is unit tested against a stubbed `PushManager` — but **headless
+  Chromium refuses to subscribe at all**: `pushManager.subscribe` throws `AbortError: Registration
+  failed - permission denied`, since there is no push service behind it. So this could never be
+  automated on this machine; it needed one real phone, once, and now it has had one.
+  *Where:* `frontend/public/sw.js`, `frontend/src/lib/push.js`, `app/services/push.py`.
 
 - **Reports go into a table nobody can read from inside the app.** (#87)
   `POST /friends/reports` stores the row; there is no endpoint, page or notification to get it

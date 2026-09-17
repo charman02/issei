@@ -201,19 +201,22 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
 screen and was missed by three separate recounts of this list — and, since #103,
 `components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep.
-Since #107 the ban is also asserted OUTSIDE the frontend for the first time:
-`tests/test_notify_push.py` sweeps the `BODIES` table (all seven notification types) **and**
-`friend_post_payload`, which is the one push body with no `BODIES` entry and so was missed by the
-parametrised sweep — the docs gate caught that, after this paragraph had already claimed "every
-line". Push copy needs its own guard because a lock-screen notification is user-facing text that no
-rendered-screen assertion can reach and that cannot be corrected once delivered. Count it as a
-separate axis rather than a fifteenth frontend file. Its regex is the WIDE form below; the first
-version used the narrow `their`-only one, which is the precise mistake the next paragraph exists to
-warn about.
+Since #107 the ban also covers PUSH COPY, which is its own axis. `tests/test_notify_push.py`
+sweeps the `BODIES` table (all seven notification types) **and** `friend_post_payload`, and
+`tests/test_prompt.py` sweeps the THIRD push body, `prompt_payload` — the one with no `BODIES`
+entry, so the parametrised sweep could not reach it and an earlier version of this paragraph named
+only two of the three, which is exactly how it ended up with a narrower regex than the rule
+requires. **NOT the first assertion outside the frontend, which this paragraph claimed and the docs
+gate refuted:** `tests/test_invite_og.py` and `tests/test_invite_preview_endpoint.py` have carried
+the ban since 2026-08-18, a month before #107, over the OpenGraph unfurl card. Push copy needs its
+own guard because a lock-screen notification is user-facing text that no rendered-screen assertion
+can reach and that cannot be corrected once delivered. Count these as separate axes rather than
+extra frontend files. The regex is the WIDE form below; the first version used the narrow
+`their`-only one, which is the precise mistake the next paragraph exists to warn about.
 The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all TEN files that carry the wide form (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer and — since #102 — InviteLanding, whose guard was the weakest of the thirteen that existed then, on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — they are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all THIRTEEN files that carry the wide form — ELEVEN in the frontend (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer, Welcome — added with #110's notifications panel, the fourth Welcome step — and, since #102, InviteLanding, whose guard was the weakest of the thirteen that existed then, on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — and TWO in the backend suite: `tests/test_notify_push.py` and `tests/test_prompt.py`, over the push bodies. They are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -550,7 +553,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**847 backend tests**, **974 frontend tests in 61 files**. Endpoint and test counts have
+**848 backend tests**, **982 frontend tests in 61 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

@@ -242,8 +242,15 @@ export default function NotificationSettings() {
             <p className="font-display font-bold text-[14px] text-ink leading-snug">
               This browser can&rsquo;t do notifications.
             </p>
+            {/* NOT "everything still shows up in your inbox" — false twice, for the same two
+                reasons the identical sentence was removed from `Welcome.jsx`: the daily nudge
+                writes no `Notification` row at all (`services/prompt.py` imports `PromptSend`,
+                never `Notification`), and the friend-post push deliberately writes none either,
+                because the feed's #97 `is_new` mark is its persistent half. Naming what DOES
+                land is true and more useful than a reassurance that isn't. */}
             <p className="font-display italic text-[12.5px] text-ink-soft mt-1 leading-snug">
-              Everything still shows up in your inbox when you open issei.
+              Asks and arrivals still wait for you in your inbox; the daily nudge and
+              friends&rsquo; meals just won&rsquo;t reach you here.
             </p>
           </div>
         ) : (
@@ -266,7 +273,7 @@ export default function NotificationSettings() {
         <div className="border-t-2 border-line">
           <Toggle
             label="Remind me to share a meal"
-            hint="Once a day, at the time below — a nudge to put up a photo of what you cooked."
+            hint="A nudge to put up a photo of what you cooked — at the time and how often you set below."
             on={promptMe}
             disabled={savingPref}
             onChange={(v) => savePref({ notify_prompt_me: v })}

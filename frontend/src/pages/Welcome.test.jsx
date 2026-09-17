@@ -6,10 +6,11 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 // `pushAvailability()` returns 'unsupported' and the panel renders its honest can't-do branch —
 // which is what most of the tests above exercise. These handles let the other two branches be
 // driven, since 'ready' and 'install-first' are the states that matter to real people.
-const push = { availability: 'unsupported', enable: vi.fn() }
+const push = { availability: 'unsupported', enable: vi.fn(), primeVapidKey: vi.fn() }
 vi.mock('../lib/push', () => ({
   pushAvailability: () => push.availability,
   enable: (...args) => push.enable(...args),
+  primeVapidKey: (...args) => push.primeVapidKey(...args),
 }))
 import Welcome from './Welcome'
 
@@ -34,6 +35,7 @@ function signIn(id = 7) {
 beforeEach(() => {
   push.availability = 'unsupported'
   push.enable = vi.fn(() => Promise.resolve({ ok: true }))
+  push.primeVapidKey = vi.fn(() => Promise.resolve({ public_key: 'k', configured: true }))
   localStorage.clear()
   signIn()
 })
@@ -80,8 +82,11 @@ describe('Welcome — what it teaches', () => {
     expect(screen.getByText('3 of 4')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
     expect(screen.getByText('4 of 4')).toBeInTheDocument()
-    // The notifications panel is the last one: it finishes, it does not go to a fifth.
-    expect(screen.queryByText('5 of')).not.toBeInTheDocument()
+    // The notifications panel is the last one: it finishes rather than advancing. Asserted on the
+    // absence of a "Next" — the first version checked for the literal text "5 of", which cannot
+    // fail unless someone types that string, since all four badges are hardcoded. A test that
+    // cannot fail is worse than no test: it reads as coverage.
+    expect(screen.queryByRole('button', { name: /next/i })).toBeNull()
   })
 
   it('the photo step is genuinely optional — skipping it advances, never blocks', async () => {
@@ -247,14 +252,65 @@ describe('Welcome — the notifications ask (#110)', () => {
     expect(screen.getByRole('button', { name: /turn on notifications/i })).toBeInTheDocument()
   })
 
-  it('names the two things that actually arrive, and no third', async () => {
-    // A permission ask converts on being specific. "Stay updated" is what an app says when it
-    // intends to send whatever it likes later.
+  it('names all THREE kinds, because the first version claimed two and was wrong', async () => {
+    // THE BUG THIS TEST USED TO PROTECT. It asserted "two things, and nothing else" — and both ship
+    // gates found that false. Nine kinds of push can reach a new account on the defaults; the two
+    // bullets covered four. Uncovered: `recipe_kept`, `recipe_claimed`, `friend_request`,
+    // `friend_accept`, and the FRIEND-POST push, which is on by default and probably the most
+    // frequent notification anyone will get. A post is not a recipe in this product, so "sends you
+    // one" never covered it.
+    //
+    // On a screen whose whole job is buying an irrevocable permission with an honest disclosure,
+    // over-specifying is the same harm as under-specifying. And a test asserting the false sentence
+    // is the #103 PhotoFramer shape — copy claiming a behaviour that doesn't exist, held in place.
+    //
+    // Three lines is honest AND complete because "kinds" is the axis the settings already use.
     push.availability = 'ready'
     await toNotifyPanel()
-    expect(screen.getByText(/asks you for a recipe/i)).toBeInTheDocument()
+    expect(screen.getByText(/asks for a recipe, sends you one, adds you as/i)).toBeInTheDocument()
+    expect(screen.getByText(/when a friend shares a meal/i)).toBeInTheDocument()
     expect(screen.getByText(/nudge to share what you cooked/i)).toBeInTheDocument()
-    expect(screen.getByText(/two things, and nothing else/i)).toBeInTheDocument()
+    // And it no longer claims to be exhaustive in a way the app doesn't keep.
+    expect(screen.queryByText(/nothing else/i)).toBeNull()
+  })
+
+  it('lists exactly three lines, one per notification GATE', async () => {
+    // Every push in the app is gated by exactly one of `notify_people`, `notify_friend_posts`,
+    // `notify_prompt_me`, and this panel spends one line on each. THREE is therefore the honest
+    // number, and a fourth bullet appearing here without a fourth gate existing would be the
+    // over-claim this test guards.
+    //
+    // WHAT THIS TEST DOES NOT DO, stated because its first version's comment claimed otherwise:
+    // it does not enforce the cross-file half. A fourth SWITCH added to
+    // `NotificationSettings.jsx` fails that file's own `getAllByRole('switch')` count, gets
+    // updated there, and this file stays green with three bullets — so it cannot catch a fourth
+    // gate shipping without a fourth line. Nothing in a single-component test can; the guard for
+    // that is `tests/test_notify_push.py`'s MISSING_COPY set-comparison, which fails when a
+    // notification type exists with no copy, plus this comment. Asserting a count in one file
+    // while describing an invariant across two is the "reads as coverage" shape this branch
+    // removed two tests earlier.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+  })
+
+  it('primes the server key on MOUNT, so the tap is not spent on a round trip', async () => {
+    // `lib/push.js`'s own header: `requestPermission()` must be reached while the tap's user
+    // activation is still live — WebKit's window is a couple of seconds, and the axios client allows
+    // 45s because the API cold-starts. `enable()` awaits an uncached key fetch first, so an unprimed
+    // tap can have Safari refuse the prompt outright — on an installed iPhone, the only platform
+    // where this button renders. Both other call sites prime in a mount effect; this one didn't
+    // until the ship gate found it.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    expect(push.primeVapidKey).toHaveBeenCalled()
+    expect(push.enable).not.toHaveBeenCalled()
+  })
+
+  it('does not prime on a platform that cannot subscribe anyway', async () => {
+    push.availability = 'install-first'
+    await toNotifyPanel()
+    expect(push.primeVapidKey).not.toHaveBeenCalled()
   })
 
   it('granting subscribes and silences the Home strip, so the yes is only asked once', async () => {
@@ -313,17 +369,32 @@ describe('Welcome — the notifications ask (#110)', () => {
     push.availability = 'unsupported'
     await toNotifyPanel()
     expect(screen.getByText(/can.{0,3}t do notifications/i)).toBeInTheDocument()
-    expect(screen.getByText(/still shows up in your inbox/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
     expect(await screen.findByText('home')).toBeInTheDocument()
   })
 
-  it('claims no audio, on the newest panel in the flow', async () => {
-    // POSITIONING: every new user-facing surface tends to add one of these, so the sweep runs here
-    // too rather than only over the teaching panels.
-    push.availability = 'ready'
+  it.each(['ready', 'install-first', 'unsupported'])(
+    'claims no audio on the newest panel — in the %s branch',
+    async (availability) => {
+      // POSITIONING: every new user-facing surface tends to add one of these. Swept in ALL THREE
+      // branches, not just 'ready', because they are three different strings and `install-first` is
+      // the one most of this audience will actually see — iPhones in Safari. The first version swept
+      // only 'ready', which is the branch a desktop dev box shows.
+      push.availability = availability
+      await toNotifyPanel()
+      const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
+      expect(document.body.textContent).not.toMatch(BANNED)
+    },
+  )
+
+  it('the unsupported-browser line does not promise an inbox it cannot fill', async () => {
+    // It used to say "everything still shows up in your inbox", which is false twice: the daily
+    // nudge writes no notification row at all, and the friend-post push deliberately writes none
+    // either (the feed's `is_new` mark is its persistent half). Naming what DOES land is true and
+    // more useful than a reassurance that isn't.
+    push.availability = 'unsupported'
     await toNotifyPanel()
-    const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
-    expect(document.body.textContent).not.toMatch(BANNED)
+    expect(screen.getByText(/asks and arrivals still wait for you/i)).toBeInTheDocument()
+    expect(screen.queryByText(/everything still shows up/i)).toBeNull()
   })
 })

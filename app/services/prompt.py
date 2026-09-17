@@ -178,7 +178,8 @@ def posted_today(user: User, now_local: datetime, db: Session) -> bool:
 
     A prompt is only a prompt if it can fire when nothing has happened yet. The old gate meant a
     beta with no posts got no nudges, which produced no posts (#89 was specified as a BeReal-style
-    prompt to post and built as a digest of friends' activity — see the note on `User.notify_prompt_me`).
+    prompt to post and built as a digest of friends' activity — see the note on
+    `User.notify_prompt_me`).
 
     Also self-limiting in the right direction: it goes quiet for exactly the people who don't need
     prompting, without a rule that says so.
@@ -322,7 +323,8 @@ def prompt_payload(count: int) -> dict:
 
 
 # WHY SOMEBODY DIDN'T GET NUDGED. A vocabulary, because the first version of `run_daily_prompt`
-# returned one `skipped` counter covering five unrelated situations — and the day the owner asked
+# returned one `skipped` counter covering five unrelated situations (SIX now — #109 added
+# `nudged_recently`) — and the day the owner asked
 # "why didn't the nudge arrive last night?" the honest answer was that the log could not tell you.
 # Answering it took reading the GitHub Actions API, computing per-timezone send windows, and
 # re-deriving `is_due` by hand. That is archaeology for a question the job should just answer.
@@ -360,7 +362,8 @@ def run_daily_prompt(db: Session) -> dict:
     WHAT DECIDES WHETHER SOMEONE IS NUDGED, in order: the prompt switch and the clock (`is_due`),
     then whether their chosen frequency allows one yet (`prompt_window_reason`, which subsumes the
     old at-most-once-a-day check), then whether they have already shared a meal today
-    (`posted_today`), then whether they have a device at all. Their friends' activity decides only what the line SAYS, never
+    (`posted_today`), then whether they have a device at all. Their friends' activity decides
+    only what the line SAYS, never
     whether it is sent — that inversion is the fix, and reversing it re-creates the circularity
     described on `User.notify_prompt_me`.
 

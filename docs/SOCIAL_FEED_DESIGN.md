@@ -136,8 +136,13 @@ two-axes tension by unifying them: a recipe's audience *is* a visibility tier.
 > is the reason the iOS app sat at #1 on the roadmap for months. The remaining native case is
 > performance, camera and an App Store listing.
 >
-> One honest gap: no notification has yet been observed arriving on a real device — headless
-> Chromium refuses `pushManager.subscribe` because there is no push service behind it. See TECHDEBT.
+> Observed on 2026-09-17: a production daily prompt arrived on an installed iOS home-screen app
+> and its tap opened the composer, so the transport is proven end to end. **The honest gap is now
+> narrower and differently shaped:** no notification OTHER than the daily prompt has been watched
+> arriving (each of the seven types and the friend-post push has its own copy and its own URL over
+> that same transport), and Android has not been observed at all. Neither can be closed on this
+> machine — headless Chromium refuses `pushManager.subscribe`, since there is no push service
+> behind it — so both need a real device. See TECHDEBT.
 
 BeReal's habit loop is *"your friends just posted" → you open the app*. That pull needs
 push notifications, and web push (even iOS 16.4+) is weak/unreliable.

@@ -54,11 +54,11 @@ class User(Base):
     last_feed_seen_post_id: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     # --- Notifications (#89) ------------------------------------------------------------
-    # TEN columns — eight live plus two tombstones at the end of
-    # this block, which is a dead column kept for one release for the deploy-ordering reason
-    # explained there. All on the PERSON rather than on a device, because that is what they are
-    # about: turning the daily nudge off shouldn't depend on which phone you're holding. The
-    # devices themselves live in `push_subscriptions`.
+    # TEN columns — EIGHT live, plus two tombstones at the end of this block
+    # (`notify_prompt` and `notify_posts`), both dead and both kept for one release for the
+    # deploy-ordering reason explained there. All on the PERSON rather than on a device, because
+    # that is what they are about: turning the daily nudge off shouldn't depend on which phone
+    # you're holding. The devices themselves live in `push_subscriptions`.
     #
     # An IANA name ("Asia/Manila"), read from the browser and sent at login/signup. Nullable
     # because every existing account has none and no backfill can invent one — a user with NULL
@@ -102,9 +102,12 @@ class User(Base):
     # being an alternative to hearing about friends and becomes a different notification about a
     # different subject. Alternatives collapse into one field; independent things must not.
     #
-    # Both default TRUE. The prompt is the retention mechanism and a default-off switch means it
-    # never happens; hearing that a friend cooked is what people expect from every app of this
-    # shape. Quiet hours are what make on-by-default defensible.
+    # ALL THREE default TRUE (`server_default="1"`) — this said "Both" while the heading three
+    # lines up said THREE SWITCHES, which is the kind of disagreement that makes a reader trust
+    # neither. The prompt is the retention mechanism and a default-off switch means it never
+    # happens; hearing that a friend cooked is what people expect from every app of this shape;
+    # and something addressed to you personally is the least declinable of the three. Quiet hours
+    # are what make on-by-default defensible.
     #
     # `notify_posts` and `notify_prompt` below are DEAD COLUMNS kept for one release — see the note
     # on them. `AccountUpdate` still accepts both as deprecated aliases, because Vercel and ECS
@@ -152,7 +155,8 @@ class User(Base):
     # interleaved ones, since `notify_prompt`'s removal was already pending when `notify_posts`
     # joined it:
     #   1. (this one) add the three switches, backfill, stop READING either dead column. All
-    #      declared and all present — so `tests/test_migrations.py::test_migrated_schema_matches_models`,
+    #      declared and all present — so
+    #      `tests/test_migrations.py::test_migrated_schema_matches_models`,
     #      which forbids ANY model/migration drift and has no exemption mechanism, stays green.
     #   2. stop DECLARING both here. No migration. Now no running code selects them.
     #   3. one migration that drops both. Model and schema agree again.

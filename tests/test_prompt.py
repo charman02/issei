@@ -227,7 +227,8 @@ def test_the_payload_lands_on_the_COMPOSER_and_collapses_with_itself():
     p = prompt.prompt_payload(2)
     assert p["url"] == "/add/meal", (
         "the message asks for a post, so it opens the thing that makes one — sending someone to "
-        "the feed to be asked for a photo is the same mismatch this change fixes, one screen smaller"
+        "the feed to be asked for a photo is the same mismatch this change fixes, one screen"
+        " smaller"
     )
     assert p["tag"] == "daily-prompt", "so two unopened days don't stack into a pile"
 
@@ -842,7 +843,8 @@ def test_installing_later_the_same_day_still_gets_the_nudge(
 
 
 def test_every_skip_is_named(db_session, make_user, monkeypatch):
-    """One `skipped` counter covered five unrelated situations, and the day the owner asked why the
+    """One `skipped` counter covered five unrelated situations (six now, since #109 added
+    `nudged_recently`), and the day the owner asked why the
     nudge hadn't arrived, the log could not tell them. Answering it took the GitHub Actions API,
     a per-timezone send-window calculation and re-deriving `is_due` by hand — archaeology for a
     question the job should just answer."""
@@ -917,7 +919,6 @@ def test_the_default_frequency_IS_the_old_behaviour(db_session, make_user):
     _sent_on(db_session, me, now_local.date())
     assert prompt.prompt_window_reason(me, now_local, db_session) == "already_sent_today"
     # Nudged yesterday → allowed again, which is daily.
-    db_session.query(type(me)).count()  # keep the session warm
     from app.models.prompt_send import PromptSend
 
     db_session.query(PromptSend).delete()
@@ -1074,6 +1075,38 @@ def test_the_frequency_does_not_override_HAVING_ALREADY_POSTED(
     summary = prompt.run_daily_prompt(db_session)
     assert summary["sent"] == 0
     assert summary["reasons"] == {"already_posted_today": 1}
+
+
+def test_flying_WEST_cannot_strand_someone_permanently(db_session, make_user):
+    """A timezone move can put the last send's `local_date` in this person's FUTURE.
+
+    `local_date` is the RECIPIENT's local date, so someone who flies west has a stored date up to a
+    day ahead of the date they now live in — the UTC span is 26 hours, so at most one day — and
+    `days_since_last_prompt` goes NEGATIVE. A predicate that only tested `gap < every_days` would
+    read that as "not yet" for a weekly person and keep reading it that way, which is the shape of a
+    permanent silence.
+
+    The `gap <= 0` branch absorbs it instead, and it self-heals as the date advances: -1 and 0 both
+    report `already_sent_today`, then the ordinary rule resumes. Worst case is one extra quiet day
+    after a long flight. Checked because the ship gate asked whether the frequency could strand
+    anyone, and "it can't" is worth a test rather than an argument.
+    """
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_prompt_every_days = 7
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+
+    # Recorded "tomorrow", from the person's point of view now.
+    _sent_on(db_session, me, now_local.date() + timedelta(days=1))
+    assert prompt.prompt_window_reason(me, now_local, db_session) == "already_sent_today"
+
+    # And the ordinary rule resumes once the gap is positive again — no permanent silence.
+    from app.models.prompt_send import PromptSend
+
+    db_session.query(PromptSend).delete()
+    _sent_on(db_session, me, now_local.date() - timedelta(days=7))
+    assert prompt.prompt_window_reason(me, now_local, db_session) is None
 
 
 def test_days_since_last_prompt_reads_the_MOST_RECENT_row(db_session, make_user):

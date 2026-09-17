@@ -178,6 +178,42 @@ describe('NotificationSettings (#89)', () => {
     expect(screen.queryByText(/every evening you haven/i)).toBeNull()
   })
 
+  it('the nudge toggle does NOT state a cadence, because the control below sets it', async () => {
+    // THE BUG THIS TEST EXISTS FOR. The hint read "Once a day, at the time below — a nudge to put
+    // up a photo of what you cooked." That was true until #109 put a "How often" control 40 lines
+    // beneath it, and then someone who chose "Once a week" read this card top to bottom as:
+    //   "Remind me to share a meal — ONCE A DAY, at the time below"
+    //   "How often — Once a week"
+    // Two statements about one behaviour, contradicting each other, three rows apart, on the screen
+    // that OWNS the setting. Found by the ship gate, and it was the un-pinned twin of the false
+    // Welcome sentence the same branch fixed — that one had a test asserting it, this one had none.
+    //
+    // Same class as PhotoFramer's "Pinch or use the slider to zoom" (#103): copy stating a
+    // behaviour the app no longer has. So the hint now points AT the two controls instead of
+    // pre-empting one of them.
+    signIn({ notify_prompt_every_days: 7 })
+    render(<NotificationSettings />)
+    await screen.findByRole('switch', { name: /remind me to share a meal/i })
+    // Swept over the whole section, not one element: the point is that the contradiction cannot
+    // appear ANYWHERE beside a control that says "Once a week". ("Every day" and "Once a week" are
+    // the option labels and are deliberately a different string.)
+    expect(document.body.textContent).not.toMatch(/once a day/i)
+    expect(screen.getByText(/at the time and how often you set below/i)).toBeInTheDocument()
+  })
+
+  it('the unsupported-browser line does not promise an inbox it cannot fill', async () => {
+    // It said "Everything still shows up in your inbox when you open issei", which is false twice:
+    // the daily nudge writes no `Notification` row at all, and the friend-post push deliberately
+    // writes none either (the feed's #97 `is_new` mark is its persistent half). The identical
+    // sentence was removed from `Welcome.jsx` in the same branch; this copy shipped one component
+    // over in the same deploy and the ship gate caught it. Naming what DOES land is true.
+    push.pushAvailability.mockReturnValue('unsupported')
+    signIn()
+    render(<NotificationSettings />)
+    expect(await screen.findByText(/asks and arrivals still wait for you/i)).toBeInTheDocument()
+    expect(screen.queryByText(/everything still shows up/i)).toBeNull()
+  })
+
   it('a cached user from before the frequency column existed defaults to daily', async () => {
     // Same fallback shape as the hour beside it, and the same value the column defaults to — so the
     // control cannot render a blank or a zero for one page load and then save it.

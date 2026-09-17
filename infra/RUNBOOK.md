@@ -213,8 +213,8 @@ remember step 5 is that steps 3 and 4 are now mandatory.
    `curl --fail-with-body` exits non-zero and the run goes red **six times an hour, with six
    emails an hour** — the schedule is every 10 minutes, so a wrong key is loud rather than
    occasional. Budget for that before you start, or fix the key first: the volume has surprised
-   someone once already. Each red run
-   each time.
+   someone once already. Each red run also emails the repo owner, so the signal arrives whether or
+   not anyone is looking at Actions.
 
 7. **Verify — AND MIND THE ORDER, because the obvious one burns the thing it checks.** Install on
    the phone and subscribe BEFORE pressing "Daily prompt" by hand. A dispatch with zero
@@ -231,17 +231,25 @@ remember step 5 is that steps 3 and 4 are now mandatory.
    `workflow_dispatch` of "Daily prompt" should return a JSON summary rather than 404 (safe to press
    twice: `prompt_sends`' UNIQUE (user, local_date) refuses a double-send).
 
-   **The PWA shell shipped 2026-09-10 (commit `91660ef`) and the four parameters were created
-   2026-09-15, so what stands between the app and a real notification is a deploy plus one phone** — this step used to end by saying the
-   client half was still missing. After setting them, the end-to-end check needs a PHONE, because
+   **DONE — this step is history now, and is kept for the sequence.** The PWA shell shipped
+   2026-09-10 (commit `91660ef`), the four parameters were created 2026-09-15, and on **2026-09-17 a
+   production daily prompt arrived on an installed iOS home-screen app and its tap opened the
+   composer.** So the end-to-end leg described below has been walked once; redo it after any change
+   to the VAPID keys, the service worker or the payload shape. It needs a PHONE, because
    nothing on the dev machine can do it (headless Chromium refuses `pushManager.subscribe` outright:
    there is no push service behind it). On the phone: open `https://issei.app`, install it via
    Share → "Add to Home Screen" — **required on iOS**, where Safari grants Web Push only to a
    home-screen install and `window.PushManager` doesn't exist in a browser tab at all — then open
    the app *from the home screen*, go to You → Notifications, turn on "Notify me on this device",
-   and allow the browser prompt. The daily nudge then fires at the hour set on that screen, on the
-   days a friend has posted since you last opened Home; a manual `workflow_dispatch` of "Daily
-   prompt" runs the identical code path without waiting.
+   and allow the browser prompt. The daily nudge then fires at the hour set on that screen, on any
+   day you have **not already shared a meal**, and no more often than the "How often" setting allows
+   (#109 — every 1 / 3 / 7 days, defaulting to 1). **NOT "on the days a friend has posted"**, which
+   is what this line used to say and what #89 actually built: gating the prompt on friends' activity
+   made it circular — the mechanism for getting people to post required people to have already
+   posted. #108 repointed it at the recipient's own silence. A manual `workflow_dispatch` of "Daily
+   prompt" runs the identical code path without waiting, and its JSON summary carries a per-reason
+   breakdown (`already_posted_today`, `nudged_recently`, `hour_not_reached`, …) so a night with no
+   nudge can be explained from the run page rather than from the database.
 
 ## Step 2 — Bootstrap CDK (one-time per account/region)
 
