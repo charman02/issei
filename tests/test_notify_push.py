@@ -157,7 +157,10 @@ def test_a_payload_carries_a_UNIQUE_tag_so_two_people_cannot_collapse_into_one()
 
 def test_an_unknown_type_sends_nothing_rather_than_something_generic():
     """None, not "You have a notification". A push that offers nothing is the species people mute
-    an app over, and `prompt_payload` already refuses to send one at zero."""
+    an app over. (Note `prompt_payload` no longer refuses at zero — since #108 the daily nudge ASKS
+    for something rather than reporting something, so it has nothing to be silent about.
+    POSITIONING rule 2 draws that line: asking for an action is allowed, asking for attention is
+    not.)"""
     row = Notification(user_id=1, type="not_a_real_type")
     assert notify_push.payload_for(row, who="Ana", what=None) is None
 
@@ -799,7 +802,9 @@ def _befriend(client, a, ah, b, bh):
 
 
 def _instant(db_session, user):
-    user.notify_posts = "instant"
+    """Opt in to hearing about friends' posts. On by DEFAULT now, so this is belt-and-braces for
+    tests that want to be explicit about which switch they depend on."""
+    user.notify_friend_posts = True
     db_session.commit()
 
 
@@ -934,21 +939,54 @@ def test_a_soft_deleted_recipe_is_never_named_or_linked(db_session, make_user, s
     assert sent[0]["payload"]["url"] == "/notifications"
 
 
-@pytest.mark.parametrize("cadence", ["daily", "off"])
-def test_only_instant_hears_immediately(client, make_user, db_session, live_push, cadence):
-    """"daily" is the 18:00 nudge's job and "off" is neither. This is the whole cadence: someone
-    on "daily" who ALSO got a push here would receive four notifications for three posts, which
-    is the double delivery two independent switches would have shipped."""
+def test_declining_friend_posts_silences_them(client, make_user, db_session, live_push):
+    """`notify_friend_posts` is the gate, and it is now a switch of its own rather than one value of
+    a three-way cadence — because the daily nudge became a prompt to post, which is about YOU, so
+    the two stopped being alternatives and became different notifications about different
+    subjects."""
     cook, ch = make_user()
     fan, fh = make_user()
     _befriend(client, cook, ch, fan, fh)
-    fan.notify_posts = cadence
+    fan.notify_friend_posts = False
     db_session.commit()
     _subscribe(db_session, fan)
     live_push.clear()
 
     _post(client, ch)
     assert live_push == []
+
+
+def test_hearing_about_friends_posts_is_ON_BY_DEFAULT(client, make_user, db_session, live_push):
+    """It used to be opt-in, buried as one value of a three-way control. This is the
+    Instagram-shaped behaviour people already expect from an app of this shape, and the owner's
+    call was that it should be the default rather than something to go and find."""
+    cook, ch = make_user(first_name="Lola", last_name="")
+    fan, fh = make_user()
+    _befriend(client, cook, ch, fan, fh)
+    assert fan.notify_friend_posts is True, "the default, straight from the column"
+    _subscribe(db_session, fan)
+    live_push.clear()
+
+    _post(client, ch, dish="Adobo")
+    assert len(live_push) == 1
+    assert live_push[0]["payload"]["body"] == "Lola just shared a meal — Adobo."
+
+
+def test_declining_the_daily_PROMPT_does_not_silence_friend_posts(
+    client, make_user, db_session, live_push
+):
+    """The independence, from the other side. Someone who doesn't want to be nagged to post can
+    still want to know when a friend cooks — the old cadence could not express that at all."""
+    cook, ch = make_user()
+    fan, fh = make_user()
+    _befriend(client, cook, ch, fan, fh)
+    fan.notify_prompt_me = False
+    db_session.commit()
+    _subscribe(db_session, fan)
+    live_push.clear()
+
+    _post(client, ch)
+    assert len(live_push) == 1
 
 
 def test_two_friends_cooking_are_two_notifications_not_one(

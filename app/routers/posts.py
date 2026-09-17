@@ -195,7 +195,7 @@ def create_post(
     db.add(post)
     db.commit()
     db.refresh(post)
-    # Tell friends who asked to hear immediately (`notify_posts == "instant"`). NO inbox row for
+    # Tell friends who want to hear (`notify_friend_posts`, on by default). NO inbox row for
     # this one — the feed's #97 read-mark is its persistent half; see notify_push's section
     # comment. On CREATE only: an edit must not resurface a post as new, which is the same rule
     # PATCH /posts/{id} already follows for `is_new`.

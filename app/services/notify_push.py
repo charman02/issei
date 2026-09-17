@@ -432,13 +432,17 @@ def deliver_friend_post(db: Session, post_id: int) -> int:
             .filter(RecipeModel.id == post.recipe_id, RecipeModel.deleted_at.is_(None))
             .first()
         )
-    # `notify_posts == "instant"` is the whole gate. Note this does NOT consult `notify_people`:
-    # that switch is about a PERSON reaching you and this is the app bringing you the feed, and
-    # conflating them would mean someone who wants to know when a friend asks for their Adobo
-    # cannot decline the ambient stream, or vice versa.
+    # `notify_friend_posts` is the whole gate, and it is now ON BY DEFAULT rather than an opt-in
+    # cadence value — this is the Instagram-shaped behaviour people already expect from an app of
+    # this shape, and the three-value cadence that used to gate it was modelling this and the daily
+    # nudge as alternatives, which they are not (see `User.notify_prompt_me`).
+    #
+    # Note this does NOT consult `notify_people`: that switch is about a PERSON reaching you and
+    # this is ambient news about someone else, and conflating them would mean someone who wants to
+    # know when a friend asks for their Adobo cannot decline the ambient stream, or vice versa.
     candidates = (
         db.query(User)
-        .filter(User.id.in_(ids), User.notify_posts == "instant")
+        .filter(User.id.in_(ids), User.notify_friend_posts.is_(True))
         .all()
     )
     if not candidates:

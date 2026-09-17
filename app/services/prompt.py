@@ -32,7 +32,7 @@ friend a single post (which is every fixture in this repo).
 """
 
 import logging
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -101,16 +101,82 @@ def is_due(user: User, now_local: Optional[datetime]) -> bool:
     is the correct outcome and the reason the two settings are separate. It also means a
     `notify_hour` sitting inside a user's own quiet window is a coherent "not for now" rather than
     a bug to route around.
+
+    WHAT THIS FUNCTION DELIBERATELY DOES NOT ASK is whether anyone else has posted. It used to,
+    via the caller, and that was the circularity: the mechanism for getting people to post required
+    people to have already posted, so it amplified activity and could never start it. The
+    caller now asks `posted_today(user)` — the recipient's OWN absence — which bootstraps from zero
+    users and goes quiet for people who are already active. See `posted_today`.
     """
-    # `== "daily"` IS THE EXCLUSIVITY. Someone on "instant" already hears about each friend's
-    # post as it lands, so nudging them at 18:00 about the same posts is a fourth notification
-    # describing three they were already shown. `!= "off"` would look equivalent and would ship
-    # exactly that; a test pins the difference.
-    if now_local is None or user.notify_posts != "daily":
+    if now_local is None or not user.notify_prompt_me:
         return False
     if now_local.hour < user.notify_hour:
         return False
     return not in_quiet_hours(now_local.hour, user.quiet_from, user.quiet_to)
+
+
+def _already_sent(user: User, now_local: datetime, db: Session) -> bool:
+    """Has this person's nudge for this LOCAL date already been claimed?
+
+    A read of the same UNIQUE (user, local_date) the insert below relies on. It does NOT replace
+    that insert — two concurrent runs must still be settled by the database, not by a check-then-act
+    — it exists so the summary can say `already_sent_today` instead of attributing the skip to
+    whatever check happens to come next.
+    """
+    return (
+        db.query(PromptSend.id)
+        .filter(PromptSend.user_id == user.id, PromptSend.local_date == now_local.date())
+        .first()
+        is not None
+    )
+
+
+def posted_today(user: User, now_local: datetime, db: Session) -> bool:
+    """Has this person shared a meal during THEIR OWN local day?
+
+    THE ONE SUBSTITUTION THAT MAKES THE NUDGE WORK. It replaced `friends_who_posted(user) > 0` as
+    the gate, and the difference is the direction of causation:
+
+        old:  fire if MY FRIENDS have posted   -> requires the outcome it exists to cause
+        new:  fire if I HAVE NOT posted        -> bootstraps from nothing
+
+    A prompt is only a prompt if it can fire when nothing has happened yet. The old gate meant a
+    beta with no posts got no nudges, which produced no posts (#89 was specified as a BeReal-style
+    prompt to post and built as a digest of friends' activity — see the note on `User.notify_prompt_me`).
+
+    Also self-limiting in the right direction: it goes quiet for exactly the people who don't need
+    prompting, without a rule that says so.
+
+    LOCAL DAY, NOT 24 HOURS. Someone who posted at 23:50 last night has not posted TODAY, and
+    should be prompted this evening — a rolling window would swallow that. `Post.created_at` is
+    naive UTC, so the local day's boundaries are converted to UTC before comparing; getting that
+    backwards silently mis-slices the day for everyone whose offset crosses midnight, which is most
+    of this app's audience. The arithmetic stays in Python for the same reason the candidate
+    selection does: `now() AT TIME ZONE u.timezone` is Postgres-only and would first run for real
+    against Neon.
+    """
+    # A NAIVE datetime here would be silently wrong rather than loudly: `.astimezone()` would
+    # assume the container's zone — UTC in the image, so accidentally right in prod and wrong on
+    # every dev box. Raised, not asserted, and BEFORE the arithmetic it guards: an `assert` after
+    # the fact is stripped under `python -O` and fires too late to matter either way.
+    if now_local.tzinfo is None:
+        raise ValueError("posted_today needs an aware datetime; use local_now(user)")
+
+    local_midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = local_midnight.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    end_utc = (local_midnight + timedelta(days=1)).astimezone(dt_timezone.utc).replace(
+        tzinfo=None
+    )
+    return (
+        db.query(Post.id)
+        .filter(
+            Post.user_id == user.id,
+            Post.created_at >= start_utc,
+            Post.created_at < end_utc,
+        )
+        .first()
+        is not None
+    )
 
 
 # How many recent posts to look at when counting. The count is a sentence, not a statistic, so
@@ -171,29 +237,48 @@ def friends_who_posted(user: User, db: Session) -> int:
     return len(authors)
 
 
-def prompt_payload(count: int) -> Optional[dict]:
-    """The notification body, or None if there is nothing worth saying.
+def prompt_payload(count: int) -> dict:
+    """The nudge's body. ASKS FOR AN ACTION, and that is the whole point of it.
 
-    ZERO SENDS NOTHING. A prompt that fires with an empty feed has to fall back on something
-    generic — "open issei!" — and that is the exact species of notification people mute an app
-    over: it asks for attention without offering anything. Returning None here means the daily
-    nudge is genuinely conditional on a friend having cooked, which also makes it self-limiting for
-    a new account with no friends yet.
+    It used to say "3 friends posted since you last looked" and return None at zero, on the
+    reasoning that a nudge with nothing to report would have to fall back on "open issei!" — which
+    asks for attention without offering anything, and is what people mute an app over. That
+    reasoning is sound and it still holds; it was aimed at the wrong thing. The fix isn't a better
+    digest, it's not being a digest: a prompt to post doesn't ask for attention, it asks the person
+    to give something, and it is the app's own core act. So it has nothing to report by design and
+    no zero to be silent about.
 
-    This is consistent with how the rest of the app treats an absence: a request count is hidden
-    at zero, a keeper count is hidden at zero, an empty Blocked list isn't rendered.
+    ZERO STILL SENDS NOTHING — the rule moved rather than went away. The caller checks
+    `posted_today` and sends nothing when the answer is yes, because there is nothing to prompt
+    someone about who has already done it. Same discipline as a request count hidden at zero and an
+    empty Blocked list not being rendered; different subject.
 
-    The copy names PEOPLE, not posts, and singular/plural is handled rather than papered over with
-    "(s)" — the app writes "1 person asked for this", not "1 person(s)".
+    The friend count is now GARNISH, not a gate: when friends have cooked, saying so makes the
+    prompt more worth opening, and when they haven't, the prompt is still worth sending. Copy names
+    PEOPLE, not posts, and handles singular/plural rather than papering over it with "(s)" — the
+    app writes "1 person asked for this", not "1 person(s)".
+
+    "YOU HAVEN'T SEEN" IS NOT DECORATION — it is what makes the number true. `friends_who_posted`
+    counts distinct friends with posts newer than `last_feed_seen_post_id`, and that mark has NO
+    time bound: someone who never opens Home keeps a month-old mark, so the count can describe
+    activity from weeks ago. The first version of this rewrite dropped the qualifier and kept the
+    data, producing "What did you cook today? 2 friends have shared something." every evening for
+    a month about two posts from a month ago — a sentence about today followed by a stale claim.
+    The old copy carried its own qualifier ("since you last looked") and was therefore honest; the
+    rewrite has to carry one too. Found by the ship gate, and it is the one sentence in this change
+    that POSITIONING's rewritten rule 2 directly governs: what a notification reports must be true.
     """
-    if count <= 0:
-        return None
-    who = "friend" if count == 1 else "friends"
+    body = "What did you cook today?"
+    if count > 0:
+        who = "friend has" if count == 1 else "friends have"
+        body += f" {count} {who} shared something you haven't seen."
     return {
         "title": "issei",
-        "body": f"{count} {who} posted since you last looked.",
-        # Where the tap lands: the feed, which is what the message is about.
-        "url": "/",
+        "body": body,
+        # Where the tap lands. The composer, not the feed: the message is asking for a post, so it
+        # should open the thing that makes one. Sending someone to the feed to be asked for a photo
+        # is the same mismatch this whole change is fixing, one screen smaller.
+        "url": "/add/meal",
         # Collapses with itself on the device, so two days of unopened prompts don't stack into a
         # pile of near-identical lines.
         "tag": "daily-prompt",
@@ -212,10 +297,10 @@ SKIP_REASONS = (
     # is_due said no:
     "hour_not_reached",  # their local hour hasn't come round yet today
     "quiet_hours",  # their hour HAS passed, but the catch-up landed inside their quiet window
-    # ...and past is_due:
-    "no_unseen_friend_activity",  # ZERO SENDS NOTHING — nobody they follow has posted since
+    # ...and past is_due, in the order they are checked:
+    "already_sent_today",  # an earlier run in this local day already claimed it
+    "already_posted_today",  # nothing to prompt: they have already shared a meal today
     "no_device",  # notifications on, nothing installed anywhere yet
-    "already_sent_today",  # a earlier run in this local day claimed it
 )
 
 
@@ -235,6 +320,12 @@ def run_daily_prompt(db: Session) -> dict:
     real against Neon. This repo has already lost time to exactly that shape of prod-only bug, so
     the arithmetic stays in Python where a test can see it.
 
+    WHAT DECIDES WHETHER SOMEONE IS NUDGED, in order: the prompt switch and the clock (`is_due`),
+    then whether today's nudge was already claimed, then whether they have already shared a meal
+    today (`posted_today`), then whether they have a device at all. Their friends' activity decides only what the line SAYS, never
+    whether it is sent — that inversion is the fix, and reversing it re-creates the circularity
+    described on `User.notify_prompt_me`.
+
     Every send is recorded BEFORE it is attempted, and the ordering is deliberate: if the row is
     written after, a crash between send and record means the next run sends again. A recorded
     send that then fails to deliver is the better failure — the person misses one nudge, rather
@@ -246,8 +337,8 @@ def run_daily_prompt(db: Session) -> dict:
 
     THE SUMMARY NAMES EVERY SKIP (`reasons`), and that is not cosmetic. A single `skipped` count
     made "the nudge didn't arrive" unanswerable from the logs — the five situations it covered
-    range from "working exactly as designed" (nobody they follow posted) to "this person can never
-    receive anything" (no device registered), and telling them apart needed the database. See
+    range from "working exactly as designed" (they already shared a meal today) to "this person can
+    never receive anything" (no device registered), and telling them apart needed the database. See
     SKIP_REASONS.
     """
     from sqlalchemy.exc import IntegrityError
@@ -284,7 +375,7 @@ def run_daily_prompt(db: Session) -> dict:
     # predicates that need no clock arithmetic, so they belong here rather than in Python.
     candidates = (
         db.query(User)
-        .filter(User.timezone.isnot(None), User.notify_posts == "daily")
+        .filter(User.timezone.isnot(None), User.notify_prompt_me.is_(True))
         .all()
     )
 
@@ -296,17 +387,31 @@ def run_daily_prompt(db: Session) -> dict:
             note(_skip_reason(user, now_local) if now_local else "hour_not_reached")
             continue
 
-        count = friends_who_posted(user, db)
-        payload = prompt_payload(count)
-        if payload is None:
-            # Nothing worth saying. Deliberately NOT recorded as sent: if a friend posts later
-            # today, this person should still be reachable — recording it would mean an empty
-            # feed at 18:00 costs them the whole evening.
-            note("no_unseen_friend_activity")
+        # ALREADY SENT IS CHECKED FIRST, and the ordering is about the SUMMARY rather than about
+        # correctness — the UNIQUE constraint below would refuse a second send either way. From the
+        # moment someone is nudged and then posts, every later run today would otherwise report
+        # them as `already_posted_today`, which reads as "they were never nudged" in a summary whose
+        # whole purpose is answering "why didn't it arrive" — when for that person it did arrive.
+        # It is also the cheapest of the three checks, so the run stops doing four queries per
+        # already-handled user, 144 times a day. Found by the ship gate.
+        if _already_sent(user, now_local, db):
+            note("already_sent_today")
             continue
 
+        # NOTHING TO PROMPT SOMEONE WHO HAS ALREADY DONE IT. Deliberately NOT recorded as sent —
+        # the day stays unclaimed, which costs nothing here (they posted, so they won't be prompted
+        # again today anyway) and keeps this branch consistent with the one below it.
+        if posted_today(user, now_local, db):
+            note("already_posted_today")
+            continue
+
+        # Garnish, not a gate. This used to decide whether anything was sent at all, which is what
+        # made the nudge circular; see `posted_today`.
+        count = friends_who_posted(user, db)
+        payload = prompt_payload(count)
+
         # NO DEVICE IS CHECKED BEFORE THE DAY IS CLAIMED, and that ordering is the same argument
-        # the `payload is None` branch above makes for itself. Record-before-send is right for a
+        # the `posted_today` branch above makes for itself. Record-before-send is right for a
         # TRANSIENT failure — one missed nudge beats two nudges. "Nobody has registered a phone"
         # is not transient and is knowable before claiming, so claiming it would mean someone who
         # installs the app at 19:00 has already spent that evening. It was previously counted as a

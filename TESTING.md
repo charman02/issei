@@ -301,9 +301,9 @@ Two more properties of the same function, both of which were bugs first:
 
 - **The cap comes AFTER the exclusions.** Applying the 30-row scan limit in SQL before the Python
   filter let one chatty friend's 30 private posts suppress the prompt entirely — zero count, no
-  push, recomputed identically every hour until the person opened the feed.
-  → `test_the_cap_cannot_SUPPRESS_the_prompt`, `test_the_cap_cannot_be_swamped_by_a_BLOCKED_persons_posts`.
-- **It counts PEOPLE, not posts.** The copy says "3 friends posted", so `COUNT(*)` makes the
+  push, recomputed identically on every run until the person opened the feed. (Since #108 a zero count no longer suppresses the nudge at all — it only removes the garnish — so this failure is now about the COUNT being wrong rather than the push being absent.)
+  → `test_the_cap_cannot_SUPPRESS_the_count`, `test_the_cap_cannot_be_swamped_by_a_BLOCKED_persons_posts`.
+- **It counts PEOPLE, not posts.** The copy names PEOPLE, so `COUNT(*)` makes the
   sentence false when one friend posts three times — invisible in any fixture giving each friend a
   single post, which is every other fixture here.
   → `test_one_friend_posting_three_times_is_ONE_friend`.
@@ -316,12 +316,16 @@ rolling deploy, EventBridge is at-least-once by contract, and a GitHub Actions c
 by hand. So `is_due` can safely use CATCH-UP semantics ("has their hour passed today?") which is
 what stops cron drift silently skipping a timezone for the day.
 
-Two related rules: a zero count sends nothing AND does not claim the day (a friend posting later
+Two related rules, and #108 REPOINTED THE FIRST ONE. It used to be "a zero friend count sends
+nothing", which was the circularity: the nudge required friends to have posted, so it could never
+start the posting it existed to cause. What sends nothing now is **the person having already shared
+a meal today** — there is nothing to prompt someone about who has done it — and that skip likewise
+does not claim the day (a friend posting later
 should still reach them), and an UNCONFIGURED deploy claims nothing at all — without that guard the
 first deploy with timezones but no VAPID keys would spend every user's slot on a notification that
 never left the building.
 → `test_a_SECOND_run_the_same_day_sends_NOTHING`,
-`test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day`,
+`test_someone_who_ALREADY_POSTED_today_is_not_prompted`, `test_an_empty_FEED_still_gets_the_prompt` (the anti-circularity one),
 `test_an_UNCONFIGURED_deploy_does_not_burn_everyones_day`,
 `test_due_ONCE_THEIR_HOUR_HAS_PASSED_not_only_during_it`.
 

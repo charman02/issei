@@ -434,15 +434,40 @@ sits closer to the product's promises than a settings screen usually does. Six r
    switching it off reads as a promise the app then breaks in the other direction. #107 wired
    the sender (`services/notify_push.py`), so the switch now exists and the ORDER is the point:
    the control shipped the day the delivery did, not before. The same applies to any preference
-   added ahead of its sender. A corollary the cadence added: **never offer two controls that
-   describe the same delivery**, because "when friends post" has two coherent answers (as it
-   happens, or once a day) and they are alternatives — two independent switches would send four
-   notifications for three posts, and the fourth would summarise three the person had already
-   been shown.
-2. **The daily nudge counts PEOPLE and only ever says what is true.** "3 friends posted since
-   you last looked" is derived from a `can_view_post` re-check, so it excludes a friend's
-   private post and a blocked person's post. Zero sends nothing at all — never a generic
-   "open issei!", which is the species of notification people mute an app over.
+   added ahead of its sender.
+
+   A corollary, learned the expensive way and then corrected: **a control's shape must follow the
+   SUBJECT, not the delivery.** The first attempt made "when friends post" a three-way cadence
+   (right away / once a day / never), reasoning that a per-post push and a daily digest deliver the
+   same information twice. Sound about a digest — and the digest was itself the mistake, so the
+   control inherited it. Once the daily line asks YOU for a photo it is about you, while a friend's
+   post is about them; two notifications about different subjects are not alternatives, and
+   collapsing them into one field makes each un-declinable without the other. The test: if you
+   cannot say whose life the notification is about, the control is wrong before its options are.
+2. **A notification may ask for an ACTION; it may never merely ask for ATTENTION.** This rule
+   replaced a narrower one (owner's call, 2026-09-16) and the distinction is the whole of it.
+
+   Forbidden, unchanged: "open issei!" — a line that reports nothing, requests nothing, and
+   spends someone's attention to no end. That is the species people mute an app over.
+
+   Permitted, and it took a bug to see it: **"What did you cook today?"** The daily nudge asks the
+   person to *give* something, and what it asks for is the app's own core act. The previous
+   wording — "zero sends nothing at all" — was written to forbid the first and accidentally
+   forbade the second, because it assumed a nudge's only possible content was a report about other
+   people. #89 was specified as a BeReal-style prompt to post and built as a digest of friends'
+   activity; the rule then locked the digest in by requiring something to report. That made the
+   retention engine circular — it could only fire once people were already posting — so a beta
+   with no posts got no nudges, which produced no posts.
+
+   **"Zero sends nothing" survives, pointed at the right thing.** A prompt is silent when the
+   person has ALREADY shared a meal today (`prompt.posted_today`), because there is nothing to
+   prompt someone about who has done it. Same discipline as a request count hidden at zero and an
+   empty Blocked list not being rendered; different subject.
+
+   **And anything a notification does report must still be true.** The friend count survives as
+   garnish rather than a gate, and it is still derived from a `can_view_post` re-check, so it
+   excludes a friend's private post and a blocked person's post. A number in a notification is
+   held to the same standard as a number on a screen — see rule 4.
 3. **"This browser can't do notifications" is FALSE on an iPhone in Safari.** Push exists
    there, gated on the site being added to the home screen — so the honest copy is an
    instruction ("Add issei to your home screen first"), never a refusal. This matters more
@@ -451,6 +476,17 @@ sits closer to the product's promises than a settings screen usually does. Six r
    elsewhere in this file forbid showing on screen — a recipe-request count is the cook's
    alone, a keeper count has no names, and a lock screen is the most public surface the app
    has.
+
+   **And a count that exists ONLY in a notification is held to the same standard, which needs
+   saying because there is no screen rule to inherit.** The friend count in the daily nudge is
+   the only number in the app that appears nowhere else, so "same as on screen" resolves to
+   nothing for it. Three things bind it: it counts PEOPLE, never posts or meals; it names nobody
+   (a count of friends is ambient, a list of them is a feed, and a lock screen is the wrong place
+   for either); and it carries whatever clause makes it TRUE — "you haven't seen", because
+   `last_feed_seen_post_id` has no time bound and the bare number can otherwise describe
+   month-old activity. Rule 2 permits a notification to report something; this is the standard
+   for anything it reports. Added 2026-09-16, when the rewritten rule 2 turned out to point here
+   for a standard that wasn't yet written down.
 5. **Who is named, and to whom.** #107 added a rule to this register, so here it is in full: a
    KEEPER is never named to the cook (#96 — keeping is a bookmark addressed to nobody, and the
    anonymity is re-applied at the push boundary, twice, because a lock screen is read by whoever
@@ -504,7 +540,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**811 backend tests**, **961 frontend tests in 61 files**. Endpoint and test counts have
+**829 backend tests**, **963 frontend tests in 61 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

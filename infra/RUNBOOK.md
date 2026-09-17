@@ -200,7 +200,9 @@ remember step 5 is that steps 3 and 4 are now mandatory.
      actually renders on every push.** Miss it and the variables are simply absent in production
      while the stack file looks correct, which is a silent no-op rather than an error.
 
-6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs hourly:
+6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs **every 10
+   minutes** (`5,15,25,35,45,55` past the hour — hourly lost nudges, because GitHub drops most
+   scheduled runs and a person's send window is only four hours wide):
    - `CRON_KEY` — the same value as `/issei/CRON_SECRET`.
    - `API_URL` — e.g. `https://api.issei.app` (no trailing slash).
 
@@ -208,7 +210,10 @@ remember step 5 is that steps 3 and 4 are now mandatory.
    order flexible: `API_URL` alone is harmless and can go in at any time. Set `CRON_KEY` only AFTER
    the server has `CRON_SECRET` — with both present the workflow starts POSTing, and an unset
    server secret DISABLES the route (404 rather than open, deliberately), so
-   `curl --fail-with-body` exits non-zero and the run goes red at :30 every hour, with an email
+   `curl --fail-with-body` exits non-zero and the run goes red **six times an hour, with six
+   emails an hour** — the schedule is every 10 minutes, so a wrong key is loud rather than
+   occasional. Budget for that before you start, or fix the key first: the volume has surprised
+   someone once already. Each red run
    each time.
 
 7. **Verify — AND MIND THE ORDER, because the obvious one burns the thing it checks.** Install on
@@ -419,7 +424,7 @@ Each of these is itself a "Dive Deep" story worth writing down.
   image-update path — build → push → update the ECS service on pushes to main. It
   only works once the stack (and its OIDC deploy role) exists, and needs the
   `AWS_ACCOUNT_ID` / `MIGRATION_DATABASE_URL` repo secrets set. (A second workflow,
-  `daily-prompt.yml`, runs hourly for #89 and needs `CRON_KEY` / `API_URL` — see Step 1b.
+  `daily-prompt.yml`, runs every 10 minutes for #89 and needs `CRON_KEY` / `API_URL` — see Step 1b.
   It is self-disabling while either is unset, so it costs nothing until you want it.) Wire it up after the
   first successful manual `cdk deploy` if you want push-to-deploy; it's optional for
   the initial launch.

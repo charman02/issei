@@ -123,6 +123,6 @@ class VapidKeyResponse(BaseModel):
 # about a PERSON and the client already reconciles the user object on every app start. The two
 # models here were never imported by any router or any test: dead code that read like an API.
 #
-# They were removed rather than migrated when `notify_prompt` became `notify_posts`, because the
+# They were removed rather than migrated when the notification preferences were reshaped, because the
 # alternative was updating a second, unreachable copy of the same vocabulary and hoping the next
 # person noticed which one the app actually reads. See `app/schemas/user.py` for the real ones.

@@ -28,12 +28,25 @@ import Toggle from './Toggle'
 // worse than a missing one, because switching it off reads as a promise. `notify()` now reaches
 // `services/notify_push.py`, so the column has a consumer and the switch has a job.
 //
-// "WHEN FRIENDS POST" IS A CADENCE, NOT A TOGGLE, and that is the one non-obvious thing on this
-// screen. There are two ways to hear that a friend cooked — as it happens, or once a day — and
-// they are ALTERNATIVES: the daily nudge says "3 friends posted since you last looked", which
-// summarises exactly the posts an instant push already announced. Two independent switches (the
-// obvious build) deliver four notifications for three posts. So one control, three answers, and
-// `prompt.is_due` tests `notify_posts == "daily"` to make the exclusivity real.
+// THREE SWITCHES, SPLIT BY SUBJECT — and the version of this screen that shipped one day earlier
+// had a three-value cadence here instead, which is worth explaining because the reasoning behind it
+// was correct about the wrong thing.
+//
+// That control read "When friends post: Right away / Once a day / Never", on the grounds that a
+// per-post push and a daily digest are ALTERNATIVES: a nudge saying "3 friends posted since you
+// last looked" summarises exactly what the instant pushes already announced, so both on delivers
+// four notifications for three posts. True — of a digest. The mistake was one level up: #89 was
+// specified as a BeReal-style PROMPT TO POST and built as a digest, so the daily line was about
+// other people when it was supposed to be asking YOU for a photo. It was also circular: it only
+// fired once friends had posted, so it could amplify activity and never start it.
+//
+// Once the daily line means "share a meal", the two stop being alternatives — one is about YOU and
+// one is about THEM — and collapsing them into one field becomes wrong. So: three switches, by
+// SUBJECT rather than by notification type.
+//
+//   Remind me to share a meal    the app asking YOU            (notify_prompt_me)
+//   When a friend shares a meal  ambient news about THEM       (notify_friend_posts)
+//   When someone reaches you     addressed TO you              (notify_people)
 //
 // QUIET HOURS ARE NOT GATED ON THE CADENCE. They used to sit inside the daily-nudge branch, which
 // was true when the nudge was the only thing that could arrive — now every person-to-person push
@@ -51,22 +64,6 @@ function hourLabel(h) {
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
-// The three answers to "when do you want to hear that friends posted". Ordered loudest-first, so
-// the list reads as a dial being turned down rather than a set of unrelated options.
-const CADENCES = [
-  {
-    value: 'instant',
-    title: 'Right away',
-    detail: 'A notification each time a friend shares a meal.',
-  },
-  {
-    value: 'daily',
-    title: 'Once a day',
-    detail: 'One nudge at the time below, if your friends have been cooking.',
-  },
-  { value: 'off', title: 'Never', detail: 'Nothing about friends’ meals.' },
-]
-
 // MIRRORS `app/services/push.in_quiet_hours` — keep the two in step, like the folk-unit lists.
 // Only used to warn about a self-defeating combination; the server is the authority on whether a
 // notification actually goes out.
@@ -76,9 +73,31 @@ export function inQuietHours(hour, from, to) {
   return hour >= from || hour < to // wraps midnight: 22 → 8
 }
 
-// Shared by the render body and by `toggleDevice`, which runs before either is computed.
-function cadenceOf(user) {
-  return user.notify_posts ?? (user.notify_prompt === false ? 'off' : 'daily')
+// FALLS BACK THROUGH TWO GENERATIONS OF OLD FIELD, because `reconcile()` refreshes the identity
+// cache only once per app start — so a cached user written by an older build has `notify_posts`, or
+// (older still) `notify_prompt`, and neither has the new booleans. Without the chain these switches
+// would render as OFF for one page load, and a tap would then SAVE that. Same shape as #105's
+// fallback for `default_recipe_visibility`, and the same reason.
+//
+// Shared with `toggleDevice`, which runs before the render body computes anything.
+function promptMeOf(user) {
+  if (user.notify_prompt_me !== undefined) return user.notify_prompt_me !== false
+  if (user.notify_posts !== undefined) return user.notify_posts !== 'off'
+  return user.notify_prompt !== false
+}
+
+function friendPostsOf(user) {
+  if (user.notify_friend_posts !== undefined) return user.notify_friend_posts !== false
+  if (user.notify_posts !== undefined) return user.notify_posts !== 'off'
+  // THE OLDEST GENERATION STILL DECIDES THIS, and returning a bare `true` here was wrong in a way
+  // that bit twice. Someone who turned #89's daily nudge OFF has `notify_prompt: false` cached and
+  // neither newer field; both migrations map that to `notify_friend_posts = FALSE`, so this switch
+  // rendered ON while the server said OFF — exactly the "wrong for one page load, and a tap would
+  // then SAVE it" failure this chain exists to prevent, inverted. It also defeated
+  // `toggleDevice`'s rescue, which fires only when every preference is off: the person granted
+  // notification permission and ended up subscribed to nothing, which is the state the rescue was
+  // written for. Found by the ship gate.
+  return user.notify_prompt !== false
 }
 
 function Row({ label, hint, children }) {
@@ -137,8 +156,8 @@ export default function NotificationSettings() {
       // Turning it on for the first device with the daily nudge switched off would be a switch
       // that lights up and delivers nothing. Nobody grants notification permission in order to
       // receive none, so granting implies wanting the one thing there is to receive.
-      if (next && cadenceOf(user) === 'off' && user.notify_people === false)
-        await savePref({ notify_posts: 'daily' })
+      if (next && !promptMeOf(user) && !friendPostsOf(user) && user.notify_people === false)
+        await savePref({ notify_prompt_me: true })
     } else {
       setError(result.message)
     }
@@ -162,18 +181,15 @@ export default function NotificationSettings() {
     }
   }
 
-  // FALLS BACK THROUGH THE OLD FIELD. A cached user object written by a build that predates the
-  // rename has `notify_prompt` and no `notify_posts`, and `reconcile()` only refreshes it once per
-  // app start — so without this chain the control would render as "Never" for one page load and a
-  // tap would then SAVE that. Same shape as #105's fallback chain for `default_recipe_visibility`.
-  const cadence = cadenceOf(user)
+  const promptMe = promptMeOf(user)
+  const friendPosts = friendPostsOf(user)
   const hour = Number.isInteger(user.notify_hour) ? user.notify_hour : 18
   const quietFrom = Number.isInteger(user.quiet_from) ? user.quiet_from : 22
   const quietTo = Number.isInteger(user.quiet_to) ? user.quiet_to : 8
   // A nudge time inside the quiet window means no nudge, ever, silently. The server treats that
   // as a coherent "not for now" rather than an error, so saying so here is the only place a
   // person can find out.
-  const selfCancelling = cadence === 'daily' && inQuietHours(hour, quietFrom, quietTo)
+  const selfCancelling = promptMe && inQuietHours(hour, quietFrom, quietTo)
   // EQUAL BOUNDS MEAN NO QUIET HOURS — and it is one tap away from the 10pm→8am default, so the
   // hint has to change with it. Left as the "nothing arrives inside these hours" line, the screen
   // would tell someone trying to silence the app the exact opposite of what the server will do
@@ -227,49 +243,24 @@ export default function NotificationSettings() {
         {/* The preferences follow the PERSON, so they're shown even with no device subscribed —
             that's a real state (settings ready, nothing installed yet), and hiding them would
             make the daily nudge look like it doesn't exist until you've granted permission. */}
-        <div className="border-t-2 border-line py-2.5">
-          <span className="block font-display font-bold text-[14px] text-ink">
-            When friends post
-          </span>
-          <div
-            className="mt-2 space-y-1.5"
-            role="radiogroup"
-            aria-label="When friends post"
-          >
-            {CADENCES.map((opt) => {
-              const selected = cadence === opt.value
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={savingPref}
-                  onClick={() => savePref({ notify_posts: opt.value })}
-                  className={`flex w-full items-start gap-2.5 text-left sticker-sm p-2.5 disabled:opacity-60 ${
-                    selected ? 'bg-peach' : 'bg-card'
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex-none flex items-center justify-center w-[17px] h-[17px] mt-0.5 rounded-full border-2 border-ink bg-cream"
-                  >
-                    {selected && (
-                      <span className="block w-[8px] h-[8px] rounded-full bg-terra" />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block font-display font-black text-[14px] text-ink leading-none">
-                      {opt.title}
-                    </span>
-                    <span className="block font-display text-[12px] text-ink-soft mt-1 leading-snug">
-                      {opt.detail}
-                    </span>
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+        <div className="border-t-2 border-line">
+          <Toggle
+            label="Remind me to share a meal"
+            hint="Once a day, at the time below — a nudge to put up a photo of what you cooked."
+            on={promptMe}
+            disabled={savingPref}
+            onChange={(v) => savePref({ notify_prompt_me: v })}
+          />
+        </div>
+
+        <div className="border-t-2 border-line">
+          <Toggle
+            label="When a friend shares a meal"
+            hint="A notification each time, as it happens."
+            on={friendPosts}
+            disabled={savingPref}
+            onChange={(v) => savePref({ notify_friend_posts: v })}
+          />
         </div>
 
         <div className="border-t-2 border-line">
@@ -282,11 +273,11 @@ export default function NotificationSettings() {
           />
         </div>
 
-        {cadence === 'daily' && (
+        {promptMe && (
           <>
-            <Row label="Nudge me at">
+            <Row label="Remind me at">
               <select
-                aria-label="Nudge me at"
+                aria-label="Remind me at"
                 className="field !py-1.5 !px-2 font-display font-bold text-[13px] w-auto"
                 value={hour}
                 disabled={savingPref}
@@ -351,7 +342,7 @@ export default function NotificationSettings() {
 
         {selfCancelling && (
           <p className="pb-3 font-display font-bold text-[12.5px] text-brick leading-snug">
-            {hourLabel(hour)} is inside your quiet hours, so the nudge won&rsquo;t arrive.
+            {hourLabel(hour)} is inside your quiet hours, so the reminder won&rsquo;t arrive.
           </p>
         )}
         {error && (

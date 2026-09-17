@@ -17,6 +17,8 @@ every other fixture in this repo, hence `test_one_friend_posting_three_times_is_
 import pathlib
 import re
 from datetime import datetime, timedelta, timezone as dt_timezone
+
+import pytest
 from zoneinfo import ZoneInfo
 
 from app.models.block import Block
@@ -163,38 +165,93 @@ def test_someone_with_no_friends_gets_zero_without_a_query(db_session, make_user
 # --- the copy: zero says nothing at all ---
 
 
-def test_zero_produces_NO_notification(db_session, make_user):
-    """A prompt firing on an empty feed has to fall back on something generic ("open issei!"),
-    which is the species of notification people mute an app over. Consistent with every other
-    absence in this app: a request count is hidden at zero, so is a keeper count, and an empty
-    Blocked list isn't rendered."""
-    assert prompt.prompt_payload(0) is None
-    assert prompt.prompt_payload(-1) is None
+def test_zero_friend_activity_STILL_PROMPTS(db_session, make_user):
+    """THE ANTI-CIRCULARITY TEST, and the one whose absence let the original bug ship.
+
+    This used to assert `prompt_payload(0) is None`, on the reasoning that a nudge with nothing to
+    report would fall back on "open issei!" — the species of notification people mute an app over.
+    The reasoning was sound and aimed at the wrong thing: the answer isn't a better digest, it's not
+    being a digest. #89 was specified as a BeReal-style PROMPT TO POST and built as a digest of
+    friends' activity, which made it circular — the mechanism for getting people to post required
+    people to have already posted, so it could amplify activity but never start it. A beta with no
+    posts got no nudges, which produced no posts.
+
+    A prompt is only a prompt if it can fire when nothing has happened yet.
+    """
+    for count in (0, -1):
+        payload = prompt.prompt_payload(count)
+        assert payload is not None
+        assert payload["body"] == "What did you cook today?"
 
 
 def test_one_friend_is_SINGULAR():
     """The app writes "1 person asked for this", not "1 person(s)"."""
     body = prompt.prompt_payload(1)["body"]
-    assert body == "1 friend posted since you last looked."
+    assert body == "What did you cook today? 1 friend has shared something you haven't seen."
 
 
 def test_more_than_one_is_plural():
-    assert prompt.prompt_payload(3)["body"] == "3 friends posted since you last looked."
+    assert (
+        prompt.prompt_payload(3)["body"]
+        == "What did you cook today? 3 friends have shared something you haven't seen."
+    )
 
 
-def test_the_payload_lands_on_the_feed_and_collapses_with_itself():
+def test_the_count_carries_the_clause_that_makes_it_TRUE():
+    """"you haven't seen" is not decoration.
+
+    `friends_who_posted` counts friends with posts newer than `last_feed_seen_post_id`, and that
+    mark has NO time bound — someone who never opens Home keeps a month-old one. The first version
+    of this rewrite dropped the qualifier and kept the data, so the line read "What did you cook
+    today? 2 friends have shared something." every evening for a month, about two posts from a
+    month ago: a sentence about today followed by a stale claim. The old copy carried "since you
+    last looked" and was honest; this has to carry one too. Found by the ship gate, and it is the
+    sentence POSITIONING's rewritten rule 2 most directly governs.
+    """
+    for count in (1, 4):
+        body = prompt.prompt_payload(count)["body"]
+        assert "you haven't seen" in body, body
+    # ...and the count-less prompt makes no claim at all, so it needs no qualifier.
+    assert prompt.prompt_payload(0)["body"] == "What did you cook today?"
+
+
+def test_the_friend_count_is_GARNISH_and_never_the_whole_message():
+    """It used to BE the message, which is what made the nudge depend on other people. Now the ask
+    comes first and the count only sweetens it — so the line reads either way, and the thing that
+    decides whether anything is sent has nothing to do with friends."""
+    for count in (0, 1, 5):
+        assert prompt.prompt_payload(count)["body"].startswith("What did you cook today?")
+
+
+def test_the_payload_lands_on_the_COMPOSER_and_collapses_with_itself():
     p = prompt.prompt_payload(2)
-    assert p["url"] == "/", "the message is about the feed, so that's where the tap goes"
+    assert p["url"] == "/add/meal", (
+        "the message asks for a post, so it opens the thing that makes one — sending someone to "
+        "the feed to be asked for a photo is the same mismatch this change fixes, one screen smaller"
+    )
     assert p["tag"] == "daily-prompt", "so two unopened days don't stack into a pile"
 
 
-def test_the_prompt_copy_claims_nothing_forbidden():
+# THE WIDE FORM, matching the frontend suites and `tests/test_notify_push.py`. POSITIONING records
+# that the banned phrase came back as "in YOUR own words" after a narrow `their`-only guard had been
+# added, and that the narrow version "let it through every guard at once". This guard used a plain
+# tuple that omitted the words-family entirely — and `prompt_payload` is the THIRD push body in the
+# app, the one POSITIONING's paragraph about that sweep doesn't mention. Found by the docs gate.
+BANNED_CLAIM = re.compile(
+    r"record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen",
+    re.IGNORECASE,
+)
+
+
+@pytest.mark.parametrize("count", [0, 1, 5])
+def test_the_prompt_copy_claims_nothing_forbidden(count):
     """POSITIONING: no voice/audio, and it must not imply anything expires or was missed in a way
-    that suggests it's gone. "Since you last looked" is a position, not a deadline."""
-    banned = ("voice", "audio", "record", "listen", "expire", "disappear", "last chance")
-    body = prompt.prompt_payload(5)["body"].lower()
-    for word in banned:
-        assert word not in body, word
+    that suggests it's gone. Checked at every count, because the count-less and count-bearing
+    bodies are different strings and only one of them used to exist."""
+    body = prompt.prompt_payload(count)["body"]
+    assert not BANNED_CLAIM.search(body), body
+    for word in ("expire", "disappear", "last chance"):
+        assert word not in body.lower(), word
 
 
 # --- who is due ---
@@ -265,24 +322,34 @@ def test_the_same_hour_in_two_timezones_is_two_different_moments(db_session, mak
 def test_the_nudge_switch_turns_it_off(db_session, make_user):
     me, _ = make_user()
     me.timezone = "Asia/Manila"
-    me.notify_posts = "off"
+    me.notify_prompt_me = False
     db_session.commit()
     assert prompt.is_due(me, _local("Asia/Manila", 18)) is False
 
 
-def test_INSTANT_is_not_daily_and_that_is_the_whole_point(db_session, make_user):
-    """The exclusivity, in the one line that implements it.
+def test_the_two_switches_are_INDEPENDENT(db_session, make_user):
+    """They replaced a three-value cadence that modelled them as ALTERNATIVES, which was right
+    about a digest and wrong about a prompt.
 
-    Someone on "instant" is pushed as each friend posts, so the 18:00 nudge would be a fourth
-    notification summarising three they have already been shown. `is_due` tests `== "daily"`; the
-    tempting `!= "off"` reads as equivalent and ships exactly that double delivery. Which is why
-    this test exists rather than only the on/off pair above.
+    A digest of friends' posts and a per-post push do deliver the same information twice — that
+    reasoning still holds. But once the daily line means "share a meal" it is about YOU while the
+    friend push is about THEM, and two notifications about different subjects are not alternatives.
+    Declining one must not silence the other, in either direction.
     """
     me, _ = make_user()
     me.timezone = "Asia/Manila"
-    me.notify_posts = "instant"
+
+    me.notify_prompt_me, me.notify_friend_posts = True, False
     db_session.commit()
-    assert prompt.is_due(me, _local("Asia/Manila", 18)) is False
+    assert prompt.is_due(me, _local("Asia/Manila", 18)) is True, (
+        "not wanting friend pushes must not silence the prompt"
+    )
+
+    me.notify_prompt_me, me.notify_friend_posts = False, True
+    db_session.commit()
+    assert prompt.is_due(me, _local("Asia/Manila", 18)) is False, (
+        "wanting friend pushes must not force the prompt back on"
+    )
 
 
 def test_quiet_hours_beat_the_send_hour(db_session, make_user):
@@ -410,11 +477,14 @@ def test_a_SECOND_run_the_same_day_sends_NOTHING(db_session, make_user, monkeypa
     assert len(calls) == 1, "sent twice"
 
 
-def test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day(db_session, make_user, monkeypatch):
-    """Deliberately not recorded as sent: if a friend posts later today this person should still be
-    reachable. Recording it would mean an empty feed at 18:00 costs them the whole evening."""
-    from app.models.prompt_send import PromptSend
+def test_an_empty_FEED_still_gets_the_prompt(db_session, make_user, monkeypatch):
+    """THE BUG, end to end, in the shape it was reported: "the nudge didn't arrive last night."
 
+    A user with no friends and no friend activity is exactly who most needs prompting, and used to
+    be the one person guaranteed to get nothing — the gate was `friends_who_posted > 0`, so the
+    retention engine required the outcome it existed to cause. The whole of a small beta lives in
+    this state.
+    """
     calls = []
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
@@ -423,13 +493,209 @@ def test_an_empty_feed_sends_nothing_AND_does_not_burn_the_day(db_session, make_
     me = _due_user(db_session, make_user)
     _sub(db_session, me)
 
-    assert prompt.run_daily_prompt(db_session)["sent"] == 0
-    assert calls == []
-    assert db_session.query(PromptSend).count() == 0, "the day must stay claimable"
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 1
+    assert len(calls) == 1
+    import json
 
-    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 1)
+    assert "What did you cook today?" in json.dumps(calls[0][3])
+
+
+def test_someone_who_ALREADY_POSTED_today_is_not_prompted(db_session, make_user, monkeypatch):
+    """The other half, and where "zero sends nothing" moved to. There is nothing to prompt someone
+    about who has already done it — and this is what makes the nudge self-limiting in the right
+    direction: it goes quiet for exactly the people who don't need it, with no rule saying so."""
+    from app.models.post import Post
+    from app.models.prompt_send import PromptSend
+
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
-    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+
+    now_local = prompt.local_now(me)
+    assert now_local is not None
+    db_session.add(
+        Post(
+            user_id=me.id,
+            photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
+            dish_name="Adobo",
+            created_at=now_local.astimezone(dt_timezone.utc).replace(tzinfo=None),
+        )
+    )
+    db_session.commit()
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 0
+    assert summary["reasons"] == {"already_posted_today": 1}
+    # The day stays unclaimed, consistent with the other pre-claim skips.
+    assert db_session.query(PromptSend).count() == 0
+
+
+def test_posted_today_uses_the_LOCAL_day_not_a_rolling_24_hours(db_session, make_user):
+    """A post at 23:50 last night is not a post TODAY, and that person should be prompted this
+    evening. `Post.created_at` is naive UTC, so the local day's bounds are converted before
+    comparing — get that backwards and the day is mis-sliced for everyone whose offset crosses
+    midnight, which is most of this app's audience."""
+    from app.models.post import Post
+
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"  # UTC+8, so a local day straddles two UTC days
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+
+    def _post_at(local_dt):
+        db_session.query(Post).delete()
+        db_session.add(
+            Post(
+                user_id=me.id,
+                photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
+                dish_name="Adobo",
+                created_at=local_dt.astimezone(dt_timezone.utc).replace(tzinfo=None),
+            )
+        )
+        db_session.commit()
+
+    # 23:50 YESTERDAY local — inside 24 hours, but not today.
+    _post_at(now_local.replace(hour=23, minute=50) - timedelta(days=1))
+    assert prompt.posted_today(me, now_local, db_session) is False
+
+    # 00:10 TODAY local — barely today, and on the PREVIOUS UTC day in Manila.
+    _post_at(now_local.replace(hour=0, minute=10))
+    assert prompt.posted_today(me, now_local, db_session) is True
+
+    # 23:50 TODAY local — still today, and on the NEXT UTC day.
+    _post_at(now_local.replace(hour=23, minute=50))
+    assert prompt.posted_today(me, now_local, db_session) is True
+
+
+@pytest.mark.parametrize(
+    "zone,on_date,expected_hours",
+    [
+        ("America/New_York", "2027-03-14", 23.0),   # spring forward at 02:00
+        ("America/New_York", "2027-11-07", 25.0),   # fall back at 02:00
+        ("Australia/Lord_Howe", "2027-10-03", 23.5),  # a THIRTY-MINUTE shift
+        ("America/Havana", "2027-03-14", 23.0),     # shifts AT midnight — 00:00 doesn't exist
+        ("Asia/Manila", "2027-06-01", 24.0),        # no DST, the control
+    ],
+)
+def test_the_local_day_window_survives_every_DST_shape(zone, on_date, expected_hours):
+    """`posted_today` converts local midnight to UTC, and a DST day is not 24 hours long.
+
+    Worth its own test because the failure is silent and regional: a window computed as
+    `midnight + 24h` looks right in every no-DST zone and mis-slices the day twice a year
+    everywhere else, so someone gets prompted twice or not at all and nobody can reproduce it.
+    Havana is the nastiest case in the set — it shifts AT midnight, so the local midnight this
+    code constructs is a time that does not exist on the clock, and `astimezone` has to normalise
+    it rather than throw.
+
+    This one checks the WINDOW's shape. The test below it drives `posted_today` itself across the
+    same transitions, because a test that re-implements the code it is checking cannot catch a
+    simplification of that code — which is the realistic regression here, and the ship gate's point.
+    """
+    tz = ZoneInfo(zone)
+    y, m, d = (int(x) for x in on_date.split("-"))
+    now_local = datetime(y, m, d, 18, tzinfo=tz)
+    midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = midnight.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    end = (midnight + timedelta(days=1)).astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+    assert (end - start).total_seconds() / 3600 == expected_hours
+    # And the moment we are asking about is inside the day it belongs to — the invariant that
+    # actually matters, and the one a wrong conversion breaks.
+    assert start <= now_local.astimezone(dt_timezone.utc).replace(tzinfo=None) < end
+
+
+@pytest.mark.parametrize(
+    "zone,on_date",
+    [
+        ("America/New_York", "2027-03-14"),  # 23-hour local day (spring forward)
+        ("America/New_York", "2027-11-07"),  # 25-hour local day (fall back)
+        ("America/Havana", "2027-03-14"),  # the shift happens AT midnight
+    ],
+)
+def test_posted_today_is_right_on_a_DST_DAY_by_actually_calling_it(
+    db_session, make_user, zone, on_date
+):
+    """Drives `posted_today` across a DST transition, with posts at the two edges that break.
+
+    THE GAP THIS CLOSES, as the ship gate put it: every other test that calls this function uses
+    `Asia/Manila`, a fixed +8 offset since 1978. So the single most likely future "simplification" —
+
+        end_utc = start_utc + timedelta(days=1)
+
+    — passes the whole suite while mis-slicing the day twice a year in every DST zone: a 23-hour day
+    absorbs the first hour of tomorrow, a 25-hour day drops the last hour of today, and someone who
+    posted at 23:30 on the fall-back Sunday gets prompted anyway. Regional, silent, and impossible
+    to reproduce on a dev box.
+    """
+    me, _ = make_user()
+    me.timezone = zone
+    db_session.commit()
+    tz = ZoneInfo(zone)
+    y, m, d = (int(x) for x in on_date.split("-"))
+    now_local = datetime(y, m, d, 20, tzinfo=tz)
+
+    def _post_at(local_dt):
+        db_session.query(Post).delete()
+        db_session.add(
+            Post(
+                user_id=me.id,
+                photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
+                dish_name="Adobo",
+                created_at=local_dt.astimezone(dt_timezone.utc).replace(tzinfo=None),
+            )
+        )
+        db_session.commit()
+
+    # 23:30 TODAY, local. Inside this local day whatever its length — and the instant a
+    # fixed-24-hour window drops on a 25-hour day.
+    _post_at(now_local.replace(hour=23, minute=30))
+    assert prompt.posted_today(me, now_local, db_session) is True, "23:30 today is today"
+
+    # 00:30 TOMORROW, local. Outside — and the instant a fixed-24-hour window wrongly absorbs on a
+    # 23-hour day.
+    _post_at(now_local.replace(hour=0, minute=30) + timedelta(days=1))
+    assert prompt.posted_today(me, now_local, db_session) is False, "tomorrow is not today"
+
+    # 23:30 YESTERDAY, local. Outside, and within 24 hours of `now`.
+    _post_at(now_local.replace(hour=23, minute=30) - timedelta(days=1))
+    assert prompt.posted_today(me, now_local, db_session) is False, "yesterday is not today"
+
+
+def test_posted_today_refuses_a_NAIVE_datetime(db_session, make_user):
+    """A naive datetime would be silently wrong rather than loudly: `.astimezone()` assumes the
+    container's zone, which is UTC in the image — so it would be accidentally right in production
+    and wrong on every dev box, which is the worst available outcome. Raised rather than asserted,
+    because an `assert` is stripped under `python -O`."""
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    db_session.commit()
+    with pytest.raises(ValueError, match="aware datetime"):
+        prompt.posted_today(me, datetime(2027, 6, 1, 18), db_session)
+
+
+def test_someone_ELSES_post_does_not_count_as_mine(db_session, make_user):
+    """The predicate is about the RECIPIENT's own absence. Counting anyone else's post would
+    re-introduce the dependency on other people that made the old gate circular."""
+    from app.models.post import Post
+
+    me, _ = make_user()
+    other, _ = make_user()
+    me.timezone = "Asia/Manila"
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+    db_session.add(
+        Post(
+            user_id=other.id,
+            photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
+            dish_name="Adobo",
+            created_at=now_local.astimezone(dt_timezone.utc).replace(tzinfo=None),
+        )
+    )
+    db_session.commit()
+    assert prompt.posted_today(me, now_local, db_session) is False
 
 
 def test_a_user_with_no_timezone_is_never_a_candidate(db_session, make_user, monkeypatch):
@@ -448,24 +714,22 @@ def test_the_nudge_switch_excludes_them_in_SQL(db_session, make_user, monkeypatc
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
     me = _due_user(db_session, make_user)
-    me.notify_posts = "off"
+    me.notify_prompt_me = False
     db_session.commit()
     assert prompt.run_daily_prompt(db_session)["candidates"] == 0
 
 
-def test_an_INSTANT_user_is_excluded_from_the_daily_run_in_SQL(
-    db_session, make_user, monkeypatch
-):
-    """The same exclusivity as `is_due`, but at the candidate query — because the SQL filter and
-    the Python predicate are two separate places that both have to agree, and the SQL one is the
-    cheap-looking `.is_(True)` that a rename would quietly turn into "everyone"."""
+def test_the_friend_post_switch_does_not_touch_the_daily_run(db_session, make_user, monkeypatch):
+    """The SQL filter and the Python predicate in `is_due` are two separate places that must agree,
+    and the SQL one is the cheap-looking `.is_(True)` a rename would quietly turn into "everyone".
+    Declining friend pushes must leave the daily run alone — they are about different subjects."""
     monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 5)
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
     monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
     me = _due_user(db_session, make_user)
-    me.notify_posts = "instant"
+    me.notify_friend_posts = False
     db_session.commit()
-    assert prompt.run_daily_prompt(db_session)["candidates"] == 0
+    assert prompt.run_daily_prompt(db_session)["candidates"] == 1
 
 
 def test_a_DEAD_subscription_is_pruned(db_session, make_user, monkeypatch):
@@ -588,7 +852,9 @@ def test_every_skip_is_named(db_session, make_user, monkeypatch):
 
     summary = prompt.run_daily_prompt(db_session)
     assert summary["skipped"] == 1
-    assert summary["reasons"] == {"no_unseen_friend_activity": 1}
+    # No device — the friend count no longer gates anything, so this user is now genuinely due and
+    # falls through to the next check instead of being silently filtered out by other people.
+    assert summary["reasons"] == {"no_device": 1}
     # And the count still balances, so `reasons` can't drift away from `skipped`.
     assert sum(summary["reasons"].values()) == summary["skipped"]
 
@@ -623,7 +889,12 @@ def test_the_hour_not_yet_reached_is_named_separately_from_quiet_hours(
 
 def test_already_sent_is_named(db_session, make_user, monkeypatch):
     """The idempotence path. A manual re-run of the cron is explicitly supported, so this reason
-    appearing is normal and must not read as a fault."""
+    appearing is normal and must not read as a fault.
+
+    Checked BEFORE `posted_today` (ship gate finding): otherwise, from the moment someone is nudged
+    and then posts, every later run today reports `already_posted_today` — which reads as "never
+    nudged" in a summary whose whole job is answering "why didn't it arrive", when for that person
+    it did."""
     from app.models.push_subscription import PushSubscription
 
     monkeypatch.setattr("app.services.push.is_configured", lambda: True)
@@ -676,7 +947,7 @@ def test_every_reason_the_code_can_emit_is_in_the_vocabulary():
 # --- the review findings, each with the failure it reproduced ---
 
 
-def test_the_cap_cannot_SUPPRESS_the_prompt(db_session, make_user):
+def test_the_cap_cannot_SUPPRESS_the_count(db_session, make_user):
     """Review reproduced this: five friends post normally, ONE chatty friend then posts 30 private
     meals, and the count came back ZERO — no push that evening or any evening until the person
     opened the feed, because a zero is deliberately not recorded so every retry recomputed it.

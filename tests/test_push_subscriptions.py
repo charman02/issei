@@ -243,7 +243,8 @@ def test_the_defaults_are_on_with_quiet_hours(client, make_user):
     means it never happens. Bounded by quiet hours, which is what makes that defensible."""
     _, h = make_user()
     me = client.get("/auth/me", headers=h).json()
-    assert me["notify_posts"] == "daily"
+    assert me["notify_prompt_me"] is True
+    assert me["notify_friend_posts"] is True
     assert me["notify_people"] is True
     assert me["notify_hour"] == 18
     assert me["quiet_from"] == 22
@@ -257,12 +258,12 @@ def test_preferences_are_editable_without_a_password(client, make_user):
     _, h = make_user()
     r = client.patch(
         "/auth/me",
-        json={"notify_posts": "off", "notify_hour": 9, "timezone": "Asia/Manila"},
+        json={"notify_prompt_me": False, "notify_hour": 9, "timezone": "Asia/Manila"},
         headers=h,
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["notify_posts"] == "off"
+    assert body["notify_prompt_me"] is False
     assert body["notify_hour"] == 9
     assert body["timezone"] == "Asia/Manila"
     # Untouched fields stay put — `None` means unchanged, as everywhere else.
@@ -296,7 +297,9 @@ def test_LOGIN_returns_the_preferences_too(client, make_user):
     `reconcile()` — so a settings switch would render as `undefined` (reading as off) for exactly
     one page load, passing every backend test and every component test with a seeded cache."""
     user, h = make_user()
-    client.patch("/auth/me", json={"notify_posts": "off", "timezone": "Europe/London"}, headers=h)
+    client.patch(
+        "/auth/me", json={"notify_prompt_me": False, "timezone": "Europe/London"}, headers=h
+    )
 
     r = client.post(
         "/auth/login", data={"username": user.email, "password": "password123"}
@@ -306,13 +309,14 @@ def test_LOGIN_returns_the_preferences_too(client, make_user):
     for field in (
         "timezone",
         "notify_hour",
-        "notify_posts",
+        "notify_prompt_me",
+        "notify_friend_posts",
         "notify_people",
         "quiet_from",
         "quiet_to",
     ):
         assert field in cached, f"login dropped {field}"
-    assert cached["notify_posts"] == "off"
+    assert cached["notify_prompt_me"] is False
     assert cached["timezone"] == "Europe/London"
 
 
@@ -472,42 +476,80 @@ def test_a_non_ascii_cron_key_is_a_404_not_a_500(monkeypatch):
 # --- the cadence, and the alias that carries an older client through the deploy window ---
 
 
-def test_the_three_cadences_are_settable_and_nothing_else_is(client, make_user):
-    """A Literal, so a typo is a 422 rather than a stored value matching no branch — which would
-    read as "notifications mysteriously stopped" rather than as an error."""
+def test_the_two_switches_are_independently_settable(client, make_user):
+    """Three switches split by SUBJECT — the app asking YOU, a friend having shared, a person
+    reaching you — replacing a three-value cadence that modelled the first two as alternatives.
+    Each has to move without dragging the others."""
     _, h = make_user()
-    for value in ("instant", "daily", "off"):
-        r = client.patch("/auth/me", json={"notify_posts": value}, headers=h)
-        assert r.status_code == 200, r.text
-        assert r.json()["notify_posts"] == value
-    assert client.patch("/auth/me", json={"notify_posts": "hourly"}, headers=h).status_code == 422
-    assert client.patch("/auth/me", json={"notify_posts": True}, headers=h).status_code == 422
+    r = client.patch(
+        "/auth/me", json={"notify_prompt_me": False, "notify_friend_posts": True}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["notify_prompt_me"] is False
+    assert body["notify_friend_posts"] is True
+    assert body["notify_people"] is True, "untouched fields stay put"
+
+    body = client.patch("/auth/me", json={"notify_friend_posts": False}, headers=h).json()
+    assert body["notify_friend_posts"] is False
+    assert body["notify_prompt_me"] is False
 
 
 def test_an_older_client_sending_notify_prompt_is_still_honoured(client, make_user):
-    """THE DEPLOY WINDOW, and why the deprecated alias exists at all.
+    """THE DEPLOY WINDOW, and why the deprecated aliases exist at all.
 
-    Vercel and ECS deploy independently, so a frontend build that predates this rename can be
-    live against a backend that has already renamed the column. Pydantic ignores unknown fields,
-    so simply dropping `notify_prompt` would answer 200 and change nothing — telling someone their
-    "stop nudging me" worked when it didn't. For a note on a handoff that trade was acceptable
-    (#102); for an interruption preference it is not.
+    Vercel and ECS deploy independently, so a frontend build predating a rename can be live against
+    a backend that has already done it. Pydantic ignores unknown fields, so simply dropping the old
+    name answers 200 and changes nothing — telling someone their "stop nudging me" worked when it
+    didn't. For a note on a handoff that trade was acceptable (#102); for an interruption preference
+    it is not.
+
+    `notify_prompt` maps to `notify_prompt_me`, which is the meaning its NAME always claimed: #89's
+    own comment called it "the app nudging YOU" while filling it with other people's activity.
     """
     _, h = make_user()
     r = client.patch("/auth/me", json={"notify_prompt": False}, headers=h)
     assert r.status_code == 200
-    assert r.json()["notify_posts"] == "off"
+    assert r.json()["notify_prompt_me"] is False
 
-    r = client.patch("/auth/me", json={"notify_prompt": True}, headers=h)
-    assert r.json()["notify_posts"] == "daily"
-
-
-def test_the_new_field_wins_when_a_client_sends_both(client, make_user):
-    """A client mid-migration could send both. The alias is only consulted when `notify_posts` is
-    absent, so "instant" can't be silently downgraded to "daily" by a stale boolean travelling
-    alongside it."""
-    _, h = make_user()
-    r = client.patch(
-        "/auth/me", json={"notify_posts": "instant", "notify_prompt": True}, headers=h
+    assert (
+        client.patch("/auth/me", json={"notify_prompt": True}, headers=h).json()[
+            "notify_prompt_me"
+        ]
+        is True
     )
-    assert r.json()["notify_posts"] == "instant"
+
+
+def test_an_older_client_sending_notify_posts_maps_to_BOTH_switches(client, make_user):
+    """The second generation of alias — `notify_posts` shipped one day before it was replaced, so
+    a frontend build sending it is very much still plausible.
+
+    It maps the same way the migration backfills, which is the only honest reading: 'instant' and
+    'daily' both meant "reachable", 'off' meant "leave me alone", and nobody using that field ever
+    expressed an opinion about being PROMPTED to post, because the app didn't do that yet.
+    """
+    _, h = make_user()
+    body = client.patch("/auth/me", json={"notify_posts": "off"}, headers=h).json()
+    assert body["notify_prompt_me"] is False
+    assert body["notify_friend_posts"] is False
+
+    for value in ("instant", "daily"):
+        body = client.patch("/auth/me", json={"notify_posts": value}, headers=h).json()
+        assert body["notify_prompt_me"] is True, value
+        assert body["notify_friend_posts"] is True, value
+
+    assert client.patch("/auth/me", json={"notify_posts": "hourly"}, headers=h).status_code == 422
+
+
+def test_an_explicit_field_always_beats_an_alias(client, make_user):
+    """A client mid-migration can send both generations. The aliases are consulted only where the
+    explicit field is absent, so a stale value cannot overwrite a deliberate one."""
+    _, h = make_user()
+    body = client.patch(
+        "/auth/me",
+        json={"notify_prompt_me": True, "notify_posts": "off", "notify_prompt": False},
+        headers=h,
+    ).json()
+    assert body["notify_prompt_me"] is True, "the explicit field wins over both aliases"
+    # ...and `notify_posts` still reaches the field the caller did NOT state.
+    assert body["notify_friend_posts"] is False

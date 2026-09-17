@@ -126,8 +126,10 @@ two-axes tension by unifying them: a recipe's audience *is* a visibility tier.
 ### Tension 2 — the "open it even when not cooking" magic leans on push (≈ native)
 
 > **RESOLVED 2026-09-09/10, and the premise below was wrong.** Push shipped on the web (#89): RFC
-> 8292 VAPID + RFC 8291 encryption on `cryptography` and `httpx`, a daily "N friends posted since
-> you last looked" nudge at a fixed hour in each person's local time, and a PWA shell. Web push was
+> 8292 VAPID + RFC 8291 encryption on `cryptography` and `httpx`, a daily nudge at a
+> fixed hour in each person's local time, and a PWA shell. (That nudge originally read "N friends
+> posted since you last looked"; #108 corrected it to a PROMPT — "What did you cook today?" — after
+> the digest version proved circular, since it could only fire once people were already posting.) Web push was
 > not weak — but the iOS caveat is real and specific rather than general: **Safari grants Web Push
 > only to a site added to the home screen**, so the manifest and service worker were the
 > precondition, not the native app. "push ≈ native" was the one inference that didn't hold, and it

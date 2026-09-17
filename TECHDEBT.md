@@ -110,10 +110,12 @@ strangers arrive. Security/privacy first.
   it exists. Left here as a closed entry rather than deleted, because the ORDERING argument is the
   reusable part: a notification that cannot be recalled must not precede its own commit.
 
-- **`users.notify_prompt` is a live column that nothing reads, ON PURPOSE, for one release.**
-  (#107)
+- **TWO live columns that nothing reads, ON PURPOSE, awaiting one shared cleanup.** (#107, #108)
+  `users.notify_prompt` and `users.notify_posts`.
   The cadence migration (`b3c4d5e6f7a8`) adds `notify_posts` and backfills it but deliberately
-  does NOT drop `notify_prompt`, and the model no longer declares it. That asymmetry exists
+  does NOT drop either column, and the model still DECLARES both — which is what keeps
+  `test_migrated_schema_matches_models` green, since it forbids any drift and has no exemption
+  mechanism. The arrangement exists
   because of the ORDER in `.github/workflows/deploy.yml`: `alembic upgrade head` runs, THEN the
   image is built and pushed, THEN ECS rolls. So the old task serves traffic against the new
   schema for the whole window — and its model still selects `notify_prompt`, which means dropping
@@ -121,14 +123,18 @@ strangers arrive. Security/privacy first.
   `desiredCount: 1` service, with `/health` still green because it never touches `users`. Nothing
   would alarm; the deploy would look clean. Worse, a health-check failure would roll ECS back to
   an image that cannot talk to the database at all.
-  *What to do — and it is TWO more releases, not one:*
-  **Release 2:** delete `notify_prompt` from `app/models/user.py`. No migration. After this rolls,
-  no running code selects the column. (This is the step that cannot be skipped, and the one it is
-  tempting to skip.) Also the moment to delete the deprecated alias from `AccountUpdate` and the
-  `notify_prompt` fallback in `NotificationSettings.jsx`'s `cadenceOf`, since by then no old
-  frontend build is plausibly still live.
-  **Release 3:** a migration with `op.drop_column("users", "notify_prompt")` inside a
-  `batch_alter_table`. Model and schema agree again.
+  *What to do — and it is TWO more releases, not one, for BOTH columns together:*
+  **Release 2:** delete `notify_prompt` AND `notify_posts` from `app/models/user.py`. No migration.
+  After this rolls, no running code selects either. (This is the step that cannot be skipped, and
+  the one it is tempting to skip.) Also the moment to delete both deprecated aliases from
+  `AccountUpdate`, their handling in `update_me`, and the two older branches of
+  `promptMeOf`/`friendPostsOf` in `NotificationSettings.jsx` — by then no frontend build that old is
+  plausibly still live.
+  **Release 3:** one migration dropping both inside a `batch_alter_table`. Model and schema agree
+  again.
+  They are deliberately merged into ONE sequence: `notify_prompt`'s removal was already pending when
+  `notify_posts` joined it a day later, and running two interleaved three-release cleanups over the
+  same table is how one of them gets forgotten.
   Neither can be folded into release 1: dropping the column while release 1's task is still
   serving is the outage above, and stopping the model from declaring it in release 1 would trip
   `tests/test_migrations.py::test_migrated_schema_matches_models`, which forbids ANY
@@ -183,7 +189,24 @@ strangers arrive. Security/privacy first.
   isn't in the repo. Neither is bad enough to rush; the mitigation covers the observed loss rate.
   *Where:* `.github/workflows/daily-prompt.yml`, `app/services/prompt.py`, `infra/`.
 
-- **The daily prompt can repeat the same sentence forever.** (#89)
+- **The daily prompt can repeat the same sentence forever — and #108 REMOVED THE ACCIDENT THAT
+  LIMITED IT.** (#89, sharpened #108)
+  Until #108 the nudge fired only when a friend had posted something unseen, which is a bug in
+  its own right (it made the retention engine circular) but which also, by accident, kept the
+  repetition bounded: a quiet week sent nothing. The prompt is now gated on the recipient's OWN
+  absence, so someone who never posts and never opens the app gets the same line every evening,
+  indefinitely. That is the correct behaviour for a prompt and the wrong behaviour for a
+  relationship. Capping consecutive unanswered prompts — or varying the line — moves from
+  nicety to real follow-up work with this change, and `prompt_sends` already records every
+  send per local date, so the data to count them is there.
+  *And be precise about what kind of obligation this is,* because the older wording here leaned on
+  `prompt_payload`'s docstring arguing against "asking for attention without offering anything" —
+  reasoning POSITIONING's rule 2 has since explicitly re-scoped (asking for an ACTION is permitted;
+  it is asking for ATTENTION that is not). So this is a PRODUCT-TONE call, not a positioning
+  violation: nothing in POSITIONING forbids the prompt repeating, and a future reader should not
+  mistake this entry for a rule. It is a judgement that a line repeated nightly for a month stops
+  reading as a nudge and starts reading as nagging. Flagged by the docs gate.
+  Original entry follows.
   `last_feed_seen_post_id` only advances via `POST /posts/feed/seen`, which the client calls when
   the friends feed renders. So a person who never opens Home gets "3 friends posted since you last
   looked" on day 1 and the identical line on day 30. `prompt_sends` bounds it to once per local day

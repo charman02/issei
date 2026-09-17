@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 811
-backend tests, 961 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 829
+backend tests, 963 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -303,10 +303,12 @@ carries notifications with it; family sharing was cut; language translation move
    in `tests/test_push.py` (which decrypts what the sender produces) plus the live subscribe/rotate
    routes. It needs one phone, once. (c) **Person-to-person pushes are now wired (#107)** — that half of
    this entry is closed: `services/notify_push.py` delivers every notification type, `notify_people`
-   has a switch, and "when friends post" became a three-way cadence (`instant` | `daily` | `off`)
-   because an instant push and the daily nudge describe the same posts and both-on would
-   double-deliver. #107 also added the two notification types the handoff never had — the recipient
+   has a switch, and a friend sharing a meal now pushes immediately. #107 also added the two notification types the handoff never had — the recipient
    learns a recipe arrived, and the COOK learns it landed, which is the return half of #32 below.
+   **#108 then fixed the nudge itself**, which had been specified as a BeReal-style prompt to post
+   and built as a digest of friends' activity — a circular design that could only fire once people
+   were already posting. It now asks "What did you cook today?", gated on the recipient's own
+   absence, and the three-way cadence became three switches split by subject.
    What remains ledgered in TECHDEBT: the prompt can repeat the same sentence indefinitely for
    someone who never opens Home, and a handoff addressed to the email of an account that already
    exists produces a grant nobody can reach.

@@ -51,7 +51,8 @@ class UserResponse(UserBase):
     # nullable because every account predating #89 has none.
     timezone: Optional[str] = None
     notify_hour: int = 18
-    notify_posts: str = "daily"
+    notify_prompt_me: bool = True
+    notify_friend_posts: bool = True
     notify_people: bool = True
     quiet_from: int = 22
     quiet_to: int = 8
@@ -127,19 +128,25 @@ class AccountUpdate(BaseModel):
     # due again — a silent opt-out they didn't ask for.
     timezone: Optional[Annotated[str, StringConstraints(max_length=64)]] = None
     notify_hour: Optional[int] = Field(default=None, ge=0, le=23)
-    # HOW OFTEN you hear that friends posted, not whether. A `Literal` so a typo is a 422 rather
-    # than a stored value that silently matches no branch and turns notifications off — the same
-    # reasoning as `visibility` and `invite_permission`.
-    notify_posts: Optional[Literal["instant", "daily", "off"]] = None
+    # THREE SWITCHES, split by SUBJECT: the app asking YOU to share a meal, a friend having
+    # shared one, and a person reaching you. See `User.notify_prompt_me` for why this is not the
+    # three-value cadence it replaced.
+    notify_prompt_me: Optional[bool] = None
+    notify_friend_posts: Optional[bool] = None
     notify_people: Optional[bool] = None
     quiet_from: Optional[int] = Field(default=None, ge=0, le=23)
     quiet_to: Optional[int] = Field(default=None, ge=0, le=23)
-    # DEPRECATED ALIAS for `notify_posts`, kept only for the deploy window.
+    # TWO DEPRECATED ALIASES, kept only for the deploy window — and this file now has two
+    # generations of them, which is itself the argument for getting the model right the first time.
     #
-    # Pydantic ignores unknown fields, so dropping this outright would give an older frontend
-    # build a cheerful 200 for a request that changed nothing — and Vercel and ECS deploy
-    # independently, so that window is real. For a note on a handoff that trade was fine (#102);
-    # for "stop interrupting me" it is not, because the person is told it worked. So the old
-    # boolean is still honoured, mapped True -> "daily" / False -> "off" in `update_me`, and
-    # `notify_posts` wins if a client somehow sends both.
+    # Pydantic ignores unknown fields, so dropping one outright gives an older frontend build a
+    # cheerful 200 for a request that changed nothing — and Vercel and ECS deploy independently, so
+    # the window is real. For a note on a handoff that trade was fine (#102); for "stop
+    # interrupting me" it is not, because the person is told it worked.
+    #
+    # `notify_prompt` maps to `notify_prompt_me`, which is the meaning its NAME always claimed —
+    # #89's own comment called it "the app nudging YOU" while filling it with other people's
+    # activity. `notify_posts` maps to BOTH new switches, the same way the migration backfills.
+    # An explicit new field always wins over an alias; a test pins that.
     notify_prompt: Optional[bool] = None
+    notify_posts: Optional[Literal["instant", "daily", "off"]] = None
