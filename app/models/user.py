@@ -54,7 +54,7 @@ class User(Base):
     last_feed_seen_post_id: Mapped[Optional[int]] = mapped_column(nullable=True)
 
     # --- Notifications (#89) ------------------------------------------------------------
-    # SEVEN columns as of #107 — six live ones plus the `notify_prompt` tombstone at the end of
+    # TEN columns — eight live plus two tombstones at the end of
     # this block, which is a dead column kept for one release for the deploy-ordering reason
     # explained there. All on the PERSON rather than on a device, because that is what they are
     # about: turning the daily nudge off shouldn't depend on which phone you're holding. The
@@ -111,6 +111,27 @@ class User(Base):
     # deploy independently and silently discarding someone's "don't interrupt me" is not an
     # acceptable deploy-window behaviour.
     notify_prompt_me: Mapped[bool] = mapped_column(nullable=False, server_default="1")
+    # HOW OFTEN the prompt may arrive, as a minimum gap in the person's own LOCAL days. 1 = every
+    # day, 3 = a few days a week, 7 = once a week; the client offers those three and the column
+    # accepts 1..30.
+    #
+    # This exists because #108 removed something that was capping the nudge by accident. The old
+    # design only fired when a friend had posted, so a quiet week sent nothing; gating on the
+    # recipient's own absence instead — which is what made the prompt work at all — means someone
+    # who never posts would get the same line every evening forever. Correct for a prompt, wrong
+    # for a relationship. The owner's call was to hand that decision to the person rather than
+    # impose a cap (2026-09-17).
+    #
+    # A GAP, NOT AN ENUM, and 1 IS THE EXISTING BEHAVIOUR. The at-most-once-per-local-day rule is
+    # this rule with the window at its floor, so the default changes nothing for anyone and there
+    # is one predicate rather than two sitting beside each other. `prompt_sends` already records
+    # every send per local date, so the gap is measurable from data that was already being kept.
+    #
+    # An INTEGER rather than a `Literal`, unlike `visibility` and `invite_permission`: those are
+    # vocabularies where an unlisted value matches no branch and silently reads as "off", which is
+    # the failure a Literal guards. Every integer >= 1 here has a coherent meaning, so there is no
+    # dead value to protect against — a client asking for 2 or 14 gets 2 or 14.
+    notify_prompt_every_days: Mapped[int] = mapped_column(nullable=False, server_default="1")
     notify_friend_posts: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     notify_people: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     # TWO DEAD COLUMNS, KEPT ON PURPOSE FOR ONE MORE RELEASE. Nothing reads either — the three

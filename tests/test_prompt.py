@@ -887,6 +887,218 @@ def test_the_hour_not_yet_reached_is_named_separately_from_quiet_hours(
     assert prompt.run_daily_prompt(db_session)["reasons"] == {"quiet_hours": 1}
 
 
+# --- how often the prompt may arrive (the owner's frequency setting) ---
+
+
+def _sent_on(db_session, user, local_date):
+    """Record a nudge as having gone out on a given local date."""
+    from app.models.prompt_send import PromptSend
+
+    db_session.add(PromptSend(user_id=user.id, local_date=local_date, friend_count=0))
+    db_session.commit()
+
+
+def test_the_default_frequency_IS_the_old_behaviour(db_session, make_user):
+    """1 = every day, and the at-most-once-a-day rule is this rule at its floor.
+
+    That equivalence is the reason the setting is a GAP rather than an enum: the existing behaviour
+    is the column's default, so nobody's cadence changed on the day it shipped and there is one
+    predicate deciding "is it too soon" instead of two sitting beside each other.
+    """
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+    assert me.notify_prompt_every_days == 1
+
+    # Never nudged → allowed.
+    assert prompt.prompt_window_reason(me, now_local, db_session) is None
+    # Nudged today → ordinary idempotence.
+    _sent_on(db_session, me, now_local.date())
+    assert prompt.prompt_window_reason(me, now_local, db_session) == "already_sent_today"
+    # Nudged yesterday → allowed again, which is daily.
+    db_session.query(type(me)).count()  # keep the session warm
+    from app.models.prompt_send import PromptSend
+
+    db_session.query(PromptSend).delete()
+    _sent_on(db_session, me, now_local.date() - timedelta(days=1))
+    assert prompt.prompt_window_reason(me, now_local, db_session) is None
+
+
+@pytest.mark.parametrize(
+    "every_days,gap,allowed",
+    [
+        (3, 1, False),
+        (3, 2, False),
+        (3, 3, True),
+        (3, 9, True),
+        (7, 6, False),
+        (7, 7, True),
+    ],
+)
+def test_the_frequency_is_a_MINIMUM_GAP_in_local_days(
+    db_session, make_user, every_days, gap, allowed
+):
+    """Boundary-checked on both sides, because an off-by-one here is a whole extra or missing nudge
+    per cycle and nobody would be able to tell which."""
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_prompt_every_days = every_days
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+    _sent_on(db_session, me, now_local.date() - timedelta(days=gap))
+
+    reason = prompt.prompt_window_reason(me, now_local, db_session)
+    assert (reason is None) == allowed, reason
+    if not allowed:
+        assert reason == "nudged_recently"
+
+
+def test_nudged_recently_is_NAMED_separately_from_already_sent_today(db_session, make_user):
+    """They mean different things to whoever reads the log. `already_sent_today` is ordinary
+    idempotence and appears on every re-run of the cron; `nudged_recently` means the person's own
+    frequency setting is doing its job. Collapsing them would make a deliberate weekly cadence look
+    like a duplicate-send guard — and that log line is the whole reason the reason-vocabulary
+    exists."""
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_prompt_every_days = 7
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+
+    _sent_on(db_session, me, now_local.date())
+    assert prompt.prompt_window_reason(me, now_local, db_session) == "already_sent_today"
+
+    from app.models.prompt_send import PromptSend
+
+    db_session.query(PromptSend).delete()
+    _sent_on(db_session, me, now_local.date() - timedelta(days=2))
+    assert prompt.prompt_window_reason(me, now_local, db_session) == "nudged_recently"
+
+
+@pytest.mark.parametrize("nonsense", [0, -1, -99])
+def test_a_nonsense_stored_frequency_can_never_mean_TWICE_IN_A_DAY(
+    db_session, make_user, nonsense
+):
+    """The schema bounds this 1..30, so a 0 or a negative can only arrive from a hand-edited row or
+    a future bug. The guarantee is that the worst it can degrade to is DAILY, never several a day.
+
+    Worth knowing WHERE that guarantee lives, because the first version got it wrong: it came from a
+    `max(1, ...)` floor in the predicate, and a mutation test showed deleting the floor changed
+    nothing — the `gap <= 0` branch already makes it impossible, so the floor was defending an
+    unreachable case. It was removed rather than left with a comment claiming otherwise.
+    """
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    me.notify_prompt_every_days = nonsense
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+
+    # Sent today → refused, however nonsensical the setting.
+    _sent_on(db_session, me, now_local.date())
+    assert prompt.prompt_window_reason(me, now_local, db_session) == "already_sent_today"
+
+    # Sent yesterday → allowed, i.e. it degrades to daily rather than to silence.
+    from app.models.prompt_send import PromptSend
+
+    db_session.query(PromptSend).delete()
+    _sent_on(db_session, me, now_local.date() - timedelta(days=1))
+    assert prompt.prompt_window_reason(me, now_local, db_session) is None
+
+
+def test_the_frequency_is_honoured_by_the_whole_RUN_not_just_the_predicate(
+    db_session, make_user, monkeypatch
+):
+    """The predicate and the run are two places, and only the run is what a person experiences."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+    me.notify_prompt_every_days = 7
+    db_session.commit()
+    now_local = prompt.local_now(me)
+    assert now_local is not None
+    _sent_on(db_session, me, now_local.date() - timedelta(days=3))
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 0
+    assert summary["reasons"] == {"nudged_recently": 1}
+
+
+def test_a_WEEKLY_person_still_gets_their_nudge_when_the_week_is_up(
+    db_session, make_user, monkeypatch
+):
+    """The other half — without it, "the frequency works" is indistinguishable from "it never
+    fires again", which is the failure mode a gap check makes easy to ship."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+    me.notify_prompt_every_days = 7
+    db_session.commit()
+    now_local = prompt.local_now(me)
+    assert now_local is not None
+    _sent_on(db_session, me, now_local.date() - timedelta(days=7))
+
+    assert prompt.run_daily_prompt(db_session)["sent"] == 1
+
+
+def test_the_frequency_does_not_override_HAVING_ALREADY_POSTED(
+    db_session, make_user, monkeypatch
+):
+    """Both rules apply, and the owner stated this one first: no nudge on a day you've already
+    shared a meal, whatever the frequency says. A weekly person who cooks on their due day gets
+    nothing — which is right, because the prompt has nothing to ask them for."""
+    monkeypatch.setattr("app.services.push.is_configured", lambda: True)
+    monkeypatch.setattr("app.services.push.send", lambda *a, **k: 201)
+    monkeypatch.setattr(prompt, "friends_who_posted", lambda user, db: 0)
+    me = _due_user(db_session, make_user)
+    _sub(db_session, me)
+    me.notify_prompt_every_days = 7
+    db_session.commit()
+    now_local = prompt.local_now(me)
+    assert now_local is not None
+    _sent_on(db_session, me, now_local.date() - timedelta(days=9))  # the week is well up
+    db_session.add(
+        Post(
+            user_id=me.id,
+            photo_url="https://res.cloudinary.com/demo/image/upload/a.jpg",
+            dish_name="Adobo",
+            created_at=now_local.astimezone(dt_timezone.utc).replace(tzinfo=None),
+        )
+    )
+    db_session.commit()
+
+    summary = prompt.run_daily_prompt(db_session)
+    assert summary["sent"] == 0
+    assert summary["reasons"] == {"already_posted_today": 1}
+
+
+def test_days_since_last_prompt_reads_the_MOST_RECENT_row(db_session, make_user):
+    """`prompt_sends` accumulates one row per local date forever, so the gap has to come from the
+    newest — an unordered `.first()` would measure from whatever the database happened to return
+    and would drift as the table grew."""
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    db_session.commit()
+    now_local = _local("Asia/Manila", 18)
+    for gap in (30, 2, 11):
+        _sent_on(db_session, me, now_local.date() - timedelta(days=gap))
+
+    assert prompt.days_since_last_prompt(me, now_local, db_session) == 2
+
+
+def test_days_since_last_prompt_is_None_when_never_nudged(db_session, make_user):
+    me, _ = make_user()
+    me.timezone = "Asia/Manila"
+    db_session.commit()
+    assert (
+        prompt.days_since_last_prompt(me, _local("Asia/Manila", 18), db_session) is None
+    )
+
+
 def test_already_sent_is_named(db_session, make_user, monkeypatch):
     """The idempotence path. A manual re-run of the cron is explicitly supported, so this reason
     appearing is normal and must not read as a fault.
@@ -929,8 +1141,13 @@ def test_every_reason_the_code_can_emit_is_in_the_vocabulary():
     constructing all five situations and hoping none is missed."""
     import inspect
 
-    source = inspect.getsource(prompt.run_daily_prompt) + inspect.getsource(
-        prompt._skip_reason
+    # EVERY function that can produce a reason has to be read, or the test measures a subset and
+    # reports a false clean. It caught its own gap when `prompt_window_reason` was added: two of the
+    # documented reasons moved into it, and the vocabulary check said "documented but never emitted"
+    # about a reason the code emits on every weekly-cadence skip. Add new producers here.
+    source = "".join(
+        inspect.getsource(fn)
+        for fn in (prompt.run_daily_prompt, prompt._skip_reason, prompt.prompt_window_reason)
     )
     emitted = set(re.findall(r'note\("([a-z_]+)"\)', source)) | set(
         re.findall(r'return "([a-z_]+)"', source)

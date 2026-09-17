@@ -64,6 +64,21 @@ function hourLabel(h) {
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
+// HOW OFTEN the prompt may arrive, as a minimum gap in the person's own local days. Three choices
+// against a column that accepts 1..30, because a gap is the honest model and 1 IS the behaviour
+// that already shipped — the at-most-once-a-day rule is this rule at its floor.
+//
+// It exists because #108 removed something that was capping the nudge by accident: the old design
+// only fired when a friend had posted, so a quiet week sent nothing. Gating on the person's own
+// absence instead — the fix that made the prompt work at all — means someone who never posts would
+// otherwise get the same line every evening forever. The owner's call was to hand that choice to
+// the person rather than impose a cap.
+const PROMPT_FREQUENCIES = [
+  { days: 1, label: 'Every day' },
+  { days: 3, label: 'A few days a week' },
+  { days: 7, label: 'Once a week' },
+]
+
 // MIRRORS `app/services/push.in_quiet_hours` — keep the two in step, like the folk-unit lists.
 // Only used to warn about a self-defeating combination; the server is the authority on whether a
 // notification actually goes out.
@@ -184,6 +199,11 @@ export default function NotificationSettings() {
   const promptMe = promptMeOf(user)
   const friendPosts = friendPostsOf(user)
   const hour = Number.isInteger(user.notify_hour) ? user.notify_hour : 18
+  // Defaults to daily for a cached user written before this column existed — the same fallback
+  // shape as the hour above it, and the same value the column itself defaults to.
+  const everyDays = Number.isInteger(user.notify_prompt_every_days)
+    ? user.notify_prompt_every_days
+    : 1
   const quietFrom = Number.isInteger(user.quiet_from) ? user.quiet_from : 22
   const quietTo = Number.isInteger(user.quiet_to) ? user.quiet_to : 8
   // A nudge time inside the quiet window means no nudge, ever, silently. The server treats that
@@ -286,6 +306,30 @@ export default function NotificationSettings() {
                 {HOURS.map((h) => (
                   <option key={h} value={h}>
                     {hourLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </Row>
+            <Row
+              label="How often"
+              hint={
+                everyDays === 1
+                  ? 'Every evening you haven’t shared a meal.'
+                  : 'Only if it’s been this long since the last reminder — and never on a day you’ve already shared something.'
+              }
+            >
+              <select
+                aria-label="How often"
+                className="field !py-1.5 !px-2 font-display font-bold text-[13px] w-auto"
+                value={everyDays}
+                disabled={savingPref}
+                onChange={(e) =>
+                  savePref({ notify_prompt_every_days: Number(e.target.value) })
+                }
+              >
+                {PROMPT_FREQUENCIES.map((f) => (
+                  <option key={f.days} value={f.days}>
+                    {f.label}
                   </option>
                 ))}
               </select>

@@ -244,6 +244,7 @@ def test_the_defaults_are_on_with_quiet_hours(client, make_user):
     _, h = make_user()
     me = client.get("/auth/me", headers=h).json()
     assert me["notify_prompt_me"] is True
+    assert me["notify_prompt_every_days"] == 1, "daily, which is what everyone already had"
     assert me["notify_friend_posts"] is True
     assert me["notify_people"] is True
     assert me["notify_hour"] == 18
@@ -493,6 +494,44 @@ def test_the_two_switches_are_independently_settable(client, make_user):
     body = client.patch("/auth/me", json={"notify_friend_posts": False}, headers=h).json()
     assert body["notify_friend_posts"] is False
     assert body["notify_prompt_me"] is False
+
+
+def test_the_prompt_frequency_is_settable_and_bounded(client, make_user):
+    """A bounded INTEGER rather than a `Literal`, unlike `visibility` and `invite_permission`.
+
+    Those are vocabularies where an unlisted value matches no branch and silently reads as "off" —
+    the failure a Literal guards against. Every integer >= 1 here has a coherent meaning, so there
+    is no dead value to protect: a client asking for 2 or 14 gets 2 or 14. Bounds exist anyway,
+    because below 1 would mean "several times a day" (which the per-day UNIQUE forbids) and past a
+    month the honest way to say it is `notify_prompt_me: false`.
+    """
+    _, h = make_user()
+    for value in (1, 2, 3, 7, 30):
+        r = client.patch("/auth/me", json={"notify_prompt_every_days": value}, headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["notify_prompt_every_days"] == value
+
+    for bad in (0, -1, 31):
+        assert (
+            client.patch(
+                "/auth/me", json={"notify_prompt_every_days": bad}, headers=h
+            ).status_code
+            == 422
+        ), bad
+
+
+def test_the_frequency_survives_a_login_so_the_control_is_never_blank(client, make_user):
+    """The hand-built login dict has to stay in step with `UserResponse` — an identical omission has
+    now shipped twice, and it fails only in the window between login and the first `reconcile()`, so
+    it passes every backend test and every component test with a seeded cache."""
+    user, h = make_user()
+    client.patch("/auth/me", json={"notify_prompt_every_days": 7}, headers=h)
+
+    cached = client.post(
+        "/auth/login", data={"username": user.email, "password": "password123"}
+    ).json()["user"]
+    assert "notify_prompt_every_days" in cached, "login dropped the frequency"
+    assert cached["notify_prompt_every_days"] == 7
 
 
 def test_an_older_client_sending_notify_prompt_is_still_honoured(client, make_user):

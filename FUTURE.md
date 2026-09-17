@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 829
-backend tests, 963 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 847
+backend tests, 974 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -301,7 +301,7 @@ carries notifications with it; family sharing was cut; language translation move
    `pushManager.subscribe` outright ("Registration failed - permission denied") because there is no
    push service behind it, so the browser→FCM/APNs→device leg is verified only by the unit round-trip
    in `tests/test_push.py` (which decrypts what the sender produces) plus the live subscribe/rotate
-   routes. It needs one phone, once. (c) **Person-to-person pushes are now wired (#107)** — that half of
+   routes. **DONE on 2026-09-17** — a real daily prompt reached an installed iOS home-screen app and its tap opened the composer, which closes this entry's last leg. Android and the individual person-to-person types remain unobserved; the transport under them is the same and is now proven. (c) **Person-to-person pushes are now wired (#107)** — that half of
    this entry is closed: `services/notify_push.py` delivers every notification type, `notify_people`
    has a switch, and a friend sharing a meal now pushes immediately. #107 also added the two notification types the handoff never had — the recipient
    learns a recipe arrived, and the COOK learns it landed, which is the return half of #32 below.

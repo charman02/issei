@@ -388,7 +388,7 @@ files, and each one fails **silently** when wrong:
 `pushManager.subscribe` outright — "Registration failed - permission denied" — because there is no
 push service behind it, so the browser→FCM/APNs→device leg is covered only by
 `tests/test_push.py`'s round trip (which decrypts what the sender produces, from the receiver's
-side) plus the live subscribe/rotate routes. Treat one real phone as a required manual step before
+side) plus the live subscribe/rotate routes. **That phone test was done on 2026-09-17** — the production scheduler's prompt arrived on an installed iOS app and its tap landed on `/add/meal`. The transport is therefore observed end to end; what is still unobserved is each individual notification's own copy and URL, and Android. Treat one real phone as a required manual step before
 claiming notifications work.
 
 

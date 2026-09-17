@@ -199,6 +199,16 @@ strangers arrive. Security/privacy first.
   relationship. Capping consecutive unanswered prompts — or varying the line — moves from
   nicety to real follow-up work with this change, and `prompt_sends` already records every
   send per local date, so the data to count them is there.
+  **LARGELY ANSWERED BY #109, and by the owner rather than by a cap.** The remedy this entry asked
+  for was "cap consecutive unanswered prompts"; what shipped instead is
+  `notify_prompt_every_days` — the person chooses a minimum gap in their own local days (1 / 3 / 7
+  in the UI), so a nightly line becomes a weekly one if that is what they want. That is a better
+  answer than a cap for the same reason the whole #108 fix was: it hands the decision to the person
+  whose evening it is, instead of the app deciding how much nagging is acceptable on their behalf.
+  What REMAINS is the narrow case the setting cannot reach: someone on "Every day" who never posts
+  and never opens the app still receives the same sentence indefinitely. Varying the line, or
+  backing off after N unanswered prompts, is still open — and `prompt_sends` now has a
+  `days_since_last_prompt` helper, so the data to count them is not just present but already read.
   *And be precise about what kind of obligation this is,* because the older wording here leaned on
   `prompt_payload`'s docstring arguing against "asking for attention without offering anything" —
   reasoning POSITIONING's rule 2 has since explicitly re-scoped (asking for an ACTION is permitted;
@@ -230,7 +240,12 @@ strangers arrive. Security/privacy first.
   device, because **headless Chromium refuses to subscribe at all**: `pushManager.subscribe` throws
   `AbortError: Registration failed - permission denied`, since there is no push service behind it.
   So the browser→FCM/APNs→device leg is inferred from the RFCs, not measured. *Why it's a ledger
-  entry and not a fix:* it cannot be automated on this machine at all — it needs one real phone,
+  **RESOLVED 2026-09-17: it happened.** A production daily prompt arrived on an installed iOS
+  home-screen app and tapping it opened the composer. Kept as a closed entry because the
+  reasoning is reusable — the leg no CI can reach is the one that decides whether the feature
+  exists — and because the resolution is PARTIAL: the transport is proven, each type's own copy
+  and URL is not, and Android is not.
+  *Why it was a ledger entry and not a fix:* it could not be automated on this machine at all — it needed one real phone,
   once — the VAPID secrets exist as of 2026-09-15, so the blocker is now purely that no phone has
   been used — plus an iOS device added to the home screen to confirm the install-first path. Until then, "notifications work" is an untested claim, and the honest phrasing
   is "every layer we can reach is verified". *Where:* `frontend/public/sw.js`,

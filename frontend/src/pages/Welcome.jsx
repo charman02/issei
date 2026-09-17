@@ -5,11 +5,12 @@ import IsseiMeaning from '../components/IsseiMeaning'
 import Wordmark from '../components/Wordmark'
 import Avatar from '../components/Avatar'
 import { loadPrefs, setPref } from '../lib/prefs'
+import { enable, pushAvailability } from '../lib/push'
 import { PHOTO_ACCEPT } from '../lib/photoUpload'
 import { useAvatarUpload } from '../lib/useAvatarUpload'
 import PhotoFramer from '../components/PhotoFramer'
 
-// The post-signup welcome (/welcome) — three panels, once, then never again.
+// The post-signup welcome (/welcome) — four panels, once, then never again.
 //
 // WHY A ROUTE, NOT AN OVERLAY ON HOME. Home can't render until three API calls
 // answer, so an overlay means the new user watches a spinner before they're
@@ -19,7 +20,7 @@ import PhotoFramer from '../components/PhotoFramer'
 // `replace` — so it occupies no history entry and no back gesture can return to
 // it.
 //
-// WHY (NOW) THREE PANELS. Two panels TEACH — what issei is for, and how to use
+// WHY (NOW) FOUR PANELS, AND WHY THAT ISN'T DRIFT. Two panels TEACH — what issei is for, and how to use
 // it — and the rule used to be "never three", because a third TEACHING panel is a
 // carousel and testers punished tap-heavy onboarding. The third panel added here is
 // NOT teaching: it's a single ACTION (add a profile photo). An action step as the
@@ -105,6 +106,21 @@ function HowToStep({ n, title, children }) {
   )
 }
 
+// A line on the notifications panel. A dot rather than the numbered disc `Step` uses: these are
+// two facts, not a sequence, and numbering them would imply an order to do something in.
+function NotifyLine({ children }) {
+  return (
+    <li className="flex gap-2.5">
+      <span
+        aria-hidden="true"
+        className="flex-none w-2 h-2 rounded-full bg-terra border-2 border-ink mt-[0.45rem]"
+      />
+      <span className="font-display text-[14px] leading-snug text-ink">{children}</span>
+    </li>
+  )
+}
+
+
 export default function Welcome() {
   const navigate = useNavigate()
   // Snapshot the flag on the FIRST render, before the effect below sets it —
@@ -120,6 +136,28 @@ export default function Welcome() {
     photoUrl,
     framerProps,
   } = useAvatarUpload()
+  // The notifications step (panel 4). `availability` is read ONCE on mount rather than per render:
+  // it cannot change while this screen is open (installing to the home screen restarts the app),
+  // and reading it in the render body would recompute a `matchMedia` query on every keystroke
+  // elsewhere in the tree.
+  const [availability] = useState(pushAvailability)
+  const [notify, setNotify] = useState('idle') // idle | busy | on | error
+  const [notifyError, setNotifyError] = useState('')
+
+  async function askForNotifications() {
+    setNotify('busy')
+    setNotifyError('')
+    const result = await enable()
+    if (result.ok) {
+      setNotify('on')
+      // The Home strip's job is done — without this it would ask again on the very next screen,
+      // which reads as the app not having heard the yes. Same key `NotificationSettings` sets.
+      setPref('notifyNudgeDismissed', true)
+    } else {
+      setNotify('error')
+      setNotifyError(result.message)
+    }
+  }
 
   useEffect(() => {
     markWelcomeSeen()
@@ -173,7 +211,7 @@ export default function Welcome() {
            left alone faster than you can read a sentence saying amounts are left
            alone. The name is glossed last, once there's a reason to care. */
           <div className="pt-6">
-            <StepBadge>1 of 3</StepBadge>
+            <StepBadge>1 of 4</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               Recipes kept <span className="font-black italic">their way.</span>
             </h1>
@@ -194,7 +232,7 @@ export default function Welcome() {
            rather than paraphrasing them means the words they just read are the
            words they'll find on screen. */
           <div className="pt-6">
-            <StepBadge>2 of 3</StepBadge>
+            <StepBadge>2 of 4</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               So there are two things{' '}
               <span className="font-black italic">to do.</span>
@@ -224,14 +262,17 @@ export default function Welcome() {
               Next &rarr;
             </button>
           </div>
-        ) : (
-          /* PANEL 3 — THE ONE ACTION: add a profile photo. Last, so it's the "you're
-           all set" moment, not a gate between the teaching. Genuinely optional: Skip in
-           the header finishes, and "Open my kitchen" works with or without a photo. Once
-           a photo is picked the button label switches to the finish so the flow moves on
-           without a second tap; anyone who skips gets the You-page nudge (#77). */
+        ) : panel === 2 ? (
+          /* PANEL 3 — THE FIRST ACTION: add a profile photo. Genuinely optional: Skip in
+           the header finishes, and the button advances with or without a photo. Once a photo is
+           picked the label switches from "Skip for now" to "Next", so the flow moves on without a
+           second tap; anyone who skips gets the You-page nudge (#77).
+
+           IT USED TO BE LAST — the "you're all set" moment. #110 put the notifications ask after
+           it, deliberately: that one spends an irrevocable permission, so it goes behind the
+           smaller yes rather than in front of it. */
           <div className="pt-6">
-            <StepBadge>3 of 3</StepBadge>
+            <StepBadge>3 of 4</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               Add a <span className="font-black italic">photo.</span>
             </h1>
@@ -264,16 +305,122 @@ export default function Welcome() {
               )}
             </div>
 
-            <button onClick={done} className="btn-primary !mt-8">
-              {photoUrl ? 'Open my kitchen →' : 'Skip for now →'}
+            <button onClick={() => setPanel(3)} className="btn-primary !mt-8">
+              {photoUrl ? 'Next →' : 'Skip for now →'}
             </button>
+          </div>
+        ) : (
+          /* PANEL 4 — NOTIFICATIONS (#110). An ACTION step like the photo, not teaching, and
+           deliberately LAST.
+
+           WHY ASK HERE AT ALL. Before this, the only prompt was `NotifyNudge`, a dismissible strip
+           on Home — so someone had to happen across it. The owner's call was that a new person
+           should be asked up front, and the person-level preferences already default to on, so the
+           browser permission was the only thing still unasked.
+
+           WHY THE SYSTEM DIALOG IS NOT FIRED ON MOUNT, which is the version of "ask on first
+           launch" that costs you the user. A permission prompt is ONE SHOT: a decline sets
+           `denied` for the origin permanently, and no web app can ask again — the person has to go
+           into browser settings. So the panel spends a screen naming the two things that actually
+           arrive BEFORE the dialog appears, and the dialog is behind a tap. A primed ask converts;
+           a cold one at the coldest possible moment is how an app loses people who would have said
+           yes later. `NotifyNudge` encodes the same rule from the other end: it hides on `denied`,
+           because they answered.
+
+           WHY IT IS STILL SKIPPABLE. Skip in the header finishes, and "Not now" advances without
+           touching permission — which leaves `permission === 'default'`, which is exactly the state
+           `NotifyNudge` shows for. So skipping here costs nothing; only a real decline is final.
+
+           ON AN IPHONE IN SAFARI THERE IS NOTHING TO ASK. Push is granted only to a site added to
+           the home screen, so `pushAvailability()` is 'install-first' and this panel shows the
+           install instruction instead of a button that cannot work. That is not an edge case —
+           iPhones are most of this app's audience, and "when they first download the app" has no
+           download on iOS, it has Add to Home Screen. Same reasoning as
+           `NotificationSettings.jsx`, and the same refusal to render a control that would fail. */
+          <div className="pt-6">
+            <StepBadge>4 of 4</StepBadge>
+            <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
+              Know when it <span className="font-black italic">happens.</span>
+            </h1>
+
+            {availability === 'ready' ? (
+              <>
+                <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
+                  Two things, and nothing else:
+                </p>
+                <ul className="mt-4 space-y-3 max-w-xs">
+                  <NotifyLine>
+                    When someone asks you for a recipe — or sends you one.
+                  </NotifyLine>
+                  <NotifyLine>
+                    A nudge to share what you cooked. You choose how often.
+                  </NotifyLine>
+                </ul>
+
+                {notify === 'on' ? (
+                  <>
+                    <p className="font-display font-bold text-[15px] text-ink mt-7">
+                      You&rsquo;re set. ✓
+                    </p>
+                    <button onClick={done} className="btn-primary !mt-4">
+                      Open my kitchen →
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={askForNotifications}
+                      disabled={notify === 'busy'}
+                      className="btn-primary !mt-7 disabled:opacity-60"
+                    >
+                      {notify === 'busy' ? 'One moment…' : 'Turn on notifications'}
+                    </button>
+                    {notifyError && (
+                      <p className="mt-3"><span className="error-pill">{notifyError}</span></p>
+                    )}
+                    {/* "Not now" rather than "Skip": it advances without touching permission, so
+                      the Home strip can still ask. Wording matters — "Never" would be a promise
+                      this button doesn't keep. */}
+                    <button
+                      onClick={done}
+                      className="block font-display font-bold text-[14px] text-ink-soft underline underline-offset-2 mt-4"
+                    >
+                      Not now
+                    </button>
+                  </>
+                )}
+              </>
+            ) : availability === 'install-first' ? (
+              <>
+                <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
+                  Add issei to your home screen and notifications become available. Tap
+                  Share, then &ldquo;Add to Home Screen&rdquo;.
+                </p>
+                <p className="font-display italic text-[13px] text-ink-soft mt-3 max-w-xs">
+                  It also opens without the browser bars, which is nicer to cook from.
+                </p>
+                <button onClick={done} className="btn-primary !mt-7">
+                  Open my kitchen →
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
+                  This browser can&rsquo;t do notifications — everything still shows up in
+                  your inbox when you open issei.
+                </p>
+                <button onClick={done} className="btn-primary !mt-7">
+                  Open my kitchen →
+                </button>
+              </>
+            )}
           </div>
         )}
 
         {/* Progress, under the fold-line rather than above the headline: it's
           reassurance, not the point of the screen. */}
         <div className="flex justify-center gap-2 pt-7 pb-8" aria-hidden="true">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <span
               key={i}
               className={`w-2.5 h-2.5 rounded-full border-2 border-ink ${

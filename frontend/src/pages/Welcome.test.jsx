@@ -1,7 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+// #110 put a notifications ask on the last panel. jsdom has no PushManager, so without a mock
+// `pushAvailability()` returns 'unsupported' and the panel renders its honest can't-do branch —
+// which is what most of the tests above exercise. These handles let the other two branches be
+// driven, since 'ready' and 'install-first' are the states that matter to real people.
+const push = { availability: 'unsupported', enable: vi.fn() }
+vi.mock('../lib/push', () => ({
+  pushAvailability: () => push.availability,
+  enable: (...args) => push.enable(...args),
+}))
 import Welcome from './Welcome'
 
 function renderWelcome() {
@@ -23,6 +32,8 @@ function signIn(id = 7) {
 }
 
 beforeEach(() => {
+  push.availability = 'unsupported'
+  push.enable = vi.fn(() => Promise.resolve({ ok: true }))
   localStorage.clear()
   signIn()
 })
@@ -56,32 +67,32 @@ describe('Welcome — what it teaches', () => {
     ).toBeInTheDocument()
   })
 
-  it('is three panels — two that teach, one optional photo step at the end', async () => {
-    // The rule is "at most two TEACHING panels", not "never three". Panels 1–2
-    // teach; panel 3 is a single optional ACTION (add a photo), so it advances
-    // rather than ending on panel 2 the way the two-panel version did.
+  it('is four panels — two that teach, then two optional ACTION steps', async () => {
+    // The rule is "at most two TEACHING panels", not "never more than two panels". Panels 1–2
+    // teach; 3 and 4 are single optional ACTIONS (add a photo, allow notifications), each with a
+    // fallback elsewhere in the app for anyone who skips — the You-page nudge (#77) and the Home
+    // strip (`NotifyNudge`) respectively. That's what keeps a fourth panel from being drift.
     renderWelcome()
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByText('2 of 3')).toBeInTheDocument()
-    // Panel two now advances to the photo step — its button is still "Next".
+    expect(screen.getByText('2 of 4')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByText('3 of 3')).toBeInTheDocument()
-    // The photo panel is the last one: it finishes, it does not go to a fourth.
-    expect(
-      screen.queryByRole('button', { name: /next/i }),
-    ).not.toBeInTheDocument()
+    expect(screen.getByText('3 of 4')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    expect(screen.getByText('4 of 4')).toBeInTheDocument()
+    // The notifications panel is the last one: it finishes, it does not go to a fifth.
+    expect(screen.queryByText('5 of')).not.toBeInTheDocument()
   })
 
-  it('the photo step is genuinely optional — skipping it lands on Home', async () => {
-    // Honesty requirement: the photo panel must never be a gate. With no photo
-    // picked its finish button reads "Skip for now" and completes the welcome.
+  it('the photo step is genuinely optional — skipping it advances, never blocks', async () => {
+    // Honesty requirement: the photo panel must never be a gate. With no photo picked its button
+    // reads "Skip for now" and moves on rather than finishing — it is no longer the last panel.
     renderWelcome()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(screen.getByLabelText(/add a profile photo/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
-    expect(await screen.findByText('home')).toBeInTheDocument()
+    expect(screen.getByText('4 of 4')).toBeInTheDocument()
   })
 
   it('claims nothing about voice or audio', async () => {
@@ -107,7 +118,7 @@ describe('Welcome — what it teaches', () => {
 describe('Welcome — shows exactly once', () => {
   it('marks itself seen on arrival, before any button is pressed', async () => {
     renderWelcome()
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
     // Closing the tab here must be as final as finishing, so the flag is written
     // on mount rather than on exit.
     expect(JSON.parse(localStorage.getItem('issei_prefs')).welcomeSeenBy).toEqual([
@@ -123,18 +134,18 @@ describe('Welcome — shows exactly once', () => {
 
     renderWelcome()
     expect(await screen.findByText('home')).toBeInTheDocument()
-    expect(screen.queryByText('1 of 3')).not.toBeInTheDocument()
+    expect(screen.queryByText('1 of 4')).not.toBeInTheDocument()
   })
 
   it('completing also persists, and lands on Home', async () => {
     const { unmount } = renderWelcome()
-    // Walk both teaching panels, then finish from the photo panel. With no photo
-    // picked the finish button reads "Skip for now"; either label calls done().
+    // Walk both teaching panels, skip the photo, then finish from the notifications panel. In
+    // jsdom there is no PushManager, so that panel renders its "this browser can't" branch and its
+    // one button finishes — which is the honest behaviour, not a test convenience.
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(
-      screen.getByRole('button', { name: /skip for now/i }),
-    )
+    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
     expect(await screen.findByText('home')).toBeInTheDocument()
     unmount()
 
@@ -150,13 +161,16 @@ describe('Welcome — shows exactly once', () => {
     expect(screen.queryByRole('button', { name: /back/i })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    // On the photo panel now; Back → the how-to panel (2 of 3), not the start.
-    expect(screen.getByText('3 of 3')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    // On the notifications panel now; Back → the photo panel, not two back.
+    expect(screen.getByText('4 of 4')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /back/i }))
-    expect(screen.getByText('2 of 3')).toBeInTheDocument()
+    expect(screen.getByText('3 of 4')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /back/i }))
+    expect(screen.getByText('2 of 4')).toBeInTheDocument()
     // And Back again → panel one, with its content.
     await userEvent.click(screen.getByRole('button', { name: /back/i }))
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
     expect(screen.getByText(/not grams\. theirs\./i)).toBeInTheDocument()
   })
 
@@ -190,7 +204,7 @@ describe('Welcome — shows exactly once', () => {
 
     signIn(99)
     renderWelcome()
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
     // and the first account is still marked, not clobbered
     expect(
       JSON.parse(localStorage.getItem('issei_prefs')).welcomeSeenBy,
@@ -202,12 +216,114 @@ describe('Welcome — shows exactly once', () => {
     // scheme. They get welcomed once more rather than hitting a type error.
     localStorage.setItem('issei_prefs', JSON.stringify({ welcomeSeen: true }))
     renderWelcome()
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
   })
 
   it('survives an unreadable prefs bag instead of crashing', async () => {
     localStorage.setItem('issei_prefs', 'not json{')
     renderWelcome()
-    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText('1 of 4')).toBeInTheDocument()
+  })
+})
+
+describe('Welcome — the notifications ask (#110)', () => {
+  async function toNotifyPanel() {
+    renderWelcome()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    expect(screen.getByText('4 of 4')).toBeInTheDocument()
+  }
+
+  it('does NOT fire the permission dialog on arrival — it explains first', async () => {
+    // THE ONE-SHOT PROBLEM, and the reason this panel exists in this shape. A decline sets
+    // `denied` for the origin permanently: no web app can ask again, the person has to go into
+    // browser settings. Firing the system dialog the instant the panel mounts is the version of
+    // "ask on first launch" that permanently loses people who would have said yes once they knew
+    // what arrives. So the dialog sits behind a tap, after two lines naming what it's for.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    expect(push.enable).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /turn on notifications/i })).toBeInTheDocument()
+  })
+
+  it('names the two things that actually arrive, and no third', async () => {
+    // A permission ask converts on being specific. "Stay updated" is what an app says when it
+    // intends to send whatever it likes later.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    expect(screen.getByText(/asks you for a recipe/i)).toBeInTheDocument()
+    expect(screen.getByText(/nudge to share what you cooked/i)).toBeInTheDocument()
+    expect(screen.getByText(/two things, and nothing else/i)).toBeInTheDocument()
+  })
+
+  it('granting subscribes and silences the Home strip, so the yes is only asked once', async () => {
+    // Without the pref, `NotifyNudge` would offer it again on the very next screen — which reads
+    // as the app not having heard the answer. Same key `NotificationSettings` writes.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    await userEvent.click(screen.getByRole('button', { name: /turn on notifications/i }))
+
+    await waitFor(() => expect(push.enable).toHaveBeenCalled())
+    expect(await screen.findByText(/you.{0,3}re set/i)).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('issei_prefs')).notifyNudgeDismissed).toBe(true)
+    // And the finish is now the only way on — no second chance to press the same button.
+    expect(screen.queryByRole('button', { name: /turn on notifications/i })).toBeNull()
+  })
+
+  it('"Not now" finishes WITHOUT touching permission, so Home can still ask', async () => {
+    // This is what makes the panel genuinely optional. Skipping leaves permission at 'default',
+    // which is exactly the state NotifyNudge shows for — so only a real decline is final, and the
+    // pref that hides the strip is deliberately NOT written here.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+
+    expect(push.enable).not.toHaveBeenCalled()
+    expect(await screen.findByText('home')).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('issei_prefs') || '{}').notifyNudgeDismissed).toBeUndefined()
+  })
+
+  it('a refusal shows why and leaves the way out working', async () => {
+    push.availability = 'ready'
+    push.enable = vi.fn(() => Promise.resolve({ ok: false, message: 'Permission was blocked.' }))
+    await toNotifyPanel()
+    await userEvent.click(screen.getByRole('button', { name: /turn on notifications/i }))
+
+    expect(await screen.findByText(/permission was blocked/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+    expect(await screen.findByText('home')).toBeInTheDocument()
+  })
+
+  it('on an iPhone in Safari it teaches the INSTALL, never a button that cannot work', async () => {
+    // Push is granted only to a site added to the home screen, so there is nothing to ask for yet.
+    // Not an edge case: iPhones are most of this app's audience, and on iOS "when they first
+    // download the app" has no download — it has Add to Home Screen. Rendering the real button
+    // here would be a control that fails on tap, which is the mistake NotificationSettings
+    // already refuses to make.
+    push.availability = 'install-first'
+    await toNotifyPanel()
+    expect(screen.getByText(/add to home screen/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /turn on notifications/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
+    expect(await screen.findByText('home')).toBeInTheDocument()
+  })
+
+  it('an unsupported browser says so plainly and still finishes', async () => {
+    push.availability = 'unsupported'
+    await toNotifyPanel()
+    expect(screen.getByText(/can.{0,3}t do notifications/i)).toBeInTheDocument()
+    expect(screen.getByText(/still shows up in your inbox/i)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
+    expect(await screen.findByText('home')).toBeInTheDocument()
+  })
+
+  it('claims no audio, on the newest panel in the flow', async () => {
+    // POSITIONING: every new user-facing surface tends to add one of these, so the sweep runs here
+    // too rather than only over the teaching panels.
+    push.availability = 'ready'
+    await toNotifyPanel()
+    const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
+    expect(document.body.textContent).not.toMatch(BANNED)
   })
 })

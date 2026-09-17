@@ -115,20 +115,56 @@ def is_due(user: User, now_local: Optional[datetime]) -> bool:
     return not in_quiet_hours(now_local.hour, user.quiet_from, user.quiet_to)
 
 
-def _already_sent(user: User, now_local: datetime, db: Session) -> bool:
-    """Has this person's nudge for this LOCAL date already been claimed?
+def days_since_last_prompt(user: User, now_local: datetime, db: Session) -> Optional[int]:
+    """How many of this person's own local days since their last nudge, or None if never nudged.
 
-    A read of the same UNIQUE (user, local_date) the insert below relies on. It does NOT replace
-    that insert — two concurrent runs must still be settled by the database, not by a check-then-act
-    — it exists so the summary can say `already_sent_today` instead of attributing the skip to
-    whatever check happens to come next.
+    Reads the same `prompt_sends` rows the insert below relies on. It does NOT replace that insert —
+    two concurrent runs must still be settled by the database rather than by a check-then-act — it
+    exists so the run can honour the person's chosen FREQUENCY and so the summary can say which of
+    the two "not yet" answers applied.
     """
-    return (
-        db.query(PromptSend.id)
-        .filter(PromptSend.user_id == user.id, PromptSend.local_date == now_local.date())
+    last = (
+        db.query(PromptSend.local_date)
+        .filter(PromptSend.user_id == user.id)
+        .order_by(PromptSend.local_date.desc())
         .first()
-        is not None
     )
+    if last is None:
+        return None
+    return (now_local.date() - last[0]).days
+
+
+def prompt_window_reason(user: User, now_local: datetime, db: Session) -> Optional[str]:
+    """None if the person's chosen frequency allows a nudge now; otherwise which "not yet" it is.
+
+    THE FREQUENCY IS A MINIMUM GAP IN LOCAL DAYS (`notify_prompt_every_days`), and the
+    at-most-once-a-day rule is this same rule at its floor — 1 means "the last one must have been
+    yesterday or earlier", which is exactly what the per-day UNIQUE already enforced. Generalising
+    the existing predicate rather than adding a second one beside it is the point: there is one
+    place that decides "is it too soon", and `notify_prompt_every_days = 1` is the old behaviour.
+
+    TWO REASONS RATHER THAN ONE, because they mean different things to whoever is reading the log:
+    `already_sent_today` is ordinary idempotence and shows up on every re-run of the cron, while
+    `nudged_recently` means the person's own frequency setting is doing its job. Collapsing them
+    would make a deliberate weekly cadence look like a duplicate-send guard.
+    """
+    gap = days_since_last_prompt(user, now_local, db)
+    if gap is None:
+        return None
+    if gap <= 0:
+        return "already_sent_today"
+    # NO FLOOR ON THE STORED VALUE HERE, and the first version had one — `max(1, ...)` — with a
+    # comment claiming it stopped a nonsensical row meaning "several times a day". A mutation test
+    # deleted it and nothing went red, which was correct: the `gap <= 0` branch above already
+    # guarantees `gap >= 1`, so any stored value of 1 or less permits exactly the same set of days.
+    # The floor could not change an outcome. Defensive code that defends nothing, carrying a comment
+    # that says it does, is worse than none — the next person budgets for a risk that isn't there.
+    #
+    # What actually bounds this: `gap <= 0` above (never twice in one local day), `prompt_sends`'
+    # UNIQUE (user, local_date) in the database, and `ge=1` on the schema.
+    if gap < user.notify_prompt_every_days:
+        return "nudged_recently"
+    return None
 
 
 def posted_today(user: User, now_local: datetime, db: Session) -> bool:
@@ -299,6 +335,7 @@ SKIP_REASONS = (
     "quiet_hours",  # their hour HAS passed, but the catch-up landed inside their quiet window
     # ...and past is_due, in the order they are checked:
     "already_sent_today",  # an earlier run in this local day already claimed it
+    "nudged_recently",  # their own frequency setting says not yet (notify_prompt_every_days)
     "already_posted_today",  # nothing to prompt: they have already shared a meal today
     "no_device",  # notifications on, nothing installed anywhere yet
 )
@@ -321,8 +358,9 @@ def run_daily_prompt(db: Session) -> dict:
     the arithmetic stays in Python where a test can see it.
 
     WHAT DECIDES WHETHER SOMEONE IS NUDGED, in order: the prompt switch and the clock (`is_due`),
-    then whether today's nudge was already claimed, then whether they have already shared a meal
-    today (`posted_today`), then whether they have a device at all. Their friends' activity decides only what the line SAYS, never
+    then whether their chosen frequency allows one yet (`prompt_window_reason`, which subsumes the
+    old at-most-once-a-day check), then whether they have already shared a meal today
+    (`posted_today`), then whether they have a device at all. Their friends' activity decides only what the line SAYS, never
     whether it is sent — that inversion is the fix, and reversing it re-creates the circularity
     described on `User.notify_prompt_me`.
 
@@ -394,8 +432,9 @@ def run_daily_prompt(db: Session) -> dict:
         # whole purpose is answering "why didn't it arrive" — when for that person it did arrive.
         # It is also the cheapest of the three checks, so the run stops doing four queries per
         # already-handled user, 144 times a day. Found by the ship gate.
-        if _already_sent(user, now_local, db):
-            note("already_sent_today")
+        too_soon = prompt_window_reason(user, now_local, db)
+        if too_soon is not None:
+            note(too_soon)
             continue
 
         # NOTHING TO PROMPT SOMEONE WHO HAS ALREADY DONE IT. Deliberately NOT recorded as sent —

@@ -497,12 +497,22 @@ sits closer to the product's promises than a settings screen usually does. Six r
    over: a link-only invite can be forwarded, so this can name someone the cook never addressed.
    They put the link into the world, so the signal is theirs to have — but it IS a disclosure,
    and it belongs recorded here rather than in a test docstring.
-6. **Don't claim delivery that hasn't been observed.** As of 2026-09-15 every layer we can
-   test is verified and no notification has yet arrived on a real device (see TECHDEBT). Until
-   one has, the truthful phrasing is "web push is implemented", not "notifications work".
-   #107 substantially widened WHAT is delivered — every person-to-person type, plus an optional
-   per-post push — without widening that verification, so the gap this rule describes is now
-   bigger than when it was written, not smaller.
+6. **Don't claim delivery that hasn't been observed — and as of 2026-09-17 it HAS been.**
+   A real notification reached a real phone, and tapping it opened the composer. So "notifications
+   work" is now a true sentence about issei, and this is the first day it has been.
+
+   What was verified, precisely, because the rule is about precision: the daily prompt, sent by the
+   production scheduler to an installed iOS home-screen app, and the `notificationclick` handler
+   navigating to `/add/meal`. That closes the leg no test on a dev machine can reach — headless
+   Chromium refuses `pushManager.subscribe`, so everything before this was proven only by
+   `tests/test_push.py` decrypting its own output.
+
+   THE RULE STILL BINDS, and here is what it now forbids. One observed delivery is not "every type
+   delivers": `recipe_request`, `request_fulfilled`, `recipe_arrived`, `recipe_claimed`,
+   `recipe_kept`, `friend_request`, `friend_accept` and the friend-post push share the transport
+   that is now proven, but each has its own copy and its own URL, and none of those has been seen on
+   a device. Say "push notifications work" freely; don't claim a specific notification arrives until
+   it has been watched arriving. Android is also unobserved — only iOS standalone has been.
 
 ### Never claim a shopping list or unit conversion
 
@@ -540,7 +550,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**829 backend tests**, **963 frontend tests in 61 files**. Endpoint and test counts have
+**847 backend tests**, **974 frontend tests in 61 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

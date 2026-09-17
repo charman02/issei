@@ -52,6 +52,7 @@ class UserResponse(UserBase):
     timezone: Optional[str] = None
     notify_hour: int = 18
     notify_prompt_me: bool = True
+    notify_prompt_every_days: int = 1
     notify_friend_posts: bool = True
     notify_people: bool = True
     quiet_from: int = 22
@@ -132,6 +133,11 @@ class AccountUpdate(BaseModel):
     # shared one, and a person reaching you. See `User.notify_prompt_me` for why this is not the
     # three-value cadence it replaced.
     notify_prompt_me: Optional[bool] = None
+    # HOW OFTEN the prompt may arrive, as a minimum gap in local days. Bounded rather than a
+    # `Literal` because every value >= 1 is meaningful (see the column's comment): 1 is the existing
+    # daily behaviour, and the client offers 1 / 3 / 7. The ceiling is a month — past that, the
+    # honest way to say it is `notify_prompt_me: false`.
+    notify_prompt_every_days: Optional[int] = Field(default=None, ge=1, le=30)
     notify_friend_posts: Optional[bool] = None
     notify_people: Optional[bool] = None
     quiet_from: Optional[int] = Field(default=None, ge=0, le=23)

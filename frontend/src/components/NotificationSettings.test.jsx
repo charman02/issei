@@ -27,6 +27,7 @@ function signIn(over = {}) {
     timezone: 'Asia/Manila',
     notify_hour: 18,
     notify_prompt_me: true,
+    notify_prompt_every_days: 1,
     notify_friend_posts: true,
     notify_people: true,
     quiet_from: 22,
@@ -138,11 +139,51 @@ describe('NotificationSettings (#89)', () => {
     ).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('only the PROMPT has an hour, and it hides when the prompt is off', async () => {
+  it('only the PROMPT has an hour and a frequency, and both hide when it is off', async () => {
     signIn({ notify_prompt_me: false })
     render(<NotificationSettings />)
     await screen.findByRole('switch', { name: /remind me to share a meal/i })
     expect(screen.queryByLabelText('Remind me at')).toBeNull()
+    expect(screen.queryByLabelText('How often')).toBeNull()
+  })
+
+  it('offers three frequencies and saves the gap as a NUMBER', async () => {
+    // The column is a minimum gap in local days, and 1 is the behaviour that already shipped — the
+    // at-most-once-a-day rule is this rule at its floor. A select's value is a string, and the
+    // server compares it arithmetically, so sending "7" instead of 7 would be a 422 at best.
+    signIn()
+    render(<NotificationSettings />)
+    const freq = await screen.findByLabelText('How often')
+    expect(
+      Array.from(freq.options).map((o) => [Number(o.value), o.textContent]),
+    ).toEqual([
+      [1, 'Every day'],
+      [3, 'A few days a week'],
+      [7, 'Once a week'],
+    ])
+    expect(Number(freq.value)).toBe(1)
+
+    await userEvent.selectOptions(freq, '7')
+    expect(api.patch).toHaveBeenCalledWith('/auth/me', { notify_prompt_every_days: 7 })
+  })
+
+  it('the frequency hint changes, because "every day" and "once a week" promise different things', async () => {
+    // On daily the honest line is "every evening you haven't shared a meal". On a longer gap the
+    // person needs to know BOTH rules apply — the gap AND the already-posted suppression — or a
+    // quiet week with one meal in it looks like the setting failing.
+    signIn({ notify_prompt_every_days: 7 })
+    render(<NotificationSettings />)
+    await screen.findByLabelText('How often')
+    expect(screen.getByText(/since the last reminder/i)).toBeInTheDocument()
+    expect(screen.queryByText(/every evening you haven/i)).toBeNull()
+  })
+
+  it('a cached user from before the frequency column existed defaults to daily', async () => {
+    // Same fallback shape as the hour beside it, and the same value the column defaults to — so the
+    // control cannot render a blank or a zero for one page load and then save it.
+    signIn({ notify_prompt_every_days: undefined })
+    render(<NotificationSettings />)
+    expect(Number((await screen.findByLabelText('How often')).value)).toBe(1)
   })
 
   it('quiet hours stay reachable with the prompt off, because they govern every push', async () => {
@@ -301,6 +342,10 @@ describe('NotificationSettings (#89)', () => {
     expect(switches[2]).toHaveAccessibleName(/when a friend shares a meal/i)
     expect(switches[3]).toHaveAccessibleName(/when someone reaches you/i)
     expect(screen.queryAllByRole('radiogroup')).toHaveLength(0)
+    // Four selects: the reminder's hour and frequency, and the two quiet-hour bounds. Counted for
+    // the same reason as the switches — every previous version of this screen grew a control that
+    // consulted nothing.
+    expect(screen.getAllByRole('combobox')).toHaveLength(4)
   })
 
   it('deciding "off" here silences the Home nudge too', async () => {
