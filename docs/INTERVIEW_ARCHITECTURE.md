@@ -3,7 +3,7 @@
 Written to be reread before an interview. Verified against the code on 2026-09-17, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 67 endpoints · 18 tables · 28 migrations · 848 backend tests · 982 frontend
+**Scale:** 67 endpoints · 18 tables · 29 migrations · 851 backend tests · 982 frontend
 tests · 9,711 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed

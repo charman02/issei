@@ -110,23 +110,28 @@ strangers arrive. Security/privacy first.
   it exists. Left here as a closed entry rather than deleted, because the ORDERING argument is the
   reusable part: a notification that cannot be recalled must not precede its own commit.
 
-- **TWO live columns that nothing reads, ON PURPOSE, awaiting one shared cleanup.** (#107, #108)
-  `users.notify_prompt` and `users.notify_posts`.
-  The cadence migration (`b3c4d5e6f7a8`) adds `notify_posts` and backfills it but deliberately
-  does NOT drop either column, and the model still DECLARES both — which is what keeps
-  `test_migrated_schema_matches_models` green, since it forbids any drift and has no exemption
-  mechanism. The arrangement exists
-  because of the ORDER in `.github/workflows/deploy.yml`: `alembic upgrade head` runs, THEN the
+- **RESOLVED 2026-09-18: both columns are gone (migration `e6f7a8b9c0d1`).** (#107, #108)
+  `users.notify_prompt` and `users.notify_posts` are dropped, the model no longer declares them, and
+  `test_migrated_schema_matches_models` is green with no exemption ever having been added to it.
+  Kept as a closed entry because the SEQUENCE is reusable and the plan for it was wrong twice — the
+  next person removing a column from a hot table needs both halves of that.
+
+  Shipped as: release 1 `c4e65ba` (add the replacement, stop reading), release 2 `071adab`
+  (`exclude_properties` — the ORM stops naming them), release 3 `e6f7a8b9c0d1` (drop + delete the
+  declarations in one commit). **Release 2 had to be RUNNING IN PRODUCTION before release 3 merged**,
+  which is the constraint the whole thing exists for, not a formality.
+
+  *Why three releases.* The ORDER in `.github/workflows/deploy.yml`: `alembic upgrade head` runs, THEN the
   image is built and pushed, THEN ECS rolls. So the old task serves traffic against the new
   schema for the whole window — and its model still selects `notify_prompt`, which means dropping
   the column in the same deploy is `ProgrammingError` 500s on every authenticated request, on a
   `desiredCount: 1` service, with `/health` still green because it never touches `users`. Nothing
   would alarm; the deploy would look clean. Worse, a health-check failure would roll ECS back to
   an image that cannot talk to the database at all.
-  *What to do — TWO more releases for BOTH columns together, and THE PLAN AS FIRST WRITTEN DID NOT
-  WORK. Recorded in full, because the failure was in the reasoning rather than the code:*
+  *WHAT THE PLAN GOT WRONG — TWICE. Recorded in full, because both failures were in the reasoning
+  rather than in any code, and the second one was invisible to every test:*
 
-  **Release 2 (SHIPPED — see `app/models/user.py`).** Originally specified as "delete
+  **Release 2.** Originally specified as "delete
   `notify_prompt` AND `notify_posts` from `app/models/user.py`. No migration." **That fails
   `tests/test_migrations.py::test_migrated_schema_matches_models`** — the columns are still in the
   migration chain, so removing them from `Base.metadata` IS drift, reported as `remove_column` on
@@ -143,9 +148,18 @@ strangers arrive. Security/privacy first.
   `server_default` removed from the model makes SQLAlchemy send an explicit `NULL` for a NOT NULL
   column, breaking signup immediately.
 
-  **Release 3:** one migration dropping both inside a `batch_alter_table`, deleting the two
-  `mapped_column` lines and the `__mapper_args__` together. Model and schema agree again with no
-  exemption ever having been added to the drift guard.
+  **Release 3 (`e6f7a8b9c0d1`).** One migration dropping both inside a `batch_alter_table`, with the
+  two `mapped_column` lines and the `__mapper_args__` deleted in the same commit.
+
+  *A THIRD thing nothing caught, found by mutating release 3's own migration.* Deleting
+  `server_default` from the DOWNGRADE passed the entire suite, because
+  `test_chain_downgrades_back_to_base` runs on an EMPTY database — where re-adding a NOT NULL column
+  succeeds with or without a default. On a table with rows it fails outright, and production's
+  `users` is never empty. A downgrade is what you reach for when a deploy has already gone wrong, so
+  "the rollback also fails" is the worst possible time to learn this.
+  `test_a_downgrade_that_re_adds_a_NOT_NULL_column_works_on_a_NON_EMPTY_table` seeds a row first and
+  now covers it. **The lesson generalises past these two columns:** any downgrade that re-adds a NOT
+  NULL column needs a `server_default`, and only a seeded table proves it.
 
   *The deprecated ALIASES are NOT part of this sequence, which the first version of this entry also
   got wrong.* It said release 2 was "the moment to delete both deprecated aliases from

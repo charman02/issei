@@ -137,57 +137,29 @@ class User(Base):
     notify_prompt_every_days: Mapped[int] = mapped_column(nullable=False, server_default="1")
     notify_friend_posts: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     notify_people: Mapped[bool] = mapped_column(nullable=False, server_default="1")
-    # TWO DEAD COLUMNS — RELEASE 2 OF 3. They exist in the database and are now INVISIBLE TO THE
-    # ORM: declared on the Table (so the schema still matches), excluded from the mapper (so no
-    # query the app emits mentions them). Nothing reads or writes either; the three switches above
-    # replaced them.
+    # `notify_prompt` and `notify_posts` USED TO SIT HERE, and are gone as of migration
+    # `e6f7a8b9c0d1` — release 3 of 3. Left as a note rather than a clean deletion because the
+    # SEQUENCE is the reusable part, and the next person to remove a column from this table needs
+    # it:
     #
-    # WHY THIS TAKES THREE RELEASES AT ALL. `.github/workflows/deploy.yml` runs
-    # `alembic upgrade head` FIRST, then builds and pushes the image, then rolls ECS. So the OLD
-    # task serves traffic against the NEW schema for the whole window. Drop a column in the same
-    # deploy that stops using it and the old task emits `SELECT ... users.notify_prompt ...` on
-    # every authenticated request → `ProgrammingError` 500s across the whole API, on a
-    # `desiredCount: 1` service, with `/health` still green because it never touches `users`.
-    # Nothing would alarm, and a health-check failure would then roll ECS back to an image that
-    # cannot talk to the database at all.
+    #   `.github/workflows/deploy.yml` runs `alembic upgrade head` BEFORE it builds and ships the
+    # image, so the OLD task serves traffic against the NEW schema for the whole window. Dropping a
+    # column the running image still names is `ProgrammingError` on every authenticated request, on
+    #   a `desiredCount: 1` service, with `/health` green because it never touches `users` — so
+    #   nothing alarms, and a health-check failure would roll ECS back to an image that cannot reach
+    #   the database at all.
     #
-    #   1. (shipped, c4e65ba) add the three switches, backfill, stop READING both dead columns.
-    #   2. (this one) stop the ORM from TOUCHING them. No migration. After this rolls, no running
-    #      code names either column in any statement — which is the precondition for step 3.
-    #   3. one migration dropping both, and these two lines go with it.
+    #   1. add the replacement, backfill, stop READING the old column.
+    #   2. `__mapper_args__ = {"exclude_properties": [...]}` — the ORM stops NAMING it in any
+    #      statement, while the Column stays on the Table so the drift guard stays green. NOT
+    #      "delete the declaration": that IS metadata drift while the migration chain still creates
+    #      the column, and `tests/test_migrations.py::test_migrated_schema_matches_models` is
+    #      absolute. `deferred=True` is not a substitute either — it leaves the column in
+    #      `INSERT ... RETURNING`.
+    #   3. drop the column and delete the declaration in ONE commit (this one).
     #
-    # WHY `exclude_properties` RATHER THAN JUST DELETING THE TWO LINES, which is what this comment
-    # and TECHDEBT both used to prescribe. Deleting them does not work, and it was never going to:
-    # the columns are still in the migration chain, so `Base.metadata` would no longer match the
-    # migrated schema and `tests/test_migrations.py::test_migrated_schema_matches_models` fails with
-    # `remove_column` on both. Measured, not reasoned about — it is the same absolute guard the old
-    # comment cited as the reason step 2 could not be folded into step 1, without noticing step 2
-    # tripped it too. The plan was self-contradictory for two releases and nobody caught it, because
-    # nobody had run it.
-    #
-    # Two other routes were tried and are worse:
-    #   * `deferred=True` alone leaves both in `INSERT ... RETURNING` (that clause fetches
-    #     server defaults, which deferral does not govern), so signup would break the moment
-    #     step 3 lands — the exact outage this sequence exists to avoid, just moved one release
-    #     later where it would look unrelated.
-    #   * `deferred=True` with `server_default` dropped from the model is worse still: SQLAlchemy
-    #     then sends an explicit `notify_prompt=NULL` in the INSERT column list, so signup breaks
-    #     IMMEDIATELY, against a NOT NULL column.
-    # `exclude_properties` is the only one of the three that leaves the column out of BOTH the
-    # SELECT and the INSERT while keeping the Table honest. Verified by capturing the emitted SQL —
-    # `tests/test_migrations.py::test_no_statement_the_ORM_emits_NAMES_a_tombstoned_column` is that
-    # check, kept as a test because "no query mentions this column" is the entire safety property
-    # release 3 depends on and it is invisible in a diff.
-    #
-    # The `Mapped[...]` annotations STAY even though neither is a mapped attribute any more.
-    # Dropping them (the first version did) leaves the assignments unannotated, and Pyright then
-    # stops
-    # synthesising mapped attributes for the WHOLE class — `notify_prompt_me`, `notify_friend_posts`
-    # and `notify_prompt_every_days` all became "unknown attribute" errors at every call site. The
-    # annotation is a type-checker fiction here; `exclude_properties` is what the mapper obeys.
-    notify_prompt: Mapped[bool] = mapped_column(nullable=False, server_default="1")
-    notify_posts: Mapped[str] = mapped_column(nullable=False, server_default="daily")
-    __mapper_args__ = {"exclude_properties": ["notify_prompt", "notify_posts"]}
+    # Step 2 is the step that cannot be skipped and the one that looks skippable. See TECHDEBT for
+    # the full account, including the two releases during which the written plan was impossible.
     # Quiet hours, in `timezone`, as hours-of-day. Kept even though sending is already local,
     # because a person's day is not the same as their timezone's: 22:00-08:00 is the default and
     # someone who works nights will want it inverted.
