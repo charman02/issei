@@ -11,7 +11,7 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 851
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 890
 backend tests, 982 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
@@ -279,8 +279,11 @@ carries notifications with it; family sharing was cut; language translation move
 
    **THE BACKEND HALF SHIPPED (2026-09-09), THE PWA SHELL THE DAY AFTER (2026-09-10.)** Backend:
    per-device subscription storage, the VAPID sender (RFC 8292 + 8291, on `cryptography` and `httpx`
-   — no new dependency), quiet hours, the at-most-once send log, the "N friends posted" count, and an
-   GitHub Actions cron every 10 minutes (hourly lost nudges: the send window is only four hours wide and GitHub drops ~75% of scheduled runs). Client: a web manifest with a maskable icon, the iOS-only meta tags, a
+   — no new dependency), quiet hours, the at-most-once send log, the "N friends posted" count, and — since
+   2026-09-18 — an in-process ticker inside the ECS task, with the GitHub Actions cron kept on as a
+   SECOND trigger. GitHub delivers 5-7 scheduled runs a day for that workflow whatever the cron
+   asks for, so raising it from hourly to every 10 minutes delivered no more of them, against a send
+   window only four hours wide. Client: a web manifest with a maskable icon, the iOS-only meta tags, a
    push-only service worker (no caching, deliberately), `lib/push.js`, a Notifications section on the
    You page, a one-time nudge on Home, and `timezone` captured at login. The backend went first
    because none of it depended on which shell won.

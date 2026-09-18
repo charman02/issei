@@ -309,7 +309,15 @@ def run_daily_prompt_endpoint(
     x_issei_cron_key: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Trigger the daily prompt run. Called by a scheduler, not by a person (#89).
+    """Trigger the daily prompt run. Called by SCHEDULERS, never by a person (#89).
+
+    TWO CALLERS SINCE 2026-09-18, and this endpoint is the SECOND of them. The primary trigger is
+    `app/services/prompt_scheduler.py`, an in-process ticker that calls `run_daily_prompt` directly
+    and never comes through here — GitHub delivers only 5-7 scheduled runs a day for
+    `daily-prompt.yml` no matter what its cron asks for, which is a cap rather than a loss rate, so
+    the workflow alone could not cover a four-hour send window. This route stays because the two
+    triggers are idempotent per (user, local_date) and the cron covers what the loop cannot: the
+    window where the task is restarting or a deploy is mid-roll.
 
     NOT a user route: there is no `get_current_user` here because there is no user — the caller is
     a cron job acting for everybody. Authenticated by a shared secret in a header instead, compared

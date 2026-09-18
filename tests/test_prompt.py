@@ -1299,15 +1299,39 @@ def test_the_cron_fires_far_more_often_than_the_send_window_is_wide():
     """THE BUG THIS ENCODES, which cost a night's nudge and an hour of archaeology.
 
     `is_due` needs the local hour to have reached `notify_hour` AND to be outside quiet hours, so
-    the window in which a nudge can actually go out is `notify_hour` → `quiet_from`: four hours on
-    the defaults. The schedule said hourly, which sounds like four chances per window — but GitHub
-    drops most scheduled runs (measured: 39 runs in 6.5 days against a target of 156, a median gap
-    of 4.2 hours), so a 4-hour window was missed about as often as it was hit. Every dropped run
-    still reported the workflow green, and the failure is an absence, so nobody finds out.
+    the window in which a nudge can go out is `notify_hour` → `quiet_from`: four hours on the
+    defaults. The schedule said hourly, which sounds like four chances per window, and the window
+    was missed about as often as it was hit — silently, because an undelivered run reports green
+    and the failure is an absence.
 
-    The guard is the RATIO, not either number alone: the nominal interval has to be small enough
-    that the window survives a large drop rate. Six attempts per hour against a four-hour window is
-    24 nominal chances, which holds up at the ~75% loss rate actually observed.
+    THE RATIONALE THIS TEST SHIPPED WITH WAS WRONG. The assertion is kept; the reasoning is
+    replaced. It said GitHub "drops most scheduled runs" at a ~75% loss rate, and concluded that
+    more nominal attempts would survive that. Re-measured 2026-09-18, scheduled events only:
+
+       hourly (target 24/day)          every 10 min (target 144/day)
+         Sep 11  6   Sep 14  5           Sep 17  6
+         Sep 12  7   Sep 15  5
+         Sep 13  7
+         n=5, mean 6.0/day = 25%         n=1, mean 6.0/day = 4%
+
+    Complete UTC days only, split at the moment the cron changed (2026-09-16 14:44 UTC). The
+    10-minute side is ONE day: enough to say the change bought no improvement, not enough to prove
+    the mechanism. The ratio this test pins is worth keeping regardless.
+
+    Delivery is CAPPED at 5-7 a day, not thinned by a fixed probability: asking for six times as
+    many delivered no more of them. So raising the frequency buys nothing, and this test must not
+    be read as advice to do that — which is what its failure message used to say.
+
+    Three things corroborate "cap" over "drop rate": no run in the API has conclusion `cancelled`
+    or `skipped`; runs take a median 8s against a 600s interval, so the `concurrency: daily-prompt`
+    group cannot be serializing them; and the delivered minute-of-hour spans 39 distinct values of
+    which only 4 were ever requested, so the schedule's shape is being ignored rather than sampled.
+
+    THE ASSERTION STILL EARNS ITS PLACE. The real trigger is now in-process
+    (`app/services/prompt_scheduler.py`) and this cron is the second one, but a cron whose nominal
+    rate is coarse relative to the send window is still a latent defect if the in-process loop is
+    ever removed. What it pins is the RATIO between the declared interval and the window — that is
+    valid regardless of what GitHub delivers.
     """
     from app.models.user import User
 
@@ -1321,8 +1345,10 @@ def test_the_cron_fires_far_more_often_than_the_send_window_is_wide():
     nominal_attempts = per_hour * window_hours
     assert nominal_attempts >= 12, (
         f"only {nominal_attempts} scheduled attempts land inside the {window_hours}h send window "
-        f"({per_hour}/hour). GitHub drops roughly three quarters of them, so this is not enough "
-        "headroom — raise the cron frequency or widen the window."
+        f"({per_hour}/hour) — too coarse a nominal rate for the window. NOTE: raising the cron "
+        "frequency does NOT increase delivered runs (GitHub caps this workflow at 5-7/day whatever "
+        "it asks for — see this test's docstring). The reliable trigger is the in-process ticker "
+        "in app/services/prompt_scheduler.py; fix the ratio, but don't expect it to buy coverage."
     )
 
 

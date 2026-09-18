@@ -206,27 +206,56 @@ strangers arrive. Security/privacy first.
   fixed. *Where:* `app/routers/recipes.py` (`handoff_recipe`, `shared_with_me`),
   `app/routers/auth.py`.
 
-- **The daily nudge's trigger drops ~75% of its runs, and nothing inside the app can fix that.**
-  (#89, measured 2026-09-16)
-  GitHub Actions cron is the trigger, and over the first week of runs the Actions API reports 39
-  runs against a target of 156 — 5-7 per day instead of 24, a median gap of 4.2 hours and a worst
-  gap of 7.6. Every dropped run still shows the workflow as green, so the failure is an absence.
-  `is_due`'s catch-up design absorbs drift, but not indefinitely: quiet hours close the door, so the
-  window in which a nudge can go out is `notify_hour` → `quiet_from`, four hours on the defaults. A
-  4.2-hour median gap against a 4-hour window means the window is missed about as often as it is
-  hit — measured against the real run history, America/Los_Angeles got 4 of 7 nights and
-  Asia/Manila 3 of 6, while America/New_York happened to get 7 of 7.
-  *What was done:* the cron went from hourly to every 10 minutes, which buys enough attempts that a
-  four-hour window survives a 75% loss rate, and `tests/test_prompt.py` now pins the frequency
-  against the default send window so the two cannot drift apart. That is a mitigation, not a fix.
-  *The actual fix:* a trigger that does not drop runs — EventBridge Scheduler pointed at the same
-  URL, which the workflow was written to be swappable for. The reason it wasn't done that way
-  originally still stands and is the awkward part: the deploy pipeline never runs `cdk`, and the CDK
+- **RESOLVED 2026-09-18: GitHub's scheduler CAPS this workflow at 5-7 runs a day, and raising the
+  declared frequency did nothing. The trigger is now in-process.** (#89, re-measured)
+
+  *What the first version of this entry said, and got wrong twice.* It was titled "drops ~75% of its
+  runs, and nothing inside the app can fix that", and prescribed raising the cron from hourly to
+  every 10 minutes on the reasoning that more attempts would survive a 75% loss rate. Both halves
+  were false:
+
+  1. It is not a ~75% DROP RATE, it is a CAP. Runs delivered per day, off the Actions API on
+     2026-09-18, with the 10-minute cron shipping on the 16th:
+
+    hourly (target 24/day)          every 10 min (target 144/day)
+      Sep 11  6   Sep 14  5           Sep 17  6
+      Sep 12  7   Sep 15  5
+      Sep 13  7
+      n=5, mean 6.0/day = 25%         n=1, mean 6.0/day = 4%
+
+     Split at the moment `ea85076` changed the cron (2026-09-16 14:44 UTC), complete UTC days only —
+     Sep 10 and Sep 18 are partial data and Sep 16 is mixed. **The 10-minute side is ONE day.** Enough
+     to say the mitigation bought no improvement; not enough to prove "cap" over "a quieter week".
+     The in-process trigger is justified either way: both eras deliver 5-7 runs a day against a
+     four-hour window.
+
+     Five to seven a day before and after. Asking for six times as many runs delivered no more of
+     them, so the mitigation bought nothing — and the comment it left in the workflow,
+     asserting that the frequency was doing real work, was false the day it landed. Median gap 245
+     minutes, worst 459, against a four-hour send window.
+  2. Something inside the app CAN fix it, and now does: `app/services/prompt_scheduler.py` ticks on a
+     real interval inside the ECS task, started from the app's lifespan.
+
+  *Why an in-process tick is safe here, having been rejected before.* The objection was that it
+  double-fires during a rolling deploy (minHealthyPercent 100 / maxHealthyPercent 200 overlaps two
+  tasks) and breaks above `desiredCount: 1`. True and irrelevant: `prompt_sends` has a UNIQUE on
+  (user_id, local_date) and `run_daily_prompt` catches the `IntegrityError`. Correctness was put in
+  the DATABASE rather than the trigger precisely so the trigger could be anything — including two at
+  once. The constraint that made a re-runnable endpoint safe is the same one that makes this safe.
+
+  *The cron STAYS as a second trigger.* Both are idempotent, so they cannot interfere, and the cron
+  covers the one thing the loop cannot: the window where the task is restarting or a deploy is
+  mid-roll. Two unreliable triggers that can't double-send beat either alone.
+
+  *Still open, and still the properly-decoupled answer:* EventBridge Scheduler pointed at the same
+  URL. Blocked on the same hazard as before — the deploy pipeline never runs `cdk`, and the CDK
   task-definition Family is byte-identical to the one `deploy.yml` re-renders, so a `cdk deploy`
   merely to add a schedule would point the live service at whatever image is in the operator's
-  working tree. Adding the rule outside CDK (console or CLI) works but then the infrastructure
-  isn't in the repo. Neither is bad enough to rush; the mitigation covers the observed loss rate.
-  *Where:* `.github/workflows/daily-prompt.yml`, `app/services/prompt.py`, `infra/`.
+  working tree. Adding the rule outside CDK works but puts infrastructure outside the repo. Much less
+  urgent now that the primary trigger runs in-process — though note that is an argument from
+  design, not from observation: the loop has unit tests and has never yet run in production.
+  *Where:* `app/services/prompt_scheduler.py`, `app/main.py` (lifespan),
+  `.github/workflows/daily-prompt.yml`, `infra/`.
 
 - **The daily prompt can repeat the same sentence forever — and #108 REMOVED THE ACCIDENT THAT
   LIMITED IT.** (#89, sharpened #108)

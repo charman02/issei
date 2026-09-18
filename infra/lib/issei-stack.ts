@@ -155,6 +155,19 @@ export class IsseiStack extends cdk.Stack {
         // custom domain when set, like OPENROUTER_REFERER above: a link a real person
         // clicks out of their inbox should be the product's address, not a deploy alias.
         APP_URL: useDomain ? `https://${props.domainName}` : frontendOrigin,
+        // How often the in-process daily-prompt ticker runs (app/services/prompt_scheduler.py).
+        // A PLAIN env var rather than an SSM secret: it is not sensitive, and the point of having
+        // it here at all is that "0" is the emergency stop for a misbehaving loop.
+        //
+        // Read the honest limits before relying on that. 0 DISABLES IT — 0, not blank. And
+        // registering a revision by hand is only half the gesture: the service holds a concrete
+        // revision ARN, so it also needs `aws ecs update-service --task-definition <family>:<rev>
+        // --force-new-deployment` before new tasks pick it up. Even then the pipeline renders every
+        // revision from `.aws/task-definition.json`, so the NEXT merge to main silently puts 600
+        // back — emergency stop, not a durable setting. For durable, edit that file and ship it.
+        // Wired in both places per infra/RUNBOOK.md: only the JSON ships, and keeping them in step
+        // is what stops the stack file from quietly describing something prod isn't doing.
+        PROMPT_SCHEDULER_INTERVAL_SECONDS: '600',
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'ecs' }),
       healthCheck: {

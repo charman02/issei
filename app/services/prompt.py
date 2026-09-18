@@ -506,6 +506,14 @@ def run_daily_prompt(db: Session) -> dict:
         "failed": failed,
         # Named, so the Actions log answers "why didn't it arrive" without a database.
         "reasons": reasons,
+        # SET EXPLICITLY so the in-process scheduler's readiness-cache guard fails CLOSED.
+        # `prompt_scheduler` only marks the database reachable when this is True, because this
+        # function has an early return (VAPID unconfigured) that never touches the database — and
+        # marking on that path masked `/health/ready` indefinitely, which a ship gate caught. The
+        # guard used to read `summary.get("configured", True)`, so ABSENT meant "it queried". Any
+        # future early return added above — "no candidates, bail before the query" is the obvious
+        # one — would then have silently re-opened that hole. Now absence means "don't trust it".
+        "configured": True,
     }
     log.info("prompt: daily run %s", summary)
     return summary

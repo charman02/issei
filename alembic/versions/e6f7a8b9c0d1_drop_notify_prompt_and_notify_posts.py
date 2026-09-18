@@ -19,7 +19,7 @@ cannot talk to the database at all.
 
 THIS MIGRATION IS ONLY SAFE BECAUSE RELEASE 2 IS ALREADY RUNNING IN PRODUCTION. That is not a
 formality: release 2's image emits no SELECT and no INSERT mentioning either column
-(`tests/test_migrations.py::test_no_statement_the_ORM_emits_NAMES_a_tombstoned_column` asserts it
+(`tests/test_migrations.py::test_no_statement_the_ORM_emits_NAMES_a_removed_column` asserts it
 against captured SQL), so it survives this drop happening underneath it. Release 1's image does NOT
 — it maps both columns. If this ever needs redoing for another column, the ordering constraint
 is the part to copy, not the four lines of `drop_column`.

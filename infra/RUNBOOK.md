@@ -200,9 +200,29 @@ remember step 5 is that steps 3 and 4 are now mandatory.
      actually renders on every push.** Miss it and the variables are simply absent in production
      while the stack file looks correct, which is a silent no-op rather than an error.
 
-6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml`, which runs **every 10
-   minutes** (`5,15,25,35,45,55` past the hour — hourly lost nudges, because GitHub drops most
-   scheduled runs and a person's send window is only four hours wide):
+5b. **One plain env var, in BOTH files, by the same rule as step 5:**
+   `PROMPT_SCHEDULER_INTERVAL_SECONDS` (600) — how often the in-process ticker runs
+   (`app/services/prompt_scheduler.py`, the PRIMARY nudge trigger since 2026-09-18). Not a
+   secret, so no SSM parameter and no IAM grant: just `environment[]` in
+   `.aws/task-definition.json` (the one that ships) and `environment` in
+   `infra/lib/issei-stack.ts` (kept in step so it can't drift).
+   `tests/test_deploy_config.py` pins both — it gained that REVERSE direction (a Settings field
+   the deployment never supplies) only after this variable shipped absent from both files while
+   three documents called it an operator-settable off switch.
+   **0 disables the loop — 0, not blank.** And a hand-registered revision needs
+   `aws ecs update-service --task-definition <family>:<rev> --force-new-deployment` before new
+   tasks use it; the next merge to main reverts it regardless.
+
+6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml` — the SECOND of two
+   triggers since 2026-09-18 (the primary one is `app/services/prompt_scheduler.py`, in-process,
+   which needs no secret because it makes no HTTP call). Still worth wiring: it covers the window
+   where the task is restarting or a deploy is mid-roll, and both are idempotent per
+   (user, local_date). It ASKS for **every 10 minutes** (`5,15,25,35,45,55` past the hour) and
+   GitHub delivers 5-7 runs a day whatever it asks — five complete days of hourly against one of
+   every-ten-minutes, both a mean of 6.0/day, so read "cap rather than loss rate" as the best
+   available reading rather than proof (`app/services/prompt_scheduler.py` carries the caveat and the
+   exclusions). Either way it is far too few against a person's send window of only four hours, which
+   is why the primary trigger moved in-process:
    - `CRON_KEY` — the same value as `/issei/CRON_SECRET`.
    - `API_URL` — e.g. `https://api.issei.app` (no trailing slash).
 

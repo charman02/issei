@@ -1,5 +1,20 @@
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
+
+
+# Words that mean "switch it off" / "leave it on" for `PROMPT_SCHEDULER_INTERVAL_SECONDS`. The
+# documented values are 0 and a number of seconds; these are what someone reaches for INSTEAD, under
+# pressure, on the field every doc calls the emergency stop. Before this they raised at `app.config`
+# import and took the API container down with the migration task — see the validator.
+#
+# BOTH DIRECTIONS, and the second one is the point. The first version accepted only the off words,
+# which closed two fatal inputs and left the class open: an operator who has just learned that `off`
+# works reaches for `on` when the incident ends, and `on` still crashed the container — identical
+# blast radius, same field, same emergency, reached by the person most likely to have learned the
+# vocabulary. A ship gate found that. ON means "enabled at the default interval", which is what
+# someone typing it wants.
+OFF_VALUES = frozenset({"off", "false", "no", "none", "disabled", "disable"})
+ON_VALUES = frozenset({"on", "true", "yes", "enable", "enabled", "default"})
 
 
 class Settings(BaseSettings):
@@ -69,6 +84,75 @@ class Settings(BaseSettings):
     # required", which is the failure mode of every `if secret and secret != given` check ever
     # written. Set it in SSM + the task definition alongside the VAPID keys.
     cron_secret: str = ""
+    # How often the IN-PROCESS daily-prompt ticker runs (`services/prompt_scheduler.py`). Ten
+    # minutes, matching what the GitHub cron ASKS for and does not get — that scheduler delivers
+    # 5-7 runs a day whether you request 24 or 144, measured, which is why an in-process loop
+    # exists at all. FLOORED AT 600s in the loop (`prompt_scheduler.MIN_INTERVAL_SECONDS`), and
+    # that floor is a COST boundary rather than protection against a hot loop: because a
+    # successful tick refreshes the `/health/ready` cache, this loop is the only thing querying
+    # the database periodically, so the interval IS the idle window Neon gets. A smaller value is
+    # clamped UP and logged at WARNING. Setting 120s here does NOT give you a 120s send window.
+    #
+    # SET 0 TO DISABLE — 0, not blank (blank means "unset" and yields this default; see the
+    # validator below for why that mattered). The variable is wired into BOTH
+    # `.aws/task-definition.json` and `infra/lib/issei-stack.ts`, and `tests/test_deploy_config.py`
+    # pins it there — it was absent from both when this setting first shipped, while three places
+    # documented it as an off switch that needed no deploy.
+    #
+    # What it honestly buys, in full, because the first version of this note stopped halfway: a
+    # hand-registered revision with 0 does nothing on its own — the SERVICE holds a concrete revision
+    # ARN, so it also needs `aws ecs update-service --task-definition <family>:<rev>
+    # --force-new-deployment` before new tasks pick it up. Even then the pipeline renders every
+    # revision from the committed JSON, so the next merge to main restores 600. Emergency stop, not
+    # a durable setting; for durable, edit `.aws/task-definition.json` and ship it.
+    #
+    # Enabled by default, because a scheduler that ships disabled is the "setting nothing reads"
+    # defect this codebase keeps deleting — and the loop is harmless where it isn't wanted, since
+    # `run_daily_prompt` claims nobody's day on a deploy with no VAPID keys configured.
+    prompt_scheduler_interval_seconds: int = 600
+
+    @field_validator("prompt_scheduler_interval_seconds", mode="before")
+    @classmethod
+    def _blank_interval_means_the_default(cls, v):
+        """A BLANK value must not take the container down, and it used to.
+
+        `PROMPT_SCHEDULER_INTERVAL_SECONDS=""` raised
+        `ValidationError: Input should be a valid integer, unable to parse string as an integer`
+        at `app.config` IMPORT time — so the API container failed to boot, and so did the
+        `alembic upgrade head` task that imports the same settings. A failed migration step plus a
+        failed service, from clearing one field.
+
+        That matters because CLEARING A FIELD IS THE INSTINCTIVE WAY TO TURN SOMETHING OFF in the
+        ECS console, and all the documentation for this setting says it is the off switch. Someone
+        reaching for it in a hurry, to stop a loop misbehaving in production, would have taken the
+        whole API down instead — the worst possible moment for the emergency control to be a
+        landmine. Found by the ship gate.
+
+        Blank now means "unset", which is what a blank environment variable means everywhere else.
+        To DISABLE the loop, set 0 — and every place that documents the switch now says so
+        explicitly rather than leaving it to be inferred.
+        """
+        if v is None:
+            return cls.model_fields["prompt_scheduler_interval_seconds"].default
+        if not isinstance(v, str):
+            return v
+        text = v.strip().lower()
+        if not text:
+            # Blank means UNSET, which is what a blank environment variable means everywhere else.
+            # Reads the field's declared default rather than repeating the literal, so changing the
+            # default cannot silently make blank mean something other than "unset".
+            return cls.model_fields["prompt_scheduler_interval_seconds"].default
+        if text in ON_VALUES:
+            return cls.model_fields["prompt_scheduler_interval_seconds"].default
+        if text in OFF_VALUES:
+            # The adjacent keystroke to a blank. Someone reaching for the documented off switch in a
+            # hurry types `off` or `false` at least as readily as `0`, and before this those raised
+            # at `app.config` import — taking the API container AND the `alembic upgrade head` task
+            # down, which is the same total outage the blank case caused. Anything else unparseable
+            # still raises, deliberately: `600s` or `ten` is a typo to fix, not an intention to
+            # obey.
+            return 0
+        return v
 
     model_config = ConfigDict(env_file=".env", extra="ignore")
 

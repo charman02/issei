@@ -11,10 +11,10 @@
 # change at all and ships with the repo.
 #
 # The trade is that Actions cron is unreliable about TIME, and MEASURED REALITY IS FAR WORSE THAN
-# THIS COMMENT ORIGINALLY CLAIMED. It said "5-30 minutes of drift is routine". Over the first week
-# of runs the GitHub API reports 39 runs in 6.5 days against a target of 24/day — 5-7 per day,
-# a MEDIAN GAP OF 4.2 HOURS and a worst gap of 7.6 — so roughly three quarters of hourly ticks are
-# dropped outright, and every dropped one still reports the workflow as green.
+# THIS COMMENT ORIGINALLY CLAIMED. It said "5-30 minutes of drift is routine". The GitHub API
+# reports 5-7 runs a day against a target of 24 — a MEDIAN GAP OF 4.1 HOURS and a worst gap of
+# 7.6 — and every undelivered one still reports the workflow as green. Note the framing that
+# replaced "dropped outright": it is a CAP, not a loss rate. See the block below.
 #
 # `services/prompt.is_due` is what keeps that survivable: it asks "has their hour passed today, and
 # have they not been sent yet?" rather than "is it exactly their hour", so a late run still catches
@@ -28,16 +28,41 @@
 # America/Los_Angeles and 3/6 for Asia/Manila — including a night the owner reported as missing.
 # The failure is an absence, so nobody finds out.
 #
-# HENCE EVERY 10 MINUTES rather than hourly. It does not make GitHub reliable; it buys enough
-# attempts that a 4-hour window is hit even at a 75% drop rate. The endpoint is idempotent per
-# (user, local_date), so the extra runs are cheap no-ops — and public repositories have unlimited
-# Actions minutes, so the only cost is a curl. `tests/test_prompt.py` pins the interval against the
-# default send window, because the two are only safe RELATIVE to each other.
+# EVERY 10 MINUTES RATHER THAN HOURLY — AND IT DID NOT WORK. That change shipped in `ea85076` on the
+# reasoning that more attempts would hit a 4-hour window even at a 75% drop rate. Re-measured off the
+# Actions API on 2026-09-18, runs actually DELIVERED per day:
 #
-# The real fix is a trigger that does not drop runs (EventBridge Scheduler at the same URL); this is
-# the cheap one that needs no infrastructure change. Recorded in TECHDEBT.
+#     hourly (target 24/day)          every 10 min (target 144/day)
+#       Sep 11  6   Sep 14  5           Sep 17  6
+#       Sep 12  7   Sep 15  5
+#       Sep 13  7
+#       n=5, mean 6.0/day = 25%         n=1, mean 6.0/day = 4%
 #
-# Swappable later without touching the app: point EventBridge at the same URL.
+#   Split at the moment ea85076 changed the cron (2026-09-16 14:44 UTC), keeping only UTC days wholly
+#   inside one era. Excluded: Sep 10 and Sep 18 (partial data), Sep 16 (the cron changed mid-day).
+#   The 10-minute side is ONE complete day. Enough to say the change bought no improvement; not
+#   enough alone to prove "cap" over "a quieter week" — and the in-process trigger is justified
+#   either way, since both eras deliver 5-7 runs against a four-hour window.
+#
+# Five to seven a day, before and after. Asking for 144 instead of 24 delivered NO MORE RUNS — an
+# identical mean. The whole argument above — that more
+# attempts buy more coverage — is therefore UNSUPPORTED (the hedge above is why: one complete day on
+# the ten-minute side cannot prove the mechanism). Median gap 245 minutes, worst 459, against a
+# 4-hour window. Every run still reports green.
+#
+# SO THE PRIMARY TRIGGER IS NOW IN-PROCESS: `app/services/prompt_scheduler.py` ticks inside the ECS
+# task on a real interval. THIS CRON STAYS as the second one — both are idempotent per
+# (user, local_date), so they cannot double-send, and this one covers exactly what the in-process
+# loop cannot: the window where the task is restarting or a deploy is mid-roll. Two unreliable
+# triggers that cannot interfere are better than either alone.
+#
+# The declared frequency is left at 10 minutes because it costs nothing (public repos have unlimited
+# Actions minutes and the endpoint is a no-op when nobody is due) and there is no evidence a lower
+# number would be delivered any more faithfully. `tests/test_prompt.py` pins the interval against
+# the default send window.
+#
+# Still swappable without touching the app: point EventBridge Scheduler at the same URL. That remains
+# the properly-decoupled answer and is still blocked on the `cdk deploy` hazard above.
 #
 # ONE OPERATIONAL GOTCHA: GitHub DISABLES scheduled workflows on a repository with no pushes for 60
 # days, and it emails the owner when it does. If notifications silently stop, check that first.
@@ -46,9 +71,11 @@ name: Daily prompt
 
 on:
   schedule:
-    # EVERY 10 MINUTES, and the frequency is doing real work — see the note above. Users are in
+    # EVERY 10 MINUTES, and the frequency is NOT doing the work the original comment claimed —
+    # see the measurement above; it is kept because it costs nothing, not because it buys runs.
+    # The reliable trigger is app/services/prompt_scheduler.py. Users are in
     # every timezone and each needs their own local hour, and the window per person is only four
-    # hours wide on the defaults, against a measured median gap of 4.2 hours between runs that
+    # hours wide on the defaults, against a measured median gap of 4.1 hours between runs that
     # actually happen. Offset off the top of the hour (:05, :15, …) because the top of the hour is
     # when everyone else's cron runs and GitHub's queue is measurably worse there.
     - cron: "5,15,25,35,45,55 * * * *"
@@ -96,8 +123,12 @@ jobs:
           # GitHub API, a per-timezone window calculation and re-deriving `is_due` by hand. The
           # step summary shows on the run page itself.
           #
-          # NOT a failure when nothing was sent: zero is the correct and common outcome (nobody
-          # the person follows has posted). Failing on it would train everyone to ignore a red X.
+          # NOT a failure when nothing was sent: zero is the correct and common outcome — most
+          # often because everybody due has already shared a meal today, which is exactly what
+          # the nudge is for. (This used to say "nobody the person follows has posted", which is
+          # wrong twice: #108 repointed the gate at the recipient's OWN absence rather than their
+          # friends' activity, and issei has no follow graph at all — friendship is symmetric.)
+          # Failing on zero would train everyone to ignore a red X.
           {
             echo "### Daily prompt"
             echo ""
