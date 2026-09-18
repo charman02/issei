@@ -126,3 +126,91 @@ def test_migrated_schema_matches_models(migrated):
         "migration/model nullability drift: "
         + "; ".join(f"{d[2]}.{d[3]} migration={d[5]!r} model={d[6]!r}" for d in nullable_drift)
     )
+
+
+# The two dead notification columns (`users.notify_prompt`, `users.notify_posts`) are in RELEASE 2
+# of a three-release removal: present in the database, excluded from the ORM mapper. See the long
+# note in `app/models/user.py`.
+TOMBSTONED_COLUMNS = ("notify_prompt", "notify_posts")
+
+
+def test_the_tombstoned_columns_are_in_the_TABLE_but_not_the_MAPPER():
+    """Both halves matter, and each one alone is a bug.
+
+    IN THE TABLE, because the migration chain still creates them: drop them from `Base.metadata`
+    and `test_migrated_schema_matches_models` above fails with `remove_column`. That is exactly
+    what the first version of this cleanup prescribed, and it could never have worked — the drift
+    guard is absolute and has no exemption mechanism, deliberately.
+
+    OUT OF THE MAPPER, because that is the whole point of release 2: after it rolls, no running
+    code names either column, which is the precondition for release 3's migration dropping them
+    while the release-2 task is still serving traffic.
+    """
+    from app.models.user import User
+
+    table_columns = set(User.__table__.columns.keys())
+    mapped_columns = {p.key for p in User.__mapper__.column_attrs}
+
+    for name in TOMBSTONED_COLUMNS:
+        assert name in table_columns, f"{name} vanished from the Table — release 3 shipped early?"
+        assert name not in mapped_columns, f"{name} is mapped again — release 2 was reverted"
+
+    # The live switches must NOT have been caught by the same exclusion. `exclude_properties` takes
+    # a list of strings, so a typo silently excludes nothing while a copy-paste silently excludes
+    # a column the app depends on, and neither raises.
+    for name in ("notify_prompt_me", "notify_friend_posts", "notify_people"):
+        assert name in mapped_columns, f"{name} was excluded from the mapper by mistake"
+
+
+def test_no_statement_the_ORM_emits_NAMES_a_tombstoned_column(tmp_path):
+    """The release-3 safety property, asserted against real SQL rather than inferred.
+
+    Release 3 drops these columns while the release-2 image is still serving, so if ANY statement
+    still names one, that deploy is `ProgrammingError` 500s on a `desiredCount: 1` service with
+    `/health` green. Two earlier attempts at release 2 failed exactly here and looked fine
+    otherwise: `deferred=True` keeps both out of the SELECT but leaves them in
+    `INSERT ... RETURNING`, and `deferred=True` without `server_default` puts an explicit NULL in
+    the INSERT column list. Neither is visible without reading the emitted SQL, which is why this
+    test reads it.
+    """
+    import re
+
+    import sqlalchemy
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.models.user import User
+    import tests.conftest  # noqa: F401  (imports every model onto Base.metadata)
+
+    engine = sqlalchemy.create_engine(f"sqlite:///{tmp_path}/tombstone.db")
+    Base.metadata.create_all(engine)
+
+    emitted = []
+
+    @sqlalchemy.event.listens_for(engine, "before_cursor_execute")
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        emitted.append(statement)
+
+    Session = sessionmaker(bind=engine)
+    with Session() as db:
+        db.add(User(first_name="Ana", last_name="Cruz", email="a@t.com", hashed_password="x"))
+        db.commit()
+        db.expire_all()
+        loaded = db.query(User).first()
+        # Touch every live notification field, the way a real request does, so a lazy load that
+        # dragged a tombstone along would show up here.
+        _ = (loaded.notify_prompt_me, loaded.notify_friend_posts, loaded.notify_people,
+             loaded.notify_hour, loaded.notify_prompt_every_days, loaded.timezone)
+
+    assert emitted, "captured no SQL — the listener did not fire, so this test proved nothing"
+    for statement in emitted:
+        if statement.strip().upper().startswith("CREATE"):
+            continue  # CREATE TABLE legitimately names them; it is the Table that keeps them.
+        for name in TOMBSTONED_COLUMNS:
+            # WORD-BOUNDARY match, not `in`. `"notify_prompt" in "notify_prompt_me"` is True, so a
+            # plain substring test fails on the LIVE column that REPLACED the dead one — which is
+            # what the first version of this assertion did, reporting a defect that wasn't there.
+            assert not re.search(rf"\b{re.escape(name)}\b", statement), (
+                f"{name} is still named in a statement the ORM emits, so release 3 would "
+                f"500 the API:\n{statement}"
+            )

@@ -123,15 +123,40 @@ strangers arrive. Security/privacy first.
   `desiredCount: 1` service, with `/health` still green because it never touches `users`. Nothing
   would alarm; the deploy would look clean. Worse, a health-check failure would roll ECS back to
   an image that cannot talk to the database at all.
-  *What to do — and it is TWO more releases, not one, for BOTH columns together:*
-  **Release 2:** delete `notify_prompt` AND `notify_posts` from `app/models/user.py`. No migration.
-  After this rolls, no running code selects either. (This is the step that cannot be skipped, and
-  the one it is tempting to skip.) Also the moment to delete both deprecated aliases from
+  *What to do — TWO more releases for BOTH columns together, and THE PLAN AS FIRST WRITTEN DID NOT
+  WORK. Recorded in full, because the failure was in the reasoning rather than the code:*
+
+  **Release 2 (SHIPPED — see `app/models/user.py`).** Originally specified as "delete
+  `notify_prompt` AND `notify_posts` from `app/models/user.py`. No migration." **That fails
+  `tests/test_migrations.py::test_migrated_schema_matches_models`** — the columns are still in the
+  migration chain, so removing them from `Base.metadata` IS drift, reported as `remove_column` on
+  both. Which is the same guard this entry cited as the reason step 2 could not be folded into step
+  1, *without noticing step 2 trips it too*. Self-contradictory for two releases; caught only by
+  running it.
+
+  What release 2 actually is: keep both `mapped_column`s on the Table and add
+  `__mapper_args__ = {"exclude_properties": [...]}`. The columns stay in `Base.metadata` (guard
+  green) and leave the mapper entirely, so no statement the app emits names them — which is the
+  real precondition for release 3. Two alternatives were measured and rejected: `deferred=True`
+  alone still leaves both in `INSERT ... RETURNING` (that clause fetches server defaults; deferral
+  does not govern it), so signup would break when release 3 lands; and `deferred=True` with
+  `server_default` removed from the model makes SQLAlchemy send an explicit `NULL` for a NOT NULL
+  column, breaking signup immediately.
+
+  **Release 3:** one migration dropping both inside a `batch_alter_table`, deleting the two
+  `mapped_column` lines and the `__mapper_args__` together. Model and schema agree again with no
+  exemption ever having been added to the drift guard.
+
+  *The deprecated ALIASES are NOT part of this sequence, which the first version of this entry also
+  got wrong.* It said release 2 was "the moment to delete both deprecated aliases from
   `AccountUpdate`, their handling in `update_me`, and the two older branches of
-  `promptMeOf`/`friendPostsOf` in `NotificationSettings.jsx` — by then no frontend build that old is
-  plausibly still live.
-  **Release 3:** one migration dropping both inside a `batch_alter_table`. Model and schema agree
-  again.
+  `promptMeOf`/`friendPostsOf`". They are independent: `update_me` maps both aliases onto
+  `notify_prompt_me`/`notify_friend_posts` and never writes either dead column, so they cannot block
+  the drop. They are on a different clock — they protect against a stale CLIENT (a long-lived SPA tab
+  or a cached `issei_user` written by an older build), not against the deploy window. Both columns
+  shipped 2026-09-16/17, so "no build that old is plausibly still live" is not yet true, and removing
+  them now would silently discard someone's opt-out, which is the one failure they exist to prevent.
+  Retire them on their own schedule, well after release 3.
   They are deliberately merged into ONE sequence: `notify_prompt`'s removal was already pending when
   `notify_posts` joined it a day later, and running two interleaved three-release cleanups over the
   same table is how one of them gets forgotten.
