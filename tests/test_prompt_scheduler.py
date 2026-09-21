@@ -60,6 +60,13 @@ def test_it_SLEEPS_BEFORE_it_ticks_so_a_short_lived_process_never_sends(monkeypa
 
     monkeypatch.setattr(prompt_scheduler, "tick", counting_tick)
     monkeypatch.setattr(prompt_scheduler.settings, "prompt_scheduler_interval_seconds", 3600)
+    # FROZEN just shy of a boundary — the most hostile phase for this property, and the one that made
+    # this test both flaky and untrue for a while. Alignment made the FIRST delay uniform in
+    # (0, interval], so starting 0.01s before a boundary meant a tick inside this test's 0.05s window;
+    # a ship gate reproduced exactly that. The fix was in the code (the first sleep is a full interval
+    # again), and freezing the clock here is what proves it rather than trusting the odds: 1-in-72,000
+    # is still a test that lies occasionally.
+    monkeypatch.setattr(prompt_scheduler, "_now", lambda: float(3600 * 500_000 - 0.01))
 
     async def drive():
         task = asyncio.create_task(prompt_scheduler.run_forever())
@@ -127,6 +134,11 @@ def test_the_interval_is_FLOORED_so_a_bad_config_cannot_become_a_hot_loop(monkey
     monkeypatch.setattr(prompt_scheduler, "tick", lambda: {})
     monkeypatch.setattr(prompt_scheduler, "_sleep", record_sleep)
     monkeypatch.setattr(prompt_scheduler.settings, "prompt_scheduler_interval_seconds", 1)
+    # `_now` FROZEN TO AN EXACT BOUNDARY, so the aligned delay equals a full interval and this
+    # test can assert the CLAMP rather than accidentally asserting the alignment. Before
+    # alignment the first sleep was always the flat interval; now it is the distance to the next
+    # wall-clock multiple, so an unfrozen clock makes this a different number every run.
+    monkeypatch.setattr(prompt_scheduler, "_now", lambda: float(600 * 2_700_000))
 
     async def drive():
         task = asyncio.create_task(prompt_scheduler.run_forever())
@@ -142,7 +154,7 @@ def test_the_interval_is_FLOORED_so_a_bad_config_cannot_become_a_hot_loop(monkey
     # justification this branch repudiated (CPU protection, true before the readiness cache was
     # shared and wrong after).
     assert slept and slept[0] == prompt_scheduler.MIN_INTERVAL_SECONDS, (
-        f"slept {slept[:1]}s for a configured 120s — expected the "
+        f"slept {slept[:1]}s for a configured 1s — expected the "
         f"{prompt_scheduler.MIN_INTERVAL_SECONDS}s floor"
     )
 
@@ -556,6 +568,11 @@ def test_a_TOO_SHORT_interval_is_clamped_UP_and_warned_about(monkeypatch, caplog
     monkeypatch.setattr(prompt_scheduler, "tick", lambda: {})
     monkeypatch.setattr(prompt_scheduler, "_sleep", record_sleep)
     monkeypatch.setattr(prompt_scheduler.settings, "prompt_scheduler_interval_seconds", 120)
+    # `_now` FROZEN TO AN EXACT BOUNDARY, so the aligned delay equals a full interval and this
+    # test can assert the CLAMP rather than accidentally asserting the alignment. Before
+    # alignment the first sleep was always the flat interval; now it is the distance to the next
+    # wall-clock multiple, so an unfrozen clock makes this a different number every run.
+    monkeypatch.setattr(prompt_scheduler, "_now", lambda: float(600 * 2_700_000))
 
     async def drive():
         task = asyncio.create_task(prompt_scheduler.run_forever())
@@ -621,3 +638,162 @@ def test_dictConfig_disabling_a_CHILD_logger_is_recovered(monkeypatch):
     with TestClient(main.app):
         assert not child.disabled, "the CHILD logger is still disabled, so the tick line vanishes"
         assert child.isEnabledFor(logging.INFO)
+
+
+# ---------------------------------------------------------------------------------------------
+# WALL-CLOCK ALIGNMENT. A user-reported defect: the owner set 6pm and got nudges at 7:14, 7:28 and
+# 7:16 pm on three consecutive nights. Each landed on a delivered cron run, with the
+# preceding run landing before their hour — so the lateness was entirely the gap to the next trigger.
+# The in-process ticker bounds that at one interval; ALIGNING the ticks puts them on the hour.
+# ---------------------------------------------------------------------------------------------
+BOUNDARY = prompt_scheduler.seconds_to_next_boundary
+
+
+def test_the_delay_lands_on_the_next_wall_clock_boundary():
+    """Epoch seconds count from 1970-01-01T00:00:00Z, so `%` gives UTC-aligned boundaries with no
+    timezone reasoning — and 600 divides 3600, so a tick lands on every whole AND half hour."""
+    import datetime
+
+    def next_tick(hh_mm_ss, interval=600):
+        base = datetime.datetime(2026, 9, 22, tzinfo=datetime.timezone.utc)
+        h, m, s = map(int, hh_mm_ss.split(":"))
+        at = base.replace(hour=h, minute=m, second=s)
+        return (at + datetime.timedelta(seconds=BOUNDARY(at.timestamp(), interval))).strftime(
+            "%H:%M:%S"
+        )
+
+    # A 6pm nudge in any whole-hour zone is xx:00 UTC — the tick lands exactly on it.
+    assert next_tick("21:50:01") == "22:00:00"
+    assert next_tick("21:59:59") == "22:00:00"
+    # A :30 zone (India at 6pm local is 12:30 UTC) also lands exactly, because 600 divides 1800.
+    assert next_tick("12:29:30") == "12:30:00"
+    # A :45 zone (Nepal, 12:15 UTC) is late by EXACTLY 300s — a constant, not a range, because a :45
+    # offset sits five minutes short of a 600s boundary. Recorded so nobody reads "aligned" as
+    # "exact for everyone", and measured rather than bounded: an earlier comment here said "up to
+    # one interval", which overstated it 2x.
+    assert next_tick("12:14:30") == "12:20:00"
+
+
+def test_the_delay_is_NEVER_zero_which_is_what_keeps_sleep_first_true():
+    """At an exact boundary it returns a FULL interval rather than firing immediately.
+
+    A zero here would defeat the sleep-first property the WHOLE SUITE now leans on: `tests/fixtures.py`
+    uses `with TestClient(app)`, so nearly every test in the repo starts this loop. A tick on startup
+    would be a real send pass against the configured database — and would claim a `prompt_sends` row
+    for today, SUPPRESSING that person's genuine nudge that evening.
+    """
+    # An exact multiple of 600 — 1_600_000_000 is NOT one (it is 400s past a boundary), which is the
+    # sort of off-by-a-bit that made an earlier hand-check of this look wrong.
+    exact = 600 * 2_700_000
+    assert exact % 600 == 0, "the fixture itself must be on a boundary for this to prove anything"
+    assert BOUNDARY(float(exact), 600) == 600
+
+    for offset in range(0, 1200):
+        delay = BOUNDARY(float(exact + offset), 600)
+        assert 0 < delay <= 600, f"delay {delay} at offset {offset} breaks sleep-first"
+
+
+def test_the_loop_sleeps_the_ALIGNED_delay_not_a_flat_interval(monkeypatch):
+    """The wiring, not just the arithmetic.
+
+    A flat `interval` from process start puts the ticks at whatever phase the last ECS restart set —
+    6:03 one night, 6:09 the next. This asserts the loop asks the boundary function instead.
+    """
+    slept = []
+    real_sleep = asyncio.sleep
+
+    async def record_sleep(seconds):
+        slept.append(seconds)
+        await real_sleep(0)
+
+    # 120s past a boundary, so an aligned first sleep is 480 and a flat one would be 600.
+    frozen = 600 * 2_700_000 + 120
+    monkeypatch.setattr(prompt_scheduler, "tick", lambda: {"configured": True})
+    monkeypatch.setattr(prompt_scheduler, "_sleep", record_sleep)
+    monkeypatch.setattr(prompt_scheduler, "_now", lambda: float(frozen))
+    monkeypatch.setattr(prompt_scheduler.settings, "prompt_scheduler_interval_seconds", 600)
+
+    async def drive():
+        task = asyncio.create_task(prompt_scheduler.run_forever())
+        # TWO sleeps: the first is deliberately a FULL interval, and only the second aligns.
+        assert await _wait_until(lambda: len(slept) >= 2), "the loop never reached a second sleep"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(drive())
+    # Both halves, because each alone is a bug. A full first sleep is what keeps sleep-first
+    # DETERMINISTIC — an aligned first sleep is uniform in (0, interval] and can be milliseconds,
+    # which would let a short-lived `TestClient` fire a real send pass. A ship gate caught me claiming
+    # the `remainder == 0` branch prevented that; it does not.
+    assert slept[0] == 600, (
+        f"first sleep was {slept[0]}s, expected a full 600. An aligned FIRST sleep makes sleep-first "
+        "probabilistic for the whole suite."
+    )
+    assert slept[1] == 480, (
+        f"second sleep was {slept[1]}s from 120s past a boundary — expected 480 (aligned). 600 would "
+        "mean the loop never aligns and every tick keeps the phase of the last restart."
+    )
+
+
+def test_alignment_holds_for_a_CLAMPED_interval_too(monkeypatch):
+    """The two features must compose: a too-short configured value is clamped to the floor AND the
+    resulting ticks are still aligned to that floor, not to the value the operator typed."""
+    slept = []
+    real_sleep = asyncio.sleep
+
+    async def record_sleep(seconds):
+        slept.append(seconds)
+        await real_sleep(0)
+
+    frozen = 600 * 2_700_000 + 120
+    monkeypatch.setattr(prompt_scheduler, "tick", lambda: {"configured": True})
+    monkeypatch.setattr(prompt_scheduler, "_sleep", record_sleep)
+    monkeypatch.setattr(prompt_scheduler, "_now", lambda: float(frozen))
+    monkeypatch.setattr(prompt_scheduler.settings, "prompt_scheduler_interval_seconds", 120)
+
+    async def drive():
+        task = asyncio.create_task(prompt_scheduler.run_forever())
+        assert await _wait_until(lambda: len(slept) >= 2), "the loop never reached a second sleep"
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(drive())
+    assert slept[0] == 600, "the first sleep must be a full CLAMPED interval, not the configured 120"
+    assert slept[1] == 480, (
+        f"second sleep was {slept[1]}s — expected 480, i.e. aligned to the 600s FLOOR. Aligning to "
+        "the configured 120 instead would give 0 and break sleep-first."
+    )
+
+
+def test_only_the_FIVE_45_minute_zones_are_late_and_by_EXACTLY_five_minutes():
+    """The bound, measured across the tz database rather than asserted.
+
+    The docstring for `seconds_to_next_boundary` used to say the :45 zones land "up to one interval
+    late" and named two of them. Both halves were wrong: the lateness is a CONSTANT 300s (a :45 offset
+    puts local :00 five minutes short of a 600s boundary, never further), and there are five names, not
+    two — `Australia/Eucla` was missing. A ship gate measured it; this keeps it measured.
+
+    Pinned because the claim is user-facing in effect: it is the difference between telling someone in
+    Kathmandu "within seconds" and "within five minutes".
+    """
+    import datetime
+    import zoneinfo
+
+    interval = 600
+    late = {}
+    for name in zoneinfo.available_timezones():
+        tz = zoneinfo.ZoneInfo(name)
+        for day in (datetime.date(2026, 1, 15), datetime.date(2026, 7, 15), datetime.date(2026, 9, 21)):
+            six_pm = datetime.datetime.combine(day, datetime.time(18, 0), tzinfo=tz)
+            delay = BOUNDARY(six_pm.timestamp(), interval)
+            # A tick coincides with their hour exactly when the boundary does, i.e. a FULL interval.
+            if delay != interval:
+                late.setdefault(name, set()).add(delay)
+
+    assert set(late) == {
+        "Asia/Kathmandu", "Asia/Katmandu", "Pacific/Chatham", "NZ-CHAT", "Australia/Eucla",
+    }, f"the set of late zones changed: {sorted(late)}"
+    for name, delays in late.items():
+        assert delays == {300.0}, f"{name} is late by {delays}, expected exactly 300s"
