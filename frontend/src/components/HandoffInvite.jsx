@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { handoffRecipe } from '../api/sharing'
 import { toUserMessage } from '../api/client'
 import { defaultInviteMessage } from '../lib/inviteMessage'
+import { shareOrCopy } from '../lib/shareLink'
 
 // Hand this recipe to someone — send them a link that opens it.
 //
@@ -107,23 +108,26 @@ export default function HandoffInvite({
   }
 
   async function share() {
-    // Native share sheet where available (mobile); clipboard fallback elsewhere.
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `${recipeName} — issei`, text: shareText() })
-        return
-      } catch (err) {
-        // A DISMISSED SHEET IS NOT A FAILURE. Cancelling gives an AbortError, and treating that as
-        // "share didn't work, fall through to copy" flashed "Copied ✓" at someone who had just
-        // decided NOT to send — which reads as though it went anyway. Only a real failure falls
-        // through. (Safari also rejects with NotAllowedError outside a user gesture; that one is a
-        // genuine failure and the clipboard is the right answer for it.)
-        if (err && err.name === 'AbortError') return
-      }
+    // DELEGATED TO `lib/shareLink` since a SECOND caller appeared (the referral share, #111), and
+    // the three cases it holds were each a bug shipped once: a dismissed sheet is NOT a failure
+    // (AbortError — say nothing, or "Copied ✓" flashes at someone who had just decided not to
+    // send); a real rejection DOES fall through to the clipboard (Safari's NotAllowedError outside
+    // a user gesture); and with no sheet at all the WHOLE message is copied rather than a bare URL,
+    // because the sentence is what the compose stage exists to write. One implementation of that,
+    // not two — the `services/media.py` lesson applied to the frontend.
+    const outcome = await shareOrCopy({
+      title: `${recipeName} — issei`,
+      text: shareText(),
+    })
+    if (outcome === 'shared' || outcome === 'cancelled') return
+    if (outcome === 'copied') {
+      // 'message', not 'link' — this path put the SENTENCE on the clipboard as well, and the
+      // confirmation has to name what was actually taken, on the button that was tapped.
+      setCopied('message')
+      setTimeout(() => setCopied(false), 2400)
+      return
     }
-    // No share sheet at all (every desktop Firefox, some desktop Safari) — copy the WHOLE message,
-    // not just the URL, and say so on the button that was actually tapped.
-    copy(shareText(), 'message')
+    setError('Could not copy. Select the link and copy it manually.')
   }
 
   // `what` decides the confirmation wording, because the two callers copy different things and a

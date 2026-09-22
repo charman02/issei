@@ -190,7 +190,7 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). FOURTEEN test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). SEVENTEEN frontend test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
@@ -198,7 +198,7 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 `pages/Notifications.test.jsx`, `pages/UserProfile.test.jsx` and — new with #89's PWA shell —
 `components/NotificationSettings.test.jsx`, `components/NotifyNudge.test.jsx` and `pwa.test.js`
 (the last over the WEB MANIFEST's description, which is app-store-facing copy no rendered-screen
-assertion can reach) — plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
+assertion can reach) — plus `lib/referralMessage.test.js` and `components/TellAFriend.test.jsx` and `pages/Landing.test.jsx` (#111 — the referral text, the share control, and the PUBLIC LANDING PAGE a referred stranger lands on; a marketing surface is the likeliest place in the app for an overclaim, which is why it got the guard on day one), plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
 screen and was missed by three separate recounts of this list — and, since #103,
 `components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep.
 Since #107 the ban also covers PUSH COPY, which is its own axis. `tests/test_notify_push.py`
@@ -216,7 +216,7 @@ extra frontend files. The regex is the WIDE form below; the first version used t
 The regex is also WIDER than the
 form quoted above: it is `in (their|your|his|her)( own)? words`, because the phrase came back as
 "in your own words" on a new surface and the `their`-only version let it through every guard at
-once. If you widen it again, widen it in all THIRTEEN files that carry the wide form — ELEVEN in the frontend (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer, Welcome — added with #110's notifications panel, the fourth Welcome step — and, since #102, InviteLanding, whose guard was the weakest of the thirteen that existed then, on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — and TWO in the backend suite: `tests/test_notify_push.py` and `tests/test_prompt.py`, over the push bodies. They are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
+once. If you widen it again, widen it in all SIXTEEN files that carry the wide form — FOURTEEN in the frontend (DictateButton, PasteRecipe, RecipeForm, NotificationSettings, NotifyNudge, Notifications, UserProfile, pwa.test.js, PhotoFramer, Landing, TellAFriend, lib/referralMessage.test.js — the last three added with #111's referral door — Welcome — added with #110's notifications panel, the fourth Welcome step — and, since #102, InviteLanding, whose guard was the weakest of the thirteen that existed then, on the app's highest-traffic first impression: it omitted `voice` and the whole words-family outright) — and TWO in the backend suite: `tests/test_notify_push.py` and `tests/test_prompt.py`, over the push bodies. They are kept in step by hand. (This list previously named `pages/PlantRecipe.test.jsx`,
 which asserts nothing of the kind, and has twice undercounted the files that do — verified
 by reading each one, not by grepping for the word. Every new user-facing surface tends to
 add another; the count is a floor, not a fixed number.)
@@ -553,7 +553,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**947 backend tests**, **983 frontend tests in 61 files**. Endpoint and test counts have
+**972 backend tests**, **1,012 frontend tests in 64 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

@@ -10,6 +10,7 @@ import {
   requestFriend,
 } from '../api/friends'
 import MarkerTitle from '../components/MarkerTitle'
+import TellAFriend from '../components/TellAFriend'
 import BackButton from '../components/BackButton'
 import Loader from '../components/Loader'
 import EmptyState from '../components/EmptyState'
@@ -336,6 +337,12 @@ export default function Friends() {
           </div>
         )}
       </section>
+
+      {/* THE REFERRAL DOOR. Placed here rather than on the You page because the directory just above
+          answers "who is already here", and the honest next question — when the answer is "not the
+          person I actually cook with" — is how to get them here. Unconditional: it is as useful to
+          someone with fifty friends as to someone with none. */}
+      <TellAFriend />
 
       {/* Current friends. */}
       {friends.length > 0 && (

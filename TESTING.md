@@ -92,22 +92,27 @@ alone — re-run it):
 5. **No false audio/recording claims in the UI (POSITIONING).**
    The words `voice` / `recording` / `audio` / `listen` / `in their own words`
    appear nowhere a user or screen reader can reach. Dictation is speak-to-type;
-   the utterance is discarded. **FOURTEEN FRONTEND test files** carry the guard, plus
-   **FOUR in the backend suite** — eighteen in all, and this doc covers both suites, so
-   the bare number used to read as the total and wasn't. The backend four are
+   the utterance is discarded. **SEVENTEEN FRONTEND test files** carry the guard, plus
+   **FOUR in the backend suite** — twenty-one in all, and this doc covers both suites, so
+   the bare number used to read as the total and wasn't. It went 14 -> 17 with #111, which is
+   the floor behaving exactly as predicted: a public landing page, a referral share component
+   and the share text it sends are three new user-facing surfaces, and a MARKETING surface is
+   the likeliest place in the whole app for an overclaim to get written. The backend four are
    `test_notify_push.py` and `test_prompt.py` (the push bodies, #107/#108) and
    `test_invite_og.py` + `test_invite_preview_endpoint.py` (the OpenGraph unfurl card,
    since 2026-08-18) — three surfaces no rendered-screen assertion can reach: a lock
    screen, an unfurl card and a web manifest. They are not confined to the mic UI —
    the claim reappears on any new user-facing surface, which is why the count is a
-   floor and not a fixed number. THIRTEEN use the wide regex
+   floor and not a fixed number. SIXTEEN use the wide regex
    (`in (their|your|his|her)( own)? words`); re-grep rather than trusting this list.
    → `DictateButton`, `PasteRecipe`, `RecipeForm`, `RecipeBody`, `PhotoFramer`,
      `NotificationSettings`, `NotifyNudge`, `Notifications`, `UserProfile`,
      `InviteLanding`, `Login`, `Welcome`, `pwa.test.js` (the web manifest's
      description — app-store-facing copy no rendered-screen assertion reaches), and
-     `lib/inviteMessage.test.js` (the SHARE TEXT, which is also not a screen).
-     POSITIONING.md §"No audio" says what each one checks.
+     `lib/inviteMessage.test.js` (the SHARE TEXT, which is also not a screen), and the three
+     added by #111 — `Landing` (the public page a referred stranger lands on), `TellAFriend`
+     (the share control) and `lib/referralMessage.test.js` (the referral text, a fourth
+     non-screen surface). POSITIONING.md §"No audio" says what each one checks.
 
 6. **No lineage / family tree.**
    No ancestors, descendants, roots, branches, or parent_recipe_id. Removed

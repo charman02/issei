@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import App from './App'
 import { resolve } from 'node:path'
@@ -52,6 +52,8 @@ describe('/shared is a redirect to the Kept tab (#57)', () => {
 // a page's own behaviour stays covered by its own test file.
 vi.mock('./pages/Notifications', () => ({ default: () => <div>INBOX RENDERED</div> }))
 vi.mock('./pages/Requests', () => ({ default: () => <div>ASKS RENDERED</div> }))
+vi.mock('./pages/Feed', () => ({ default: () => <div>FEED RENDERED</div> }))
+vi.mock('./pages/Landing', () => ({ default: () => <div>LANDING RENDERED</div> }))
 
 // `reconcile` is the ONE thing App.jsx does besides route (#97/#90 — it syncs the cached
 // identity against the server on start). It has to be mocked here even though this file
@@ -144,6 +146,134 @@ describe('the route table actually resolves (#79)', () => {
     )
     // Bounced, not rendered.
     expect(screen.queryByText('ASKS RENDERED')).not.toBeInTheDocument()
+  })
+})
+
+// `/` serves BOTH audiences (#111): signed in it is Home, signed out it is the public Landing —
+// the referral fix, because until #111 every public door but an invite link led to a sign-in form
+// that never said what issei is.
+//
+// THESE RENDER THE REAL ROUTE TABLE, and the first version of them did not — it asserted against
+// App.jsx as a STRING, and that is exactly why a ship-blocking defect reached the gate green. The
+// original implementation put the ternary inline in the route's `element` prop, which is evaluated
+// in App's own body; App never re-executes after mount, so the token was read ONCE at page load and
+// frozen. Signing in left you on the marketing page with no way back — Landing has no bottom nav,
+// and its "Sign in" link bounces off `PublicOnlyRoute` straight back to Landing.
+//
+// A source-text check cannot see that, and the comment forty lines above this one already said so
+// about a different bug: "A textual nesting check couldn't see it either (tried; it passed on the
+// broken file). The only thing that actually catches it is rendering the real route table." Same
+// lesson, same file, ignored once. Hence: navigate, don't grep.
+describe('`/` answers to both audiences (#111)', () => {
+  afterEach(() => localStorage.clear())
+
+  it('shows the Landing to a signed-out stranger instead of a sign-in form', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
+    expect(screen.queryByText('FEED RENDERED')).not.toBeInTheDocument()
+  })
+
+  it('shows Home, inside Layout, to a signed-in user', async () => {
+    localStorage.setItem('issei_token', 'test-token')
+    localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Me' }))
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('FEED RENDERED')).toBeInTheDocument()
+    // Inside Layout — the bottom nav proves it, same tell the /notifications test uses.
+    expect(screen.getByLabelText(/kitchen/i)).toBeInTheDocument()
+  })
+
+  it('REACHES HOME AFTER SIGNING IN WITHIN ONE PAGE SESSION — the frozen-element bug', async () => {
+    // THE REGRESSION TEST FOR THE CRITICAL DEFECT. Start signed out at a route that is NOT `/`
+    // (which is what a real arrival looks like: Landing -> /login, or signup -> /welcome), acquire a
+    // token the way `finishAuth` does, then navigate to `/`. The broken version answered LANDING
+    // here, forever, until a manual page reload — so a referred stranger who signed up could never
+    // reach the app they had just joined.
+    //
+    // The navigation is driven through the router rather than by re-rendering, because re-rendering
+    // is precisely what the broken version needed and never got.
+    function GoHome() {
+      const navigate = useNavigate()
+      return (
+        <button
+          onClick={() => {
+            localStorage.setItem('issei_token', 'test-token')
+            localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Me' }))
+            navigate('/')
+          }}
+        >
+          sign in
+        </button>
+      )
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/reset-password']}>
+        <GoHome />
+        <App />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'sign in' }))
+
+    expect(await screen.findByText('FEED RENDERED')).toBeInTheDocument()
+    expect(screen.queryByText('LANDING RENDERED')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the Landing after signing out, without a reload', async () => {
+    // The other direction, modelled on what sign-out ACTUALLY does: `Profile.handleLogout` drops
+    // both keys and `navigate('/login')`, so the token never changes while the user is sitting on
+    // `/`. Coming BACK to `/` afterwards must show the public page.
+    //
+    // Two separate acts on purpose. An earlier version of this test did `navigate('/browse')` and
+    // `navigate('/')` inside one handler, which React batches into a single location update that
+    // lands back where it started — so nothing re-rendered and the test failed for a reason that
+    // has nothing to do with the app. Worth recording: if the token were ever cleared WITHOUT
+    // leaving `/`, this component would not notice until the next navigation. No path does that
+    // today, and `client.js`'s 401 handler uses `window.location.assign`, a real document load.
+    localStorage.setItem('issei_token', 'test-token')
+
+    function Go({ to, label, before }) {
+      const navigate = useNavigate()
+      return (
+        <button
+          onClick={() => {
+            if (before) before()
+            navigate(to)
+          }}
+        >
+          {label}
+        </button>
+      )
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Go
+          to="/login"
+          label="sign out"
+          before={() => {
+            localStorage.removeItem('issei_token')
+            localStorage.removeItem('issei_user')
+          }}
+        />
+        <Go to="/" label="go home" />
+        <App />
+      </MemoryRouter>,
+    )
+    await screen.findByText('FEED RENDERED')
+
+    fireEvent.click(screen.getByRole('button', { name: 'sign out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'go home' }))
+
+    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
+    expect(screen.queryByText('FEED RENDERED')).not.toBeInTheDocument()
   })
 })
 

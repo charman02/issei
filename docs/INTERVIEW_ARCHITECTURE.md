@@ -1,10 +1,10 @@
 # issei — architecture refresher
 
-Written to be reread before an interview. Verified against the code on 2026-09-21, not
+Written to be reread before an interview. Verified against the code on 2026-09-22, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 67 endpoints · 18 tables · 29 migrations · 947 backend tests · 983 frontend
-tests · 10,737 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
+**Scale:** 67 endpoints · 18 tables · 29 migrations · 972 backend tests · 1,012 frontend
+tests · 10,869 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
