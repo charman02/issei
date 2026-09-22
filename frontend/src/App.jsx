@@ -28,47 +28,6 @@ import Notifications from './pages/Notifications'
 import Requests from './pages/Requests'
 import InviteLanding from './pages/InviteLanding'
 
-// `/` ANSWERS TO BOTH AUDIENCES. Signed in it is Home (the friends feed); signed OUT it is the
-// public Landing rather than a bounce to `/login`. That is the whole referral fix: until #111 every
-// public door except an invite link led to a sign-in form that never said what issei is, so anyone
-// told "check out issei.app" was asked for a password before being told what for.
-//
-// A COMPONENT, AND THAT IS NOT A STYLE CHOICE — it is the fix for a defect a ship gate caught. The
-// first version put the ternary inline in the route's `element` prop, which is evaluated in App's
-// OWN function body — and `App` never re-executes after mount: `main.jsx` creates one stable
-// `<App />`, App holds no state and consumes no context, so a location change re-renders only the
-// `LocationContext` consumer (`Routes`), which re-uses the `element` object built at mount. The
-// token was therefore read ONCE, at page load, and frozen.
-//
-// What that did, measured against this repo's own React and router versions: a referred stranger
-// tapped "Open your kitchen", signed up, and `Welcome` sent them to `/` — which was still
-// `<Landing />`. So was "Sign in" for a returning user. And they were TRAPPED: Landing renders
-// outside `Layout` so there is no bottom nav, and its "Sign in" link goes to `/login`, where
-// `PublicOnlyRoute` sees the token and sends them straight back. Only a manual reload escaped.
-//
-// `ProtectedRoute` and `PublicOnlyRoute` were always immune to this precisely BECAUSE they are
-// components: they re-execute on every match. This one now does too, so the token is re-read every
-// time `/` is matched — which also means sign-out lands on Landing rather than bouncing to
-// `/login`, the better answer for someone who may just be leaving a shared device.
-//
-// WHO THIS DOES *NOT* REACH, recorded because it looks like a hole and is not one: a returning
-// visitor whose `issei_token` has EXPIRED still HAS a token, so they take the Feed arm, the first
-// request 401s, and `client.js` sends them to `/login` — never the Landing. That is the right
-// destination for them: they have an account, and this page exists to explain the product to
-// someone who does not. `/` is deliberately NOT added to `NO_REDIRECT_ON_401` for that reason.
-//
-// A BRANCH RATHER THAN A SEPARATE MARKETING PATH, deliberately: `issei.app` is the only address a
-// person repeats out loud, and the static OG tags in `index.html` describe that exact URL — so a
-// shared link unfurls correctly with no crawler rewrite, unlike `/invite/:token`.
-function HomeOrLanding() {
-  if (!localStorage.getItem('issei_token')) return <Landing />
-  return (
-    <Layout>
-      <Feed />
-    </Layout>
-  )
-}
-
 function Layout({ children }) {
   return (
     <div className="max-w-app mx-auto min-h-screen pb-28">
@@ -138,8 +97,27 @@ export default function App() {
       />
       <Route
         path="/"
-        element={<HomeOrLanding />}
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Feed />
+            </Layout>
+          </ProtectedRoute>
+        }
       />
+      {/* THE REFERRAL DOOR (#111). A DEDICATED public route rather than the signed-out face of `/`,
+          which is where it started and where it was wrong: a returning user who types `issei.app`
+          wants the sign-in form, and making them read a pitch and tap past it every time is a tax on
+          the people who already said yes. The share link carries this address instead, so the page is
+          seen by exactly the audience it was written for.
+
+          AND NOT THE POST-SIGNUP SLOT EITHER, which was the other candidate — `/welcome` already
+          holds it, with two TEACHING panels that explain what issei is for using `RecipeGlimpse` and
+          `IsseiMeaning`, the same two components this page uses. Putting this there would have been a
+          duplicate of a screen that already exists.
+
+          Public, deliberately: the entire point is that the reader has no account. */}
+      <Route path="/join" element={<Landing />} />
       <Route
         path="/browse"
         element={

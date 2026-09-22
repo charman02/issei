@@ -347,6 +347,24 @@ export default function Login() {
             </button>
           </form>
         )}
+
+        {/* THE ONE WAY TO THE EXPLANATION FROM HERE (#111). The landing page lives at `/join` rather
+            than at `/` — a returning user who types `issei.app` wants this form, not a pitch to tap
+            past every time — and the share link carries that address. But somebody told "check out
+            issei.app" OUT LOUD arrives here with no idea what the app is, which is the gap #111 was
+            built for in the first place. One line closes it: a returning user's eye goes to the
+            fields and never reads this, and a stranger gets there in a tap.
+
+            Rendered for BOTH tabs, not just signup. Someone who typed the domain lands on whichever
+            tab the URL selected, and "I don't know what this is" is not a state that belongs to one
+            of them. Below the form, because it must never compete with the thing most visitors came
+            to do. */}
+        <p className="font-sans text-[13.5px] text-center text-ink-soft mt-5">
+          New to issei?{' '}
+          <Link to="/join" className="text-terra font-semibold underline">
+            See what it is →
+          </Link>
+        </p>
       </div>
     </div>
   )

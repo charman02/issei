@@ -4,10 +4,23 @@ import IsseiMeaning from '../components/IsseiMeaning'
 import MealGlimpse from '../components/MealGlimpse'
 import RecipeGlimpse from '../components/RecipeGlimpse'
 
-// THE COLD ARRIVAL. What a person sees when someone told them about issei and they had no specific
-// recipe to open. Until #111 there was no such screen: the app had four public routes and the only
-// door that explained the product needed an existing user to send one specific recipe, so anyone
-// told "check out issei.app" met a sign-in form that asked for a password before saying what for.
+// THE COLD ARRIVAL, at `/join`. What a person sees when someone sent them issei rather than one
+// specific recipe. Until #111 there was no such screen: the app had four public routes and the only
+// door that explained the product needed an existing user to send a particular dish, so anyone told
+// "check out issei.app" met a sign-in form that asked for a password before saying what for.
+//
+// WHY `/join` AND NOT THE SIGNED-OUT FACE OF `/`, which is where this started: a returning user who
+// types `issei.app` wants the sign-in form, and making them read a pitch and tap past it every time
+// is a tax on the people who already said yes (owner's call, and obviously right in hindsight).
+// The share link carries this address, so the page is read by exactly the audience it was written
+// for. The one thing that move costs — somebody told the domain OUT LOUD, who arrives at `/login`
+// knowing nothing — is closed by a "New to issei? See what it is" line under that form.
+//
+// AND NOT THE POST-SIGNUP SLOT, the other candidate: `/welcome` already holds it, with two TEACHING
+// panels that explain what issei is for using `RecipeGlimpse` and `IsseiMeaning` — the same two
+// components this page uses. It would have been a duplicate of a screen that already exists.
+// A referred person therefore sees this page once (deciding) and `/welcome` once (learning), which
+// is the sequence the owner was right to want and not the same page twice.
 //
 // REBUILT TWICE ON OWNER REVIEW, and the second round is the one that matters, because it replaced
 // an argument with a demonstration.
@@ -123,6 +136,10 @@ export default function Landing() {
             a recipe, so there is no link in their hand for the promise to be about. Someone who
             actually receives one discovers it by opening it, which is the intuitive path. It still
             appears where it earns its place: on the unfurl card (`services/invite_og.py`). */}
+        {/* Sign-in stays one labelled tap away. NOT a loop with `Login`'s "New to issei?" link:
+            that one exists for somebody who arrived at the form knowing nothing, this one for
+            somebody sent the pitch who already has an account. Each points at the screen the
+            OTHER audience wants, and neither is a default anyone gets bounced through. */}
         <p className="font-sans text-[14px] text-center text-ink-soft mt-4">
           Already have an account?{' '}
           <Link to="/login" className="text-terra font-semibold underline">

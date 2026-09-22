@@ -315,6 +315,27 @@ describe('Login', () => {
     expect(screen.getByText(/First name needs at least 1 character/i)).toBeInTheDocument()
   })
 
+  it('offers a stranger the way to the explanation, on BOTH tabs', async () => {
+    // #111's landing page lives at `/join`, not at `/`, so a returning user typing `issei.app` gets
+    // this form rather than a pitch to tap past. The cost of that move is somebody told the domain OUT
+    // LOUD, who arrives here knowing nothing — this line is the whole mitigation, so it has to exist
+    // and it has to be on whichever tab the URL selected.
+    const { unmount } = render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('link', { name: /see what it is/i })).toHaveAttribute('href', '/join')
+    unmount()
+
+    render(
+      <MemoryRouter initialEntries={['/login?tab=signup']}>
+        <Login />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('link', { name: /see what it is/i })).toHaveAttribute('href', '/join')
+  })
+
   it('renders a 429 as the wait the server named, not a generic failure', async () => {
     // The user-facing half of rate limiting, and the reason it needed NO frontend change: the
     // server's 429 carries `detail` as a plain string, which `toUserMessage` passes through

@@ -164,20 +164,56 @@ describe('the route table actually resolves (#79)', () => {
 // about a different bug: "A textual nesting check couldn't see it either (tried; it passed on the
 // broken file). The only thing that actually catches it is rendering the real route table." Same
 // lesson, same file, ignored once. Hence: navigate, don't grep.
-describe('`/` answers to both audiences (#111)', () => {
+describe('`/join` is the referral door, and `/` is the app (#111)', () => {
+  // THE PLACEMENT MOVED, on owner review, and the reasoning is worth keeping because two of the three
+  // candidates were wrong for concrete reasons rather than taste.
+  //
+  //   `/` signed-out (where it started) — WRONG: a returning user who types `issei.app` wants the
+  //     sign-in form, and making them read a pitch and tap past it every time taxes the people who
+  //     already said yes. It also caused a frozen-element bug, since a route element that branches on
+  //     localStorage is evaluated once in App's body and App never re-executes.
+  //   post-signup (the other candidate) — ALREADY OCCUPIED: `/welcome` has two TEACHING panels that
+  //     explain what issei is for, using `RecipeGlimpse` and `IsseiMeaning` — the same two components
+  //     the landing page uses. It would have been a duplicate.
+  //   `/join` — the share link's address, seen by exactly the audience it was written for.
   afterEach(() => localStorage.clear())
 
-  it('shows the Landing to a signed-out stranger instead of a sign-in form', async () => {
+  it('serves the landing page at /join with no account', async () => {
+    render(
+      <MemoryRouter initialEntries={['/join']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
+  })
+
+  it('serves it to a SIGNED-IN visitor too, rather than bouncing them', async () => {
+    // Deliberately not wrapped in a signed-out-only guard: a user who wants to show a friend what
+    // issei is should be able to open the page they are about to send, and `TellAFriend` sits two taps
+    // away on the Friends page. Bouncing them would make the referral link untestable by the person
+    // doing the referring.
+    localStorage.setItem('issei_token', 'test-token')
+    render(
+      <MemoryRouter initialEntries={['/join']}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
+  })
+
+  it('does NOT put the landing page on `/` for a signed-out visitor', async () => {
+    // The owner's note, and the whole reason for this commit: `issei.app` must go straight to the
+    // sign-in form. A returning user should never have to tap past marketing to log in.
     render(
       <MemoryRouter initialEntries={['/']}>
         <App />
       </MemoryRouter>,
     )
-    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
+    expect(screen.queryByText('LANDING RENDERED')).not.toBeInTheDocument()
     expect(screen.queryByText('FEED RENDERED')).not.toBeInTheDocument()
   })
 
-  it('shows Home, inside Layout, to a signed-in user', async () => {
+  it('still serves Home, inside Layout, to a signed-in user at `/`', async () => {
     localStorage.setItem('issei_token', 'test-token')
     localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Me' }))
     render(
@@ -186,94 +222,7 @@ describe('`/` answers to both audiences (#111)', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByText('FEED RENDERED')).toBeInTheDocument()
-    // Inside Layout — the bottom nav proves it, same tell the /notifications test uses.
     expect(screen.getByLabelText(/kitchen/i)).toBeInTheDocument()
-  })
-
-  it('REACHES HOME AFTER SIGNING IN WITHIN ONE PAGE SESSION — the frozen-element bug', async () => {
-    // THE REGRESSION TEST FOR THE CRITICAL DEFECT. Start signed out at a route that is NOT `/`
-    // (which is what a real arrival looks like: Landing -> /login, or signup -> /welcome), acquire a
-    // token the way `finishAuth` does, then navigate to `/`. The broken version answered LANDING
-    // here, forever, until a manual page reload — so a referred stranger who signed up could never
-    // reach the app they had just joined.
-    //
-    // The navigation is driven through the router rather than by re-rendering, because re-rendering
-    // is precisely what the broken version needed and never got.
-    function GoHome() {
-      const navigate = useNavigate()
-      return (
-        <button
-          onClick={() => {
-            localStorage.setItem('issei_token', 'test-token')
-            localStorage.setItem('issei_user', JSON.stringify({ id: 1, first_name: 'Me' }))
-            navigate('/')
-          }}
-        >
-          sign in
-        </button>
-      )
-    }
-
-    render(
-      <MemoryRouter initialEntries={['/reset-password']}>
-        <GoHome />
-        <App />
-      </MemoryRouter>,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'sign in' }))
-
-    expect(await screen.findByText('FEED RENDERED')).toBeInTheDocument()
-    expect(screen.queryByText('LANDING RENDERED')).not.toBeInTheDocument()
-  })
-
-  it('falls back to the Landing after signing out, without a reload', async () => {
-    // The other direction, modelled on what sign-out ACTUALLY does: `Profile.handleLogout` drops
-    // both keys and `navigate('/login')`, so the token never changes while the user is sitting on
-    // `/`. Coming BACK to `/` afterwards must show the public page.
-    //
-    // Two separate acts on purpose. An earlier version of this test did `navigate('/browse')` and
-    // `navigate('/')` inside one handler, which React batches into a single location update that
-    // lands back where it started — so nothing re-rendered and the test failed for a reason that
-    // has nothing to do with the app. Worth recording: if the token were ever cleared WITHOUT
-    // leaving `/`, this component would not notice until the next navigation. No path does that
-    // today, and `client.js`'s 401 handler uses `window.location.assign`, a real document load.
-    localStorage.setItem('issei_token', 'test-token')
-
-    function Go({ to, label, before }) {
-      const navigate = useNavigate()
-      return (
-        <button
-          onClick={() => {
-            if (before) before()
-            navigate(to)
-          }}
-        >
-          {label}
-        </button>
-      )
-    }
-
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Go
-          to="/login"
-          label="sign out"
-          before={() => {
-            localStorage.removeItem('issei_token')
-            localStorage.removeItem('issei_user')
-          }}
-        />
-        <Go to="/" label="go home" />
-        <App />
-      </MemoryRouter>,
-    )
-    await screen.findByText('FEED RENDERED')
-
-    fireEvent.click(screen.getByRole('button', { name: 'sign out' }))
-    fireEvent.click(screen.getByRole('button', { name: 'go home' }))
-
-    expect(await screen.findByText('LANDING RENDERED')).toBeInTheDocument()
-    expect(screen.queryByText('FEED RENDERED')).not.toBeInTheDocument()
   })
 })
 

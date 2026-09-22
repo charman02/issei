@@ -18,7 +18,11 @@
 // NO 💛 HERE. That glyph is the SENDER's, spent on the invite message where one person is handing
 // one dish to one person (#102 removed the app's other use of it for exactly this reason). A
 // referral is an introduction, not an intimacy.
-export const REFERRAL_URL = 'https://issei.app'
+// `/join` rather than the apex, since #111's second round moved the landing page off `/`: a
+// returning user typing `issei.app` wants the sign-in form, not a pitch to tap past. This is the
+// address that goes in every share message and gets read aloud, so it is short and says what is on
+// the other side.
+export const REFERRAL_URL = 'https://issei.app/join'
 
 export function defaultReferralMessage() {
   // BROADENED with the landing page, on the same owner note: the first version said "it's how

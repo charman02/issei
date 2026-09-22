@@ -75,10 +75,11 @@ describe('referralShareText', () => {
   })
 
   it('points at the apex domain, not a deploy alias or a path', () => {
-    // `issei.app` is the only address a person repeats out loud, and it is the URL the static OG
-    // tags in index.html already describe — so a shared link unfurls correctly with no crawler
-    // rewrite. A vercel.app preview host here would both break the unfurl and leak the platform.
-    expect(REFERRAL_URL).toBe('https://issei.app')
+    // The apex with `/join` on it: the landing page moved off `/` so returning users get the sign-in
+    // form, and `index.html`'s `og:url` was repointed to match so a crawler's canonical does not
+    // send a curious stranger to a login screen. A vercel.app preview host here would both break
+    // the unfurl and leak the platform.
+    expect(REFERRAL_URL).toBe('https://issei.app/join')
     expect(REFERRAL_URL).not.toMatch(/vercel|onrender|localhost/)
   })
 
