@@ -43,6 +43,16 @@ import RecipeGlimpse from '../components/RecipeGlimpse'
 //   · And that pattern already exists here, in the right place: `Welcome.jsx` IS issei's post-signup
 //     carousel. If issei ever ships to an app store, that is the screen a download would land on.
 //
+// AT MOST ONE EM DASH IN THE RENDERED COPY, and that is a house rule rather than a preference: two or
+// more is a tell that the words were generated rather than written, on the one surface whose whole job
+// is to sound like a person recommending something. The page had THREE — the title, the cause-and-
+// effect caption, and `IsseiMeaning`'s gloss. The two that went are mine: the title takes a comma
+// ("cooking today, and ask for…") and the caption became three beats ("You ask. They answer. This is
+// what arrives:"), which is punchier than the dash was anyway. The survivor is `IsseiMeaning`'s,
+// deliberately — it is a SHARED component (this page, Login, InviteLanding), its wording is a single
+// source so the gloss cannot drift between the places someone first meets the word, and rewriting it
+// to satisfy a rule about this page would edit two other screens. A test pins the ceiling.
+//
 // ONE CLAIM THIS PAGE DELIBERATELY DOES NOT MAKE, though a review asked for it: "access any of their
 // recipes". It is false — `can_view` gives a friend your `public` + `friends` recipes and never your
 // `private` ones, and the recipe behind a post reaches someone by ASKING (`POST /posts/{id}/request`,
@@ -64,7 +74,7 @@ export default function Landing() {
             should carry the colour. The rotation went with the box for the same reason a tilt reads
             as deliberate on a sticker and as a mistake on plain text. */}
         <h1 className="font-display font-black text-[29px] leading-[1.1] text-ink mt-8">
-          See what your friends are cooking today — and ask for the recipe behind any of it.
+          See what your friends are cooking today, and ask for the recipe behind any of it.
         </h1>
 
         {/* THE DEMONSTRATION. Everything the three feature cards used to assert, shown instead —
@@ -75,7 +85,7 @@ export default function Landing() {
             sits between two bold sticker cards and the first version's 14.5px sans was overshadowed
             by them, which made the one line that explains the sequence read as filler. */}
         <p className="font-display font-black text-[17px] leading-tight text-ink text-center mt-4 mb-4">
-          You ask. They answer — and this is what arrives:
+          You ask. They answer. This is what arrives:
         </p>
 
         {/* ...and the recipe itself, which SHOWS the two things that are genuinely different here:

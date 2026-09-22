@@ -97,6 +97,21 @@ describe('Landing', () => {
     expect(proseOf(container).length).toBeLessThan(560)
   })
 
+  it('uses AT MOST ONE em dash in the whole rendered page', () => {
+    // A house rule, owner's call: two or more em dashes is a tell that the copy was generated rather
+    // than written, and this is the one surface whose entire job is to sound like a person
+    // recommending something. The page had three — the title, the cause-and-effect caption, and
+    // `IsseiMeaning`'s gloss. Both of the page's own are gone (the title takes a comma, the caption
+    // became three beats), leaving the shared gloss: it is one source for the word across this page,
+    // Login and InviteLanding, so rewriting it here would edit two other screens.
+    //
+    // Counted on the RENDERED text, not the source, because that is what a visitor sees — and because
+    // the file's own explanatory comments are full of them and must not count.
+    const { container } = renderLanding()
+    const emDashes = (container.textContent.match(/—/g) || []).length
+    expect(emDashes).toBeLessThanOrEqual(1)
+  })
+
   it('offers signup as the primary act and sign-in as a labelled second door', () => {
     renderLanding()
     expect(screen.getByRole('link', { name: /open your kitchen/i })).toHaveAttribute(
