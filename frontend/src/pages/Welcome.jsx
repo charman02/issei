@@ -3,14 +3,10 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import RecipeGlimpse from '../components/RecipeGlimpse'
 import IsseiMeaning from '../components/IsseiMeaning'
 import Wordmark from '../components/Wordmark'
-import Avatar from '../components/Avatar'
 import { loadPrefs, setPref } from '../lib/prefs'
 import { enable, primeVapidKey, pushAvailability } from '../lib/push'
-import { PHOTO_ACCEPT } from '../lib/photoUpload'
-import { useAvatarUpload } from '../lib/useAvatarUpload'
-import PhotoFramer from '../components/PhotoFramer'
 
-// The post-signup welcome (/welcome) — four panels, once, then never again.
+// The post-signup welcome (/welcome) — three panels, once, then never again.
 //
 // WHY A ROUTE, NOT AN OVERLAY ON HOME. Home can't render until three API calls
 // answer, so an overlay means the new user watches a spinner before they're
@@ -20,26 +16,43 @@ import PhotoFramer from '../components/PhotoFramer'
 // `replace` — so it occupies no history entry and no back gesture can return to
 // it.
 //
-// WHY (NOW) FOUR PANELS, AND WHY THAT ISN'T DRIFT. TWO panels TEACH and TWO are single optional
-// ACTIONS — a profile photo, then the notifications ask (#110). The rule was always "at most two
-// TEACHING panels", never "at most three panels", and each action step has a fallback elsewhere for
-// anyone who skips: the You-page nudge (#77) and Home's `NotifyNudge`. The photo step used to be
-// last and is now second-last, because the notifications ask spends an irrevocable browser
-// permission and belongs behind the smaller yes rather than in front of it.
+// WHY THREE PANELS: ONE THAT TEACHES, THEN TWO ACTIONS. The rule has always been "at most two
+// TEACHING panels", because a third is a carousel and testers punished tap-heavy onboarding. This now
+// uses ONE, and the two it replaced had gone stale rather than merely long:
 //
-// The paragraphs below predate the fourth panel and describe the photo step as "the last thing
-// before you're in" and the badge as reading "1 of 3". Both were corrected in place; what survives
-// is the reasoning, which is unchanged. Two panels TEACH — what issei is for, and how to use
-// it — and the rule used to be "never three", because a third TEACHING panel is a
-// carousel and testers punished tap-heavy onboarding. The two panels added since are
-// NOT teaching: each is a single ACTION (add a profile photo; allow notifications). An
-// isolated, prominent action step converts, and it is categorically different from
-// another wall of text to absorb. Both stay honest by being genuinely optional — Skip in
-// the header finishes from anywhere, neither is a hard gate, and each has a fallback for
-// skippers elsewhere in the app. So the rule is really "at most two TEACHING panels";
-// the action steps are the exception that proves it.
-// (The You page also nudges anyone who skips — see #77 — so this panel maximizes
-// photo adoption without becoming a gate.)
+//   The old panel 2 said "So there are two things to do" — write a recipe, send it to someone — and
+//   then, in a peach box, "THAT'S THE WHOLE APP." True when written. Falsified twice since: #67 made
+//   a FEED OF POSTS the app's Home, and #79 made ASKING for a recipe a first-class act. So every new
+//   account was told the app was two verbs and then dropped onto a feed neither verb mentioned, while
+//   the act the loop now turns on appeared nowhere in onboarding. The owner read the framing as "the
+//   old version of the app", and it was worse than tone — it was a claim the app had outgrown.
+//
+//   The old panel 1, "Recipes kept their way / Not grams. Theirs.", led with the FIDELITY promise,
+//   which POSITIONING calls the supporting layer rather than the door.
+//
+// AND ONE TEACHING PANEL IS NOW ENOUGH, because `/join` (#111) teaches a referred stranger BEFORE
+// they sign up. A referred person therefore meets `/join` while deciding and this while starting, so
+// this panel deliberately does not re-run the pitch — it states the three beats in a line each and
+// lets `RecipeGlimpse` carry the payload. Someone who signed up WITHOUT passing `/join` (typed the
+// domain, or arrived on a recipe invite) still gets the explanation here, which is why the panel
+// cannot be dropped entirely.
+//
+// THE SECOND PANEL ASKS FOR CONTENT, which is the gap the owner named: onboarding used to ask for a
+// profile photo and a notification permission, and NEITHER PRODUCES ANYTHING. An account that
+// finishes onboarding having published nothing has nothing to come back to, and neither does anybody
+// who follows them — on an app whose Home is a feed. A MEAL rather than a recipe, because a post is a
+// photo and a dish name (seconds) while writing a recipe cold is the heaviest thing the app asks; and
+// because a post is the top of the funnel by design — it earns the ask that produces the recipe.
+//
+// THE PHOTO PANEL WAS DROPPED (owner's call, and it is the one thing here that lost a conversion
+// point). It asked for something that produces no content, and it already has a fallback that nags
+// nobody: the You-page nudge (#77) plus the retro prompt for older accounts (#84). Its framing
+// machinery — `useAvatarUpload`, `PhotoFramer`, `PHOTO_ACCEPT`, `Avatar` — came out with it rather
+// than being left imported and unused.
+//
+// EVERY ACTION STEP STAYS GENUINELY OPTIONAL, with a fallback elsewhere: Skip in the header finishes
+// from anywhere, "Not now" advances one panel, and each act has a second home — Home's own empty
+// state carries a "📸 Share a meal" button to the same route, and `NotifyNudge` still asks on Home.
 //
 // SEEN IS MARKED ON MOUNT, not on exit. Any way out counts as final: both
 // buttons, a nav tap, a closed tab. Nothing here is worth making someone sit
@@ -56,15 +69,6 @@ function currentUserId() {
     return JSON.parse(localStorage.getItem('issei_user') || 'null')?.id ?? null
   } catch {
     return null
-  }
-}
-
-// The signed-in user's first name, for the photo panel's monogram fallback.
-function currentUserName() {
-  try {
-    return JSON.parse(localStorage.getItem('issei_user') || 'null')?.first_name ?? ''
-  } catch {
-    return ''
   }
 }
 
@@ -86,32 +90,12 @@ export function hasSeenWelcome() {
 }
 
 // The eyebrow badge — reused on both panels so the panel count is stated up
-// front. "1 of 4" is a promise that this is short; a bare dot row isn't.
+// front. "1 of 3" is a promise that this is short; a bare dot row isn't.
 function StepBadge({ children }) {
   return (
     <span className="inline-block font-display font-bold uppercase tracking-[0.14em] text-[10.5px] text-ink bg-saffron border-2 border-ink rounded-full px-3 py-1">
       {children}
     </span>
-  )
-}
-
-// A numbered how-to row: the action as a heading, the mechanics beneath. The
-// numeral is a sticker disc so the two steps read as a sequence, not a menu.
-function HowToStep({ n, title, children }) {
-  return (
-    <li className="flex gap-3.5">
-      <span className="flex-none flex items-center justify-center w-8 h-8 rounded-full bg-sage border-2 border-ink shadow-[0_2px_0_#2E3A24] font-display font-black text-[15px] text-ink">
-        {n}
-      </span>
-      <span className="min-w-0 pt-0.5">
-        <span className="block font-display font-black text-[17px] leading-tight text-ink">
-          {title}
-        </span>
-        <span className="block font-display text-[13.5px] leading-snug text-ink-soft mt-1">
-          {children}
-        </span>
-      </span>
-    </li>
   )
 }
 
@@ -136,16 +120,7 @@ export default function Welcome() {
   // otherwise marking-on-mount would immediately redirect the panel away.
   const [alreadySeen] = useState(hasSeenWelcome)
   const [panel, setPanel] = useState(0)
-  // The photo step (panel 2). photoUrl reflects the just-uploaded avatar so the panel
-  // shows it immediately; uploading drives the busy state on the picker.
-  const {
-    onPick,
-    uploading: uploadingPhoto,
-    error: photoError,
-    photoUrl,
-    framerProps,
-  } = useAvatarUpload()
-  // The notifications step (panel 4). `availability` is read ONCE on mount rather than per render:
+  // The notifications step (panel 3). `availability` is read ONCE on mount rather than per render:
   // it cannot change while this screen is open (installing to the home screen restarts the app),
   // and reading it in the render body would recompute a `matchMedia` query on every keystroke
   // elsewhere in the tree.
@@ -210,15 +185,11 @@ export default function Welcome() {
     // the one place that sprawled to the full window on a desktop browser —
     // /welcome sits outside App's Layout wrapper, so it has to set its own width.
     <div className="min-h-screen bg-cream">
-      {/* The framing step (#103) — real DOM in this tree so the overlay inherits the app's styles.
-          Null file renders nothing. */}
-      {framerProps?.file && <PhotoFramer {...framerProps} />}
       <div className="max-w-app mx-auto px-5 pt-6">
-        {/* Skip sits in the header on BOTH panels, at the same coordinates, so it
-          never has to be hunted for and nobody is one panel from being stuck.
-          On panel two the wordmark gives way to Back: a forward-only intro means
-          a mistaken tap costs you the explanation permanently, since the welcome
-          never runs again. The wordmark isn't load-bearing here — they just came
+        {/* Skip sits in the header on EVERY panel, at the same coordinates, so it never has to be
+          hunted for and nobody is one panel from being stuck. After the first, the wordmark gives way
+          to Back: a forward-only intro means a mistaken tap costs you the explanation permanently,
+          since the welcome never runs again. The wordmark isn't load-bearing here — they just came
           from a screen with it. */}
         <div className="flex items-baseline justify-between">
           {panel === 0 ? (
@@ -240,109 +211,87 @@ export default function Welcome() {
         </div>
 
         {panel === 0 ? (
-          /* PANEL 1 — WHAT IT'S FOR, in as few words as possible.
-           The owner cut this panel's prose: a new user shouldn't have to READ a
-           paragraph to learn what the app is. So the headline makes the claim and
-           the sample recipe below it IS the evidence — you can see "3 soup spoons"
-           left alone faster than you can read a sentence saying amounts are left
-           alone. The name is glossed last, once there's a reason to care. */
+          /* PANEL 1 — WHAT ISSEI IS, AS IT IS NOW. This replaces two panels, and the pair it
+             replaced had gone stale in a way worth recording rather than quietly deleting.
+
+             The old panel 2 said "So there are two things to do" — write a recipe, send it to
+             someone — and then, in a peach box, "THAT'S THE WHOLE APP." That was true when it was
+             written. It stopped being true twice: #67 made a FEED OF POSTS the app's Home, and #79
+             made ASKING for a recipe a first-class act. So every new account was told the app was
+             two verbs and then dropped onto a feed that panel never mentioned, while the act the
+             whole loop now turns on was absent from onboarding entirely. The owner spotted the
+             framing as "the old version of the app"; it was worse than tone — it was a false claim.
+
+             The old panel 1 had the same slant: "Recipes kept their way / Not grams. Theirs." is the
+             FIDELITY promise, which POSITIONING calls the supporting layer, not the door.
+
+             So: the sequence, in the order POSITIONING states it — presence, the ask, the handoff.
+             `RecipeGlimpse` still does the heavy lifting, because a sample beats a sentence here (its
+             own docstring records two rounds of user testing that proved it). The name is glossed
+             last, once there is a reason to care.
+
+             OVERLAP WITH `/join` IS DELIBERATELY SMALL. A referred person sees both — `/join` while
+             deciding, this while starting — so this panel does NOT re-run the pitch. It states the
+             three beats in one line each and shows the payload. */
           <div className="pt-6">
-            <StepBadge>1 of 4</StepBadge>
+            <StepBadge>1 of 3</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
-              Recipes kept <span className="font-black italic">their way.</span>
+              See it, ask for it, <span className="font-black italic">cook it.</span>
             </h1>
-            <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
-              Not grams. Theirs.
-            </p>
-
-            <RecipeGlimpse className="mt-5" />
+            <ul className="list-none m-0 p-0 mt-5 space-y-3 max-w-xs">
+              <NotifyLine>Friends post what they cooked. That is your Home.</NotifyLine>
+              <NotifyLine>See one you want? Ask them for the recipe.</NotifyLine>
+              <NotifyLine>What arrives is the dish the way they really make it:</NotifyLine>
+            </ul>
+            <RecipeGlimpse className="mt-4" />
             <IsseiMeaning className="mt-5 px-0.5" />
-
             <button onClick={() => setPanel(1)} className="btn-primary !mt-7">
               Next &rarr;
             </button>
           </div>
         ) : panel === 1 ? (
-          /* PANEL 2 — HOW TO USE IT. Two steps because the app really only has
-           two verbs; naming the actual controls ("＋", "Send this to someone")
-           rather than paraphrasing them means the words they just read are the
-           words they'll find on screen. */
+          /* PANEL 2 — THE FIRST ACTION, AND THE ONE THE APP ACTUALLY NEEDS. Onboarding used to ask
+             for a profile photo and notification permission: two things that produce no CONTENT, on
+             an app whose Home is empty until somebody posts. A new account that finishes onboarding
+             having published nothing has nothing to come back to, and neither does anyone who
+             follows them.
+
+             A MEAL, NOT A RECIPE, and that is the whole reason this converts: a post is a photo and a
+             dish name — seconds — whereas writing a recipe cold is the heaviest thing the app asks of
+             anyone, and that form has already been trimmed twice for reading as a chore. A post is
+             also the top of the funnel by design: it is what earns an ask, which is what produces a
+             recipe. So the light action feeds the heavy one instead of competing with it.
+
+             SKIPPABLE, with a real fallback, like every other action step here: "Not now" advances,
+             and Home's own empty state carries a "📸 Share a meal" button to the same route. Nobody
+             who skips is stranded, and nobody is asked twice on the same screen. */
           <div className="pt-6">
-            <StepBadge>2 of 4</StepBadge>
+            <StepBadge>2 of 3</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
-              So there are two things{' '}
-              <span className="font-black italic">to do.</span>
-            </h1>
-
-            <ul className="list-none m-0 p-0 mt-6 space-y-6">
-              <HowToStep n="1" title="Write a recipe">
-                Tap the <span className="font-bold text-terra">&#65291;</span>{' '}
-                in the bar at the bottom and write a dish down the way
-                it&rsquo;s really made.
-              </HowToStep>
-              <HowToStep n="2" title="Send it to someone">
-                Open a recipe and tap &ldquo;Send this to someone&rdquo;. They
-                get a link — once they make an account, it&rsquo;s in their
-                kitchen for good.
-              </HowToStep>
-            </ul>
-
-            <div className="sticker bg-peach px-5 py-4 mt-7">
-              <p className="font-display text-[14px] leading-snug text-ink">
-                That&rsquo;s the whole app. Nothing you keep is shared with
-                anyone until you choose to share it.
-              </p>
-            </div>
-
-            <button onClick={() => setPanel(2)} className="btn-primary !mt-7">
-              Next &rarr;
-            </button>
-          </div>
-        ) : panel === 2 ? (
-          /* PANEL 3 — THE FIRST ACTION: add a profile photo. Genuinely optional: Skip in
-           the header finishes, and the button advances with or without a photo. Once a photo is
-           picked the label switches from "Skip for now" to "Next", so the flow moves on without a
-           second tap; anyone who skips gets the You-page nudge (#77).
-
-           IT USED TO BE LAST — the "you're all set" moment. #110 put the notifications ask after
-           it, deliberately: that one spends an irrevocable permission, so it goes behind the
-           smaller yes rather than in front of it. */
-          <div className="pt-6">
-            <StepBadge>3 of 4</StepBadge>
-            <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
-              Add a <span className="font-black italic">photo.</span>
+              What did you cook <span className="font-black italic">lately?</span>
             </h1>
             <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
-              So the people you cook with recognize you. You can always change it later.
+              A photo and the name of the dish. That is the whole post &mdash; and it is how someone
+              knows to ask you for it.
             </p>
-
-            <div className="flex flex-col items-center mt-8">
-              <label
-                className="relative inline-block cursor-pointer"
-                aria-busy={uploadingPhoto || undefined}
-              >
-                <input
-                  type="file"
-                  accept={PHOTO_ACCEPT}
-                  onChange={onPick}
-                  aria-label="Add a profile photo"
-                  className="sr-only"
-                />
-                <Avatar name={currentUserName()} photoUrl={photoUrl} size="xl" bg="bg-plum" />
-                <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-terra text-cream border-2 border-ink flex items-center justify-center text-[13px] shadow-[0_2px_0_#2E3A24]">
-                  {uploadingPhoto ? '…' : photoUrl ? '✓' : '＋'}
-                </span>
-              </label>
-              <span className="font-display text-[13px] text-ink-soft mt-3">
-                {photoUrl ? 'Looking good.' : 'Tap to add a photo'}
-              </span>
-              {photoError && (
-                <p className="mt-2"><span className="error-pill">{photoError}</span></p>
-              )}
+            <div className="sticker bg-peach px-5 py-4 mt-6">
+              <p className="font-display text-[14px] leading-snug text-ink">
+                You choose who sees it, every time. Nothing is public unless you say so.
+              </p>
             </div>
-
-            <button onClick={() => setPanel(3)} className="btn-primary !mt-8">
-              {photoUrl ? 'Next →' : 'Skip for now →'}
+            <button
+              onClick={() => navigate('/add/meal')}
+              className="btn-primary !mt-7"
+            >
+              Share a meal &rarr;
+            </button>
+            {/* "Not now", not "Skip": the header's Skip ends the whole intro, this advances one
+                panel. Two words that do different things must not share a label. */}
+            <button
+              onClick={() => setPanel(2)}
+              className="block font-display font-bold text-[14px] text-ink-soft underline underline-offset-2 mt-4"
+            >
+              Not now
             </button>
           </div>
         ) : (
@@ -395,7 +344,7 @@ export default function Welcome() {
            download on iOS, it has Add to Home Screen. Same reasoning as
            `NotificationSettings.jsx`, and the same refusal to render a control that would fail. */
           <div className="pt-6">
-            <StepBadge>4 of 4</StepBadge>
+            <StepBadge>3 of 3</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               Know when it <span className="font-black italic">happens.</span>
             </h1>
@@ -484,7 +433,7 @@ export default function Welcome() {
         {/* Progress, under the fold-line rather than above the headline: it's
           reassurance, not the point of the screen. */}
         <div className="flex justify-center gap-2 pt-7 pb-8" aria-hidden="true">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2].map((i) => (
             <span
               key={i}
               className={`w-2.5 h-2.5 rounded-full border-2 border-ink ${

@@ -20,6 +20,10 @@ function renderWelcome() {
       <Routes>
         <Route path="/welcome" element={<Welcome />} />
         <Route path="/" element={<div>home</div>} />
+        {/* The first-meal prompt navigates here. Stubbed like Home rather than mocking
+            `useNavigate`, because a global navigate mock breaks every assertion in this file that
+            depends on actually landing on the Home stub. */}
+        <Route path="/add/meal" element={<div>meal composer</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -41,63 +45,82 @@ beforeEach(() => {
 })
 
 describe('Welcome — what it teaches', () => {
-  it('shows what the app is for by SHOWING a recipe, then names itself', async () => {
+  it('teaches the app AS IT IS NOW — feed, ask, recipe', async () => {
+    // The panel this replaced said "Recipes kept their way / Not grams. Theirs." — the FIDELITY
+    // promise, which POSITIONING calls the supporting layer rather than the door — and the panel after
+    // it said "So there are two things to do: write a recipe, send it to someone. THAT'S THE WHOLE
+    // APP." That was true once and was falsified twice: #67 made a feed of posts the Home screen, and
+    // #79 made ASKING a first-class act. So onboarding described an app the product had outgrown, and
+    // the verb the loop now turns on was missing entirely.
     renderWelcome()
-    expect(screen.getByText(/their way\./)).toBeInTheDocument()
-    // Deliberately terse: the owner cut this panel's paragraph, because a new
-    // user shouldn't have to read prose to learn what the app is. The sample
-    // card below is the evidence, so the words only have to point at it.
-    expect(screen.getByText(/not grams\. theirs\./i)).toBeInTheDocument()
-    // The sample card — a folk amount kept verbatim, badged as theirs, plus the
-    // remark that carries the knowledge an ingredient list can't hold.
+    expect(screen.getByText(/that is your Home/i)).toBeInTheDocument()
+    expect(screen.getByText(/ask them for the recipe/i)).toBeInTheDocument()
+    // ...and the payload is SHOWN rather than claimed, which is why one panel can do the work of two.
     expect(screen.getByText('3 soup spoons')).toBeInTheDocument()
     expect(screen.getByText('their way')).toBeInTheDocument()
     expect(screen.getByText(/colour of tea/i)).toBeInTheDocument()
-    // The gloss, on the same panel but last.
     expect(screen.getByText(/一世 · issei/)).toBeInTheDocument()
   })
 
-  it('covers the second half — how to actually use it', async () => {
-    renderWelcome()
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByText('Write a recipe')).toBeInTheDocument()
-    expect(screen.getByText('Send it to someone')).toBeInTheDocument()
-    // The instruction names the control the user will actually find on the
-    // recipe page, verbatim — a paraphrase would send them hunting.
-    expect(
-      screen.getByText(/Send this to someone/),
-    ).toBeInTheDocument()
+  it('does NOT still claim the app is two verbs', async () => {
+    // The specific false sentence, pinned so it cannot come back: "that's the whole app" described
+    // write-then-send, on an app whose Home is a feed and whose central act is the ask.
+    const { container } = renderWelcome()
+    expect(container.textContent).not.toMatch(/the whole app/i)
+    expect(container.textContent).not.toMatch(/two things to do/i)
   })
 
-  it('is four panels — two that teach, then two optional ACTION steps', async () => {
-    // The rule is "at most two TEACHING panels", not "never more than two panels". Panels 1–2
-    // teach; 3 and 4 are single optional ACTIONS (add a photo, allow notifications), each with a
-    // fallback elsewhere in the app for anyone who skips — the You-page nudge (#77) and the Home
-    // strip (`NotifyNudge`) respectively. That's what keeps a fourth panel from being drift.
+  it('asks for CONTENT on panel two — the thing onboarding never did', async () => {
+    // The gap the owner named: onboarding asked for a profile photo and a notification permission,
+    // and neither produces anything. An account that finishes having published nothing has nothing to
+    // come back to, on an app whose Home is a feed of posts.
     renderWelcome()
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByText('2 of 4')).toBeInTheDocument()
+    expect(screen.getByText('2 of 3')).toBeInTheDocument()
+    expect(screen.getByText(/what did you cook/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /share a meal/i })).toBeInTheDocument()
+  })
+
+  it('the first-meal prompt goes to the composer, and is skippable', async () => {
+    // A MEAL, not a recipe: a post is a photo and a dish name, while writing a recipe cold is the
+    // heaviest thing the app asks — and a post is the top of the funnel that earns the ask anyway.
+    // Skippable like every action step here, and the fallback is real: Home's empty state carries a
+    // "📸 Share a meal" button to this same route.
+    renderWelcome()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByText('3 of 4')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
-    expect(screen.getByText('4 of 4')).toBeInTheDocument()
-    // The notifications panel is the last one: it finishes rather than advancing. Asserted on the
-    // absence of a "Next" — the first version checked for the literal text "5 of", which cannot
-    // fail unless someone types that string, since all four badges are hardcoded. A test that
-    // cannot fail is worse than no test: it reads as coverage.
+    await userEvent.click(screen.getByRole('button', { name: /share a meal/i }))
+    expect(await screen.findByText('meal composer')).toBeInTheDocument()
+  })
+
+  it('"Not now" on the meal panel ADVANCES rather than finishing', async () => {
+    // The header Skip is the thing that ends the intro; this moves one panel. Two controls that do
+    // different things must not share a label — and skipping here must not cost the notifications ask.
+    renderWelcome()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+    expect(screen.getByText('3 of 3')).toBeInTheDocument()
+    expect(screen.queryByText('home')).not.toBeInTheDocument()
+  })
+
+  it('is THREE panels — one that teaches, then two optional ACTIONS', async () => {
+    // The rule is "at most two TEACHING panels"; this uses one, because `/join` (#111) now teaches a
+    // referred stranger before they sign up. Going DOWN is always safe against that rule.
+    renderWelcome()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText('2 of 3')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+    expect(screen.getByText('3 of 3')).toBeInTheDocument()
+    // The notifications panel finishes rather than advancing.
     expect(screen.queryByRole('button', { name: /next/i })).toBeNull()
   })
 
-  it('the photo step is genuinely optional — skipping it advances, never blocks', async () => {
-    // Honesty requirement: the photo panel must never be a gate. With no photo picked its button
-    // reads "Skip for now" and moves on rather than finishing — it is no longer the last panel.
-    renderWelcome()
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    expect(screen.getByLabelText(/add a profile photo/i)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
-    expect(screen.getByText('4 of 4')).toBeInTheDocument()
+  it('no longer asks for a profile photo here', async () => {
+    // Dropped on owner review: it produces no content, and it already has a fallback that nags
+    // nobody — the You-page nudge (#77) plus the retro prompt for older accounts (#84).
+    const { container } = renderWelcome()
+    expect(container.textContent).not.toMatch(/add a photo/i)
+    expect(screen.queryByLabelText(/add a profile photo/i)).toBeNull()
   })
 
   it('claims nothing about voice or audio', async () => {
@@ -123,7 +146,7 @@ describe('Welcome — what it teaches', () => {
 describe('Welcome — shows exactly once', () => {
   it('marks itself seen on arrival, before any button is pressed', async () => {
     renderWelcome()
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
     // Closing the tab here must be as final as finishing, so the flag is written
     // on mount rather than on exit.
     expect(JSON.parse(localStorage.getItem('issei_prefs')).welcomeSeenBy).toEqual([
@@ -139,7 +162,7 @@ describe('Welcome — shows exactly once', () => {
 
     renderWelcome()
     expect(await screen.findByText('home')).toBeInTheDocument()
-    expect(screen.queryByText('1 of 4')).not.toBeInTheDocument()
+    expect(screen.queryByText('1 of 3')).not.toBeInTheDocument()
   })
 
   it('completing also persists, and lands on Home', async () => {
@@ -148,8 +171,7 @@ describe('Welcome — shows exactly once', () => {
     // jsdom there is no PushManager, so that panel renders its "this browser can't" branch and its
     // one button finishes — which is the honest behaviour, not a test convenience.
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
     await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
     expect(await screen.findByText('home')).toBeInTheDocument()
     unmount()
@@ -159,35 +181,27 @@ describe('Welcome — shows exactly once', () => {
   })
 
   it('Back steps back ONE panel from anywhere, never straight to the start', async () => {
-    // A forward-only intro means one mistaken tap costs the explanation for good,
-    // since the welcome never runs again. Back must also step back exactly one — from
-    // the photo panel it should land on the how-to panel, not skip it back to panel one.
+    // A forward-only intro means one mistaken tap costs the explanation for good, since the welcome
+    // never runs again. Back must also step back exactly one.
     renderWelcome()
     expect(screen.queryByRole('button', { name: /back/i })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
-    // On the notifications panel now; Back → the photo panel, not two back.
-    expect(screen.getByText('4 of 4')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+    expect(screen.getByText('3 of 3')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /back/i }))
-    expect(screen.getByText('3 of 4')).toBeInTheDocument()
+    expect(screen.getByText('2 of 3')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /back/i }))
-    expect(screen.getByText('2 of 4')).toBeInTheDocument()
-    // And Back again → panel one, with its content.
-    await userEvent.click(screen.getByRole('button', { name: /back/i }))
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
-    expect(screen.getByText(/not grams\. theirs\./i)).toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
+    expect(screen.getByText(/that is your Home/i)).toBeInTheDocument()
   })
 
   it('skip is reachable from EVERY panel, so nobody is stranded', async () => {
-    // The header Skip is at the same coordinates on all three panels. On the photo
-    // panel there are two ways out (header Skip + the "Skip for now" finish button),
-    // so getAllByRole is used there rather than the single-match getByRole.
+    // The header Skip is at the same coordinates on all three panels.
     renderWelcome()
     expect(screen.getByRole('button', { name: /^skip$/i })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(screen.getByRole('button', { name: /^skip$/i })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
     expect(screen.getByRole('button', { name: /^skip$/i })).toBeInTheDocument()
   })
 
@@ -209,7 +223,7 @@ describe('Welcome — shows exactly once', () => {
 
     signIn(99)
     renderWelcome()
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
     // and the first account is still marked, not clobbered
     expect(
       JSON.parse(localStorage.getItem('issei_prefs')).welcomeSeenBy,
@@ -221,13 +235,13 @@ describe('Welcome — shows exactly once', () => {
     // scheme. They get welcomed once more rather than hitting a type error.
     localStorage.setItem('issei_prefs', JSON.stringify({ welcomeSeen: true }))
     renderWelcome()
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
   })
 
   it('survives an unreadable prefs bag instead of crashing', async () => {
     localStorage.setItem('issei_prefs', 'not json{')
     renderWelcome()
-    expect(screen.getByText('1 of 4')).toBeInTheDocument()
+    expect(screen.getByText('1 of 3')).toBeInTheDocument()
   })
 })
 
@@ -235,9 +249,8 @@ describe('Welcome — the notifications ask (#110)', () => {
   async function toNotifyPanel() {
     renderWelcome()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /next/i }))
-    await userEvent.click(screen.getByRole('button', { name: /skip for now/i }))
-    expect(screen.getByText('4 of 4')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+    expect(screen.getByText('3 of 3')).toBeInTheDocument()
   }
 
   it('does NOT fire the permission dialog on arrival — it explains first', async () => {
