@@ -13,7 +13,7 @@ So a recipe here is attributed to a **person** — the dish is the title, the pe
 
 Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-quantity model, serving-size scaling that refuses to invent precision, photo upload (with automatic iPhone HEIC → JPEG conversion and a drag-and-zoom framing step, so the person chooses what stays in frame rather than a server-side centre-crop deciding for them), and a capability-token sharing system layered over a concrete visibility model. A profile is public or private (private by default); each recipe or post is set to "Everyone" (public), "Friends only" (friends), or "Only me" (private) — new items default to "Friends only", or "Everyone" on a public profile. The chosen value is stored literally and fixed once chosen, so a label never silently changes if the profile later changes.
 
-**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 67 endpoints, 18 data models, 1,993 automated tests (972 pytest + 1,021 Vitest).
+**Stack at a glance:** React + Vite + Tailwind SPA (Vercel) → FastAPI + SQLAlchemy REST API (AWS ECS Fargate) → PostgreSQL (Neon). JWT auth, 67 endpoints, 18 data models, 1,997 automated tests (972 pytest + 1,025 Vitest).
 
 ## Tech Stack
 **FastAPI** - automatic request validation via Pydantic, auto-generated /docs page for testing, and async-ready. Faster to build with than Flask for the backend API.
@@ -32,7 +32,7 @@ Under the hood that's a full CRUD REST API with JWT auth, a domain-driven fuzzy-
 
 **pytest** - backend tests (972) for the scaling service and its folk-unit vocabulary, and the authorization surface (visibility, sharing/grants, blocking, the invite-token flow, the invite link-preview card, the source/cuisine autosuggest scope, the friend graph, signup + account-edit validation).
 
-**Vitest + React Testing Library** - frontend unit/component tests (1,021 in 64 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
+**Vitest + React Testing Library** - frontend unit/component tests (1,025 in 64 files: quantity parsing, imprecise-measure labelling, handoff/invite flows, form and page components, plus design-token invariants). Run with `npm test` in `frontend/`.
 
 **Cloudinary** - hosts recipe photos and profile pictures uploaded through the `/upload` endpoint.
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import RecipeGlimpse from '../components/RecipeGlimpse'
+import MealGlimpse from '../components/MealGlimpse'
 import IsseiMeaning from '../components/IsseiMeaning'
 import Wordmark from '../components/Wordmark'
 import { loadPrefs, setPref } from '../lib/prefs'
@@ -197,15 +198,17 @@ export default function Welcome() {
           ) : (
             <button
               onClick={() => setPanel((p) => p - 1)}
-              className="font-display font-bold text-[14px] text-ink-soft"
+              className="chip shadow-[0_2px_0_#2E3A24] sticker-press"
             >
               &larr; Back
             </button>
           )}
-          <button
-            onClick={done}
-            className="font-display font-bold text-[14px] text-terra underline underline-offset-2"
-          >
+          {/* THE QUIET CONTROLS ARE CHIPS, not underlined text (owner's note: they did not look like
+              buttons, and the underlines made them read as links). `.chip` is the app's own outlined
+              pill — ink border, cream fill — so they are unmistakably pressable while staying clearly
+              secondary to the terra `btn-primary`. Same treatment on Back, Skip and "Not now", since
+              all three are the same KIND of control: a way out that is not the main act. */}
+          <button onClick={done} className="chip shadow-[0_2px_0_#2E3A24] sticker-press">
             Skip
           </button>
         </div>
@@ -271,14 +274,13 @@ export default function Welcome() {
               What did you cook <span className="font-black italic">lately?</span>
             </h1>
             <p className="font-display text-[15px] leading-snug text-ink-soft mt-2.5 max-w-xs">
-              A photo and the name of the dish. That is the whole post &mdash; and it is how someone
-              knows to ask you for it.
+              A photo and the name of the dish. That is the whole post.
             </p>
-            <div className="sticker bg-peach px-5 py-4 mt-6">
-              <p className="font-display text-[14px] leading-snug text-ink">
-                You choose who sees it, every time. Nothing is public unless you say so.
-              </p>
-            </div>
+            {/* THE EXAMPLE, rather than a description of one. Same dish and cook as panel 1's recipe,
+                so the two panels read as one story: this is the post, that is what somebody gets when
+                they ask you for it. `showAsk={false}` because here the reader IS the cook — an ask
+                control on your own meal is nonsense. */}
+            <MealGlimpse showAsk={false} className="mt-5" />
             <button
               onClick={() => navigate('/add/meal')}
               className="btn-primary !mt-7"
@@ -286,13 +288,13 @@ export default function Welcome() {
               Share a meal &rarr;
             </button>
             {/* "Not now", not "Skip": the header's Skip ends the whole intro, this advances one
-                panel. Two words that do different things must not share a label. */}
-            <button
-              onClick={() => setPanel(2)}
-              className="block font-display font-bold text-[14px] text-ink-soft underline underline-offset-2 mt-4"
-            >
-              Not now
-            </button>
+                panel. Two words that do different things must not share a label. Centred under the
+                full-width primary, as a chip rather than an underlined link. */}
+            <div className="text-center mt-4">
+              <button onClick={() => setPanel(2)} className="chip shadow-[0_2px_0_#2E3A24] sticker-press">
+                Not now
+              </button>
+            </div>
           </div>
         ) : (
           /* PANEL 4 — NOTIFICATIONS (#110). An ACTION step like the photo, not teaching, and
@@ -386,15 +388,18 @@ export default function Welcome() {
                     {notifyError && (
                       <p className="mt-3"><span className="error-pill">{notifyError}</span></p>
                     )}
-                    {/* "Not now" rather than "Skip": it advances without touching permission, so
+                    {/* "Not now" rather than "Skip": it finishes without touching permission, so
                       the Home strip can still ask. Wording matters — "Never" would be a promise
-                      this button doesn't keep. */}
-                    <button
-                      onClick={done}
-                      className="block font-display font-bold text-[14px] text-ink-soft underline underline-offset-2 mt-4"
-                    >
-                      Not now
-                    </button>
+                      this button doesn't keep. A chip like the other quiet controls, centred under
+                      the full-width primary. */}
+                    <div className="text-center mt-4">
+                      <button
+                        onClick={done}
+                        className="chip shadow-[0_2px_0_#2E3A24] sticker-press"
+                      >
+                        Not now
+                      </button>
+                    </div>
                   </>
                 )}
               </>

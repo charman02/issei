@@ -28,7 +28,11 @@ import Wordmark from './Wordmark'
 // The "Ask for the recipe" control is `aria-hidden` and not a button: it is the thing being shown,
 // not offered. A real control here would be a dead end for someone with no account yet, and a screen
 // reader announcing a button that does nothing is worse than silence.
-export default function MealGlimpse({ className = '' }) {
+// `showAsk` is false where the sample is an example of the READER'S OWN post. On `/join` the chip is
+// the entire point — it is the verb being demonstrated — but on `/welcome`'s "what did you cook
+// lately?" panel the reader is the cook, and an ask control on your own meal is nonsense: you do not
+// ask yourself for your own recipe. Same card, one honest difference.
+export default function MealGlimpse({ className = '', showAsk = true }) {
   return (
     <figure className={`sticker bg-card p-0 m-0 overflow-hidden ${className}`}>
       {/* The "photo" — the same mark-on-colour treatment a photo-less cover gets in the real app. */}
@@ -54,16 +58,19 @@ export default function MealGlimpse({ className = '' }) {
           Braised pork belly
         </p>
 
-        {/* THE ASK. `bg-saffron text-ink` and the exact label, matching `PostCard.jsx`'s live control
+        {/* THE ASK, only where the reader is not the cook — see `showAsk` above. `bg-saffron text-ink`
+            and the exact label, matching `PostCard.jsx`'s live control
             rather than approximating it — the first version used `bg-terra text-cream`, which would
             have taught a stranger to look for a terra pill and hand them a saffron one after signup.
             A ship gate caught it. Not interactive; see the note above. */}
-        <span
-          aria-hidden="true"
-          className="inline-block mt-2.5 font-display font-bold text-[13px] text-ink bg-saffron border-2 border-ink rounded-full px-3.5 py-1.5 leading-tight shadow-[0_2px_0_#2E3A24]"
-        >
-          Ask for the recipe
-        </span>
+        {showAsk && (
+          <span
+            aria-hidden="true"
+            className="inline-block mt-2.5 font-display font-bold text-[13px] text-ink bg-saffron border-2 border-ink rounded-full px-3.5 py-1.5 leading-tight shadow-[0_2px_0_#2E3A24]"
+          >
+            Ask for the recipe
+          </span>
+        )}
       </div>
 
       {/* AN ACCESSIBLE NAME, because without one a screen reader announces this card's contents as
@@ -72,7 +79,9 @@ export default function MealGlimpse({ className = '' }) {
           nothing visually. A ship gate found this, and it matters here more than on `/welcome`
           because this is the first PUBLIC surface either sample has appeared on. */}
       <figcaption className="sr-only">
-        An example of a meal someone shared on issei.
+        {showAsk
+          ? 'An example of a meal someone shared on issei.'
+          : 'An example of a meal you might share.'}
       </figcaption>
     </figure>
   )

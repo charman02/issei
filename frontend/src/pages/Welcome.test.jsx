@@ -92,6 +92,47 @@ describe('Welcome — what it teaches', () => {
     expect(await screen.findByText('meal composer')).toBeInTheDocument()
   })
 
+  it('SHOWS an example post on the meal panel, and it is the same dish as panel 1', async () => {
+    // Owner's note: "what did you cook lately?" described a post instead of showing one. The example
+    // is `MealGlimpse`, the same card the landing page uses, carrying the same dish and cook as panel
+    // 1's recipe — so the two panels read as one story: this is the post, that is what somebody gets
+    // when they ask you for it.
+    renderWelcome()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    const figure = document.querySelector('figure')
+    expect(figure).not.toBeNull()
+    expect(figure.textContent).toMatch(/Braised pork belly/)
+    expect(figure.textContent).toMatch(/Auntie Ling/)
+  })
+
+  it('the example post has NO ask control, because here the reader is the cook', async () => {
+    // On `/join` the ask chip is the whole point — it demonstrates the verb. Here the sample is an
+    // example of the reader's OWN post, and nobody asks themselves for their own recipe. Same card,
+    // one honest difference (`showAsk={false}`).
+    renderWelcome()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    const figure = document.querySelector('figure')
+    expect(figure.textContent).not.toMatch(/ask for the recipe/i)
+    expect(figure.textContent).toMatch(/a meal you might share/i)
+  })
+
+  it('the quiet controls are BUTTONS, not underlined links', async () => {
+    // Owner's note: Back, Skip and "Not now" did not look like buttons, and the underlines made them
+    // read as links. All three now use `.chip` — the app's own outlined pill — so they are clearly
+    // pressable while staying secondary to the terra primary.
+    renderWelcome()
+    const skip = screen.getByRole('button', { name: /^skip$/i })
+    expect(skip.className).toContain('chip')
+    expect(skip.className).not.toMatch(/underline/)
+
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    for (const name of [/back/i, /not now/i]) {
+      const btn = screen.getByRole('button', { name })
+      expect(btn.className).toContain('chip')
+      expect(btn.className).not.toMatch(/underline/)
+    }
+  })
+
   it('"Not now" on the meal panel ADVANCES rather than finishing', async () => {
     // The header Skip is the thing that ends the intro; this moves one panel. Two controls that do
     // different things must not share a label — and skipping here must not cost the notifications ask.

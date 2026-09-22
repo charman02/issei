@@ -72,6 +72,15 @@ describe('Landing', () => {
     expect(screen.getByText(/you ask\. they answer/i)).toBeInTheDocument()
   })
 
+  it('KEEPS the ask control here, because the reader is not the cook', () => {
+    // The mirror of `/welcome`'s panel 2, which passes `showAsk={false}`. On this page the chip is the
+    // entire point: it is the verb being demonstrated to somebody who has never seen the app.
+    const { container } = renderLanding()
+    const [meal] = container.querySelectorAll('figure')
+    expect(meal.textContent).toMatch(/ask for the recipe/i)
+    expect(meal.textContent).toMatch(/a meal someone shared/i)
+  })
+
   it('shows the two things that are actually different, rather than claiming them', () => {
     // Both come from `RecipeGlimpse`, which is the point: the measurements pill and the step note are
     // on screen, so the page needs no sentence asserting them.
