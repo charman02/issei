@@ -1,67 +1,55 @@
 import { Link } from 'react-router-dom'
 import Wordmark from '../components/Wordmark'
 import IsseiMeaning from '../components/IsseiMeaning'
+import MealGlimpse from '../components/MealGlimpse'
+import RecipeGlimpse from '../components/RecipeGlimpse'
 
 // THE COLD ARRIVAL. What a person sees when someone told them about issei and they had no specific
 // recipe to open. Until #111 there was no such screen: the app had four public routes and the only
 // door that explained the product needed an existing user to send one specific recipe, so anyone
 // told "check out issei.app" met a sign-in form that asked for a password before saying what for.
 //
-// REBUILT after owner review of the first version, and all three notes were right:
+// REBUILT TWICE ON OWNER REVIEW, and the second round is the one that matters, because it replaced
+// an argument with a demonstration.
 //
-// 1. THE SUMMARY WAS ONE USE CASE, NOT THE PRODUCT. It led with POSITIONING's one-liner — "someone
-//    cooked you something you'd never had before, and you asked for the recipe" — which is the
-//    FOUNDING moment and, on a landing page, describes only the side where you RECEIVE. POSITIONING
-//    itself licenses the broader frame: §"Why nobody else serves this" says "The feed widened the
-//    front door. You no longer have to be mid-handoff to have a reason to open the app… That's an
-//    on-ramp, not a redefinition." So the summary now names both sides — seeing, and getting — and
-//    still ends on the payload, because §"The feed and the handoff" keeps the handoff as the point.
+// ROUND 1 fixed three real things: the summary described only the FOUNDING moment (receiving), so it
+// now names both sides; the bullets were generic, so they became the three features the product turns
+// on; and the page used NONE of the palette on an app built out of colour blocks.
 //
-// 2. THE BULLETS WERE GENERIC. Now the three things the owner named: ASKING for a recipe (the app's
-//    fourth first-class verb, and the mechanic the whole product turns on), the NOTES ON STEPS, and
-//    the MEASUREMENTS AS THE COOK GIVES THEM.
+// ROUND 2 — "it's still a lot of text; should we split it into pages?" The answer was neither more
+// pages nor more prose. THE PAGE WAS AN APP ABOUT FOOD AND RECIPES CONTAINING NEITHER. It asserted
+// three features in words; two of those words-cards described exactly what `RecipeGlimpse` already
+// SHOWS — the "3 soup spoons / their way" pill and the step-note callout. So the cards were prose
+// rebuilding a visual the app already had.
 //
-// 3. IT WAS A WALL OF BLACK-AND-WHITE TEXT. It used none of the palette — every block was
-//    `bg-card` — on an app whose whole identity is saturated colour blocks. Now the hero is peach and
-//    each feature card carries its own colour, chosen to MEAN something rather than to decorate:
-//    saffron is the person's-knowledge accent everywhere else in the app (the story card, the
-//    step-note callout), so the two knowledge features wear it; sage is the affirmative/done colour,
-//    which is what a delivered recipe is. Prose is roughly 40% of the first version.
+// This project had already learned that lesson once, in user testing, and written it down in
+// `RecipeGlimpse`'s own docstring: "the login screen already carried a dictionary gloss of 一世, and
+// two rounds of user testing still asked 'what's the point of this app?' while looking straight at
+// it. A definition describes a category of person — it never shows what the product DOES."
 //
-// A CLICK-THROUGH was considered and rejected on the app's own evidence: `Welcome.jsx` documents
-// "at most two TEACHING panels", because "a third TEACHING panel is a carousel and testers punished
-// tap-heavy onboarding" — and that was for people who had ALREADY signed up. A stranger deciding
-// whether to sign up at all has less patience, not more, and every "next" tap is a chance to leave.
-// Scrolling is free; tapping is a decision.
+// So the middle of this page is now the MECHANIC, shown: a sample meal with an "Ask for the recipe"
+// control, one short line of cause and effect, and the recipe that arrives. Post → ask → recipe. The
+// three feature claims are gone because the samples make them: the measurements pill and the step
+// note are visible in the second card, and the ask is visible in the first.
 //
-// ONE CLAIM THE OWNER'S NOTE ASKED FOR AND THIS PAGE DELIBERATELY DOES NOT MAKE: "access any of
-// their recipes". It is false. `can_view` gives a friend your `public` + `friends` recipes and never
-// your `private` ones, and the recipe behind a post reaches someone by ASKING — `POST
-// /posts/{id}/request`, which the cook answers, minting a grant. "Ask for the recipe behind any of
-// it" is both true and the better sell, because the ask is the product. And "in their words" is a
-// BANNED phrase (POSITIONING §"Never claim audio" — seventeen test files assert it) since it implies
-// a recording that does not exist; the measurements are typed text, so the copy says whose
-// measurements they are without claiming speech.
-const FEATURES = [
-  {
-    // The ask first, because it is the verb that turns looking into having — and the one thing no
-    // other recipe app does at all.
-    tint: 'bg-saffron',
-    heading: 'Ask for any recipe',
-    body: 'See something you want to make? Ask. The cook answers, and the whole recipe is yours.',
-  },
-  {
-    tint: 'bg-peach',
-    heading: 'Notes on the steps that matter',
-    body: 'The warning that keeps you from ruining it the first time, sitting on the step it belongs to.',
-  },
-  {
-    tint: 'bg-sage',
-    heading: 'Their measurements, kept',
-    body: '“A good splash” stays “a good splash.” Nothing gets rounded into a number nobody actually cooks by.',
-  },
-]
-
+// WHY NOT SPLIT IT INTO PAGES, which was the owner's own suggestion and a reasonable one:
+//   · Pagination does not reduce text, it hides the same words behind taps. The complaint was volume.
+//   · The app-store onboarding carousel it imitates works on a CAPTIVE audience — you already
+//     downloaded, you are committed, "next" is the only way forward. A web visitor has no sunk cost
+//     and closes a tab for free, so every tap is a fresh decision to continue.
+//   · `Welcome.jsx` documents "at most two TEACHING panels", because "a third TEACHING panel is a
+//     carousel and testers punished tap-heavy onboarding" — measured on people who had ALREADY signed
+//     up, i.e. a friendlier audience than this one.
+//   · And that pattern already exists here, in the right place: `Welcome.jsx` IS issei's post-signup
+//     carousel. If issei ever ships to an app store, that is the screen a download would land on.
+//
+// ONE CLAIM THIS PAGE DELIBERATELY DOES NOT MAKE, though a review asked for it: "access any of their
+// recipes". It is false — `can_view` gives a friend your `public` + `friends` recipes and never your
+// `private` ones, and the recipe behind a post reaches someone by ASKING (`POST /posts/{id}/request`,
+// which the cook answers, minting a grant). "Ask for the recipe behind any of it" is true AND the
+// better sell, because the ask is the product. "In their words" stays banned too (POSITIONING §"Never
+// claim audio"): the measurements are typed text, so the copy names whose they are without implying
+// speech.
 export default function Landing() {
   return (
     <div className="min-h-screen bg-cream">
@@ -70,64 +58,54 @@ export default function Landing() {
           <Wordmark className="text-[30px]" />
         </div>
 
-        {/* THE HERO IS A COLOUR BLOCK, which is the app's whole visual identity and the thing the
-            first version was missing. It also does the summary's first job: both sides of the
-            product — what you see, and what you get — in one sentence a stranger can picture. */}
-        <div className="sticker bg-peach px-5 py-6 mt-7">
-          <h1 className="font-display font-black text-[27px] leading-[1.14] text-ink -rotate-[0.5deg]">
-            See what your friends are cooking today — and ask for the recipe behind any of it.
-          </h1>
-        </div>
+        {/* THE TITLE. Both sides of the product — what you see, and what you get — in one sentence a
+            stranger can picture. BARE, not on a colour block: it is this page's heading, and a
+            heading in a sticker competes with the two sample cards below, which are the things that
+            should carry the colour. The rotation went with the box for the same reason a tilt reads
+            as deliberate on a sticker and as a mistake on plain text. */}
+        <h1 className="font-display font-black text-[29px] leading-[1.1] text-ink mt-8">
+          See what your friends are cooking today — and ask for the recipe behind any of it.
+        </h1>
 
-        {/* ...and what ARRIVES, which is the payload POSITIONING keeps as the point. One sentence,
-            not a paragraph. */}
-        <p className="font-sans text-[15.5px] leading-relaxed text-ink mt-5">
-          They write it down once and it comes straight to you —{' '}
-          <strong className="font-display font-black">
-            the dish the way they actually make it
-          </strong>
-          .
+        {/* THE DEMONSTRATION. Everything the three feature cards used to assert, shown instead —
+            which is why there are now two short lines of copy here rather than four paragraphs. */}
+        <MealGlimpse className="mt-7" />
+
+        {/* The cause and effect, in one line — the whole mechanic. In DISPLAY weight, not body: it
+            sits between two bold sticker cards and the first version's 14.5px sans was overshadowed
+            by them, which made the one line that explains the sequence read as filler. */}
+        <p className="font-display font-black text-[17px] leading-tight text-ink text-center mt-4 mb-4">
+          You ask. They answer — and this is what arrives:
         </p>
 
-        {/* The OTHER side of the product, named so this does not read as an app for receiving only.
-            Both halves are real routes: the meal composer and the recipe form. */}
-        <p className="font-sans text-[15.5px] leading-relaxed text-ink-soft mt-3">
+        {/* ...and the recipe itself, which SHOWS the two things that are genuinely different here:
+            an amount left in the cook's own words, and the remark an ingredient list can't hold. No
+            claim needed; it is on the screen. */}
+        <RecipeGlimpse />
+
+        {/* THE OTHER SIDE, in one line so this does not read as an app for receiving only. Display
+            weight for the same reason as the caption above — it follows a strong card and has to
+            survive the comparison. Both halves are real routes: the meal composer and the form. */}
+        <p className="font-display font-bold text-[16px] leading-snug text-ink mt-7">
           Post your own, or finally write down the one people keep asking you for.
         </p>
 
-        <ul className="mt-7 space-y-3">
-          {FEATURES.map(({ tint, heading, body }) => (
-            <li key={heading} className={`sticker ${tint} px-4 py-3.5`}>
-              <p className="font-display font-black text-[15.5px] leading-snug text-ink">
-                {heading}
-              </p>
-              <p className="font-sans text-[13.5px] leading-relaxed text-ink mt-1">
-                {body}
-              </p>
-            </li>
-          ))}
-        </ul>
-
         {/* "Open your kitchen" is signup's own submit label, so the button and the screen it leads to
-            agree — a landing CTA that renamed the act would teach a word the next screen does not
-            know. `?tab=signup` lands on the form, because someone arriving from a referral has no
+            agree. `?tab=signup` lands on the form, because someone arriving from a referral has no
             account yet. */}
         <Link
           to="/login?tab=signup"
-          className="btn-primary !mt-7 block text-center no-underline"
+          className="btn-primary !mt-5 block text-center no-underline"
         >
           Open your kitchen
         </Link>
 
-        {/* The one promise that answers "why would I bother?" — and it is the capability-token model,
-            not a marketing line: `GET /recipes/invite/{token}` returns the whole recipe with no
-            account. Placed under the CTA where it lowers the cost of the tap. */}
-        <p className="font-sans text-[13px] text-center text-ink-soft mt-2.5">
-          A recipe someone sends you opens with no account at all.
-        </p>
-
-        {/* Sign-in stays one labelled tap away: this page is what an anonymous visitor to `/` gets,
-            so a returning user who just typed the address must not have to hunt. */}
+        {/* NO "opens with no account at all" line here, deliberately (owner's call). It is true and
+            it is the capability-token model — but it is more text on a page whose whole problem was
+            text, and it answers a question this visitor has not asked: they were REFERRED, not sent
+            a recipe, so there is no link in their hand for the promise to be about. Someone who
+            actually receives one discovers it by opening it, which is the intuitive path. It still
+            appears where it earns its place: on the unfurl card (`services/invite_og.py`). */}
         <p className="font-sans text-[14px] text-center text-ink-soft mt-4">
           Already have an account?{' '}
           <Link to="/login" className="text-terra font-semibold underline">

@@ -3,15 +3,13 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import Landing from './Landing'
 
-// The public landing page — the screen a REFERRED STRANGER lands on, and until #111 the app had no
-// such screen at all: every public route but an invite link led to a sign-in form that never said
-// what issei is.
+// The public landing page — what a REFERRED STRANGER lands on. Until #111 the app had no such screen:
+// every public route but an invite link led to a sign-in form that never said what issei is.
 //
-// Rewritten with the page after owner review. The first version led with POSITIONING's one-liner,
-// which describes the FOUNDING moment and therefore only the side where you RECEIVE — so these now
-// pin that the summary covers BOTH sides, that the three features are the ones the product actually
-// turns on, and that the page is colour-blocked rather than a wall of text. The POSITIONING guard
-// stays, because a marketing surface is the likeliest place in the app for an overclaim.
+// Rewritten twice with the page. What these pin is that it SHOWS the product rather than describing
+// it, because that is the lesson this project already paid for once: `RecipeGlimpse` exists because
+// "two rounds of user testing still asked 'what's the point of this app?'" while reading a text
+// explanation. A future edit that turns the samples back into bullet points fails here.
 
 const renderLanding = () =>
   render(
@@ -20,81 +18,83 @@ const renderLanding = () =>
     </MemoryRouter>,
   )
 
+// The page's OWN copy — everything a stranger has to READ — excluding the two sample cards, which are
+// looked at rather than read. Measuring `container.textContent` would count the sample recipe's
+// ingredient names against the prose budget and reward deleting the demonstration.
+const proseOf = (container) =>
+  [...container.querySelectorAll('h1, p')]
+    .filter((el) => !el.closest('figure'))
+    .map((el) => el.textContent)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 describe('Landing', () => {
   it('summarises BOTH sides of the product, not one use case', () => {
-    // The owner's note: the first version described "someone cooked you something you'd never had
-    // before" — true, the founding moment, and only half the app. A stranger has to learn that they
-    // can SEE what friends cook AND get the recipe, in the first sentence.
+    // The first version led with POSITIONING's one-liner — the FOUNDING moment, and so only the side
+    // where you RECEIVE. A stranger has to learn in the first sentence that they can SEE what friends
+    // cook AND get the recipe.
     renderLanding()
-    const h1 = screen.getByRole('heading', {
-      name: /see what your friends are cooking today.*ask for the recipe/i,
-    })
-    expect(h1).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        name: /see what your friends are cooking today.*ask for the recipe/i,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('SHOWS the mechanic instead of asserting it', () => {
+    // The round-2 fix. This page used to claim three features in prose; two of those claims described
+    // exactly what `RecipeGlimpse` already renders. Now the middle of the page is a sample meal with
+    // an ask, and the recipe that arrives — post, ask, receive, as a picture.
+    const { container } = renderLanding()
+    // Two sample cards, both <figure> (MealGlimpse + RecipeGlimpse).
+    expect(container.querySelectorAll('figure')).toHaveLength(2)
+    // The ASK is visible ON THE SAMPLE CARD, which is the act the whole product turns on and the one
+    // thing no other recipe app has. Scoped to the figure because the headline says "ask for the
+    // recipe" too — and that duplication is the point: the h1 promises it, the card shows it.
+    const [meal] = container.querySelectorAll('figure')
+    expect(meal.textContent).toMatch(/ask for the recipe/i)
+    // ...and it is NOT an interactive control: a button here is a dead end for someone with no
+    // account, and a screen reader announcing one that does nothing is worse than silence.
+    expect(meal.querySelector('button')).toBeNull()
+    expect(meal.querySelector('a')).toBeNull()
+    // And the cause/effect line that joins the two.
+    expect(screen.getByText(/you ask\. they answer/i)).toBeInTheDocument()
+  })
+
+  it('shows the two things that are actually different, rather than claiming them', () => {
+    // Both come from `RecipeGlimpse`, which is the point: the measurements pill and the step note are
+    // on screen, so the page needs no sentence asserting them.
+    renderLanding()
+    expect(screen.getByText(/3 soup spoons/i)).toBeInTheDocument()
+    expect(screen.getByText(/their way/i)).toBeInTheDocument()
+    expect(screen.getByText(/a note on this step/i)).toBeInTheDocument()
   })
 
   it('names the other side too — posting and writing, not just receiving', () => {
-    // Without this the page reads as an app for consuming other people's recipes, and nobody would
-    // know they could bring their own.
     renderLanding()
     expect(screen.getByText(/post your own/i)).toBeInTheDocument()
-    expect(screen.getByText(/write down the one people keep asking you for/i)).toBeInTheDocument()
-  })
-
-  it('RESOLVES the hook into what actually arrives, in that order', () => {
-    // POSITIONING §"The feed and the handoff: one product": the feed is the top of the funnel, the
-    // handoff is the payload. The hook may lead, but the page must not stop there — otherwise it
-    // sells a photo-sharing app and then hands someone a recipe app.
-    const { container } = renderLanding()
-    const text = container.textContent
-    const hook = text.indexOf('See what your friends are cooking')
-    const payload = text.indexOf('the dish the way they actually make it')
-    expect(hook).toBeGreaterThanOrEqual(0)
-    expect(payload).toBeGreaterThan(hook)
-  })
-
-  it('leads the features with ASKING, the verb the product turns on', () => {
-    // The ask is issei's fourth first-class act (#79) and the only one no other recipe app has. It
-    // goes first because it is what turns looking at a photo into having the recipe.
-    renderLanding()
-    const headings = screen
-      .getAllByRole('listitem')
-      .map((li) => li.textContent)
-    expect(headings[0]).toMatch(/ask for any recipe/i)
-  })
-
-  it('highlights the three features the product is actually differentiated by', () => {
-    renderLanding()
-    // 1. the ask
-    expect(screen.getAllByText(/ask for any recipe/i).length).toBeGreaterThan(0)
-    // 2. a note on the step it belongs to
-    // getAllBy: the <li> and its heading <p> both contain this text.
-    expect(screen.getAllByText(/notes on the steps that matter/i).length).toBeGreaterThan(0)
-    expect(screen.getByText(/step it belongs to/i)).toBeInTheDocument()
-    // 3. the measurements, kept verbatim — the claim the whole quantity model exists to keep
-    expect(screen.getAllByText(/their measurements, kept/i).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/a good splash/i).length).toBeGreaterThan(0)
+    expect(
+      screen.getByText(/write down the one people keep asking you for/i),
+    ).toBeInTheDocument()
   })
 
   it('USES THE PALETTE — it is not a black-and-white wall of text', () => {
-    // The owner's third note, and the most mechanical to pin: the first version rendered every block
-    // as `bg-card`, on an app whose entire visual identity is saturated colour blocks. jsdom has no
-    // layout engine so appearance cannot be asserted, but the CLASSES can — and a future edit that
-    // flattens the page back to cream-on-cream fails here.
+    // jsdom has no layout engine so appearance cannot be asserted, but the classes can. A future edit
+    // that flattens this back to cream-on-cream fails here.
     const { container } = renderLanding()
-    for (const tint of ['bg-peach', 'bg-saffron', 'bg-sage']) {
-      expect(container.querySelector(`.${tint}`)).not.toBeNull()
-    }
-    // And the hero itself is a block, not a bare heading.
-    expect(screen.getByRole('heading', { level: 1 }).closest('.sticker')).not.toBeNull()
+    expect(container.querySelector('.bg-peach')).not.toBeNull()
+    // The TITLE is bare, though — owner's call, and the reason is compositional: a heading inside a
+    // sticker competes with the two sample cards, which are the things that should carry the colour.
+    expect(screen.getByRole('heading', { level: 1 }).closest('.sticker')).toBeNull()
   })
 
-  it('stays SHORT — a stranger will not read an essay', () => {
-    // A ceiling rather than a target, and deliberately generous: the point is that a future edit
-    // cannot quietly grow this back into the wall of prose the owner rejected. The first version ran
-    // past 1,100 characters of body copy.
+  it('asks a stranger to READ very little — the samples carry the pitch', () => {
+    // The owner's standing note, twice: too much text. A ceiling on the page's own copy, generous
+    // enough not to be fussy and tight enough that the prose cannot creep back — the first version
+    // ran past 1,100 characters, the second ~900, and showing rather than telling cut it again.
     const { container } = renderLanding()
-    const prose = container.textContent.replace(/\s+/g, ' ').trim()
-    expect(prose.length).toBeLessThan(900)
+    expect(proseOf(container).length).toBeLessThan(560)
   })
 
   it('offers signup as the primary act and sign-in as a labelled second door', () => {
@@ -106,11 +106,27 @@ describe('Landing', () => {
     expect(screen.getByRole('link', { name: /^sign in$/i })).toHaveAttribute('href', '/login')
   })
 
-  it('promises the no-account read, which is what makes the tap cheap', () => {
-    // Not a marketing line — the capability-token model: GET /recipes/invite/{token} returns the
-    // whole recipe unauthenticated.
-    renderLanding()
-    expect(screen.getByText(/opens with no account at all/i)).toBeInTheDocument()
+  it('does NOT explain the no-account read here', () => {
+    // Removed on owner review, and the reasoning is a rule rather than a preference: this page's one
+    // problem was text volume, and that line answers a question this visitor has not asked. They were
+    // REFERRED, not sent a recipe, so there is no link in their hand for the promise to be about —
+    // and someone who does receive one finds out by opening it. The claim still lives where it earns
+    // its place, on the unfurl card (`services/invite_og.py`).
+    const { container } = renderLanding()
+    expect(container.textContent).not.toMatch(/no account/i)
+  })
+
+  it('THE SAMPLE MEAL AND THE SAMPLE RECIPE ARE THE SAME DISH', () => {
+    // Not cosmetic — the sequence breaks without it. The page says "you ask, they answer, and this is
+    // what arrives"; if the meal is Ana's Sinigang and what arrives is Auntie Ling's pork belly, the
+    // demonstration shows a different dish from a different person arriving, which teaches the
+    // opposite of the mechanic. Caught on review of the first version.
+    const { container } = renderLanding()
+    const [meal, recipe] = container.querySelectorAll('figure')
+    expect(meal.textContent).toMatch(/Auntie Ling/)
+    expect(recipe.textContent).toMatch(/Auntie Ling/)
+    expect(meal.textContent).toMatch(/Braised pork belly/)
+    expect(recipe.textContent).toMatch(/Braised pork belly/)
   })
 
   it('glosses the name, because a referred person has never seen the word', () => {
@@ -120,10 +136,9 @@ describe('Landing', () => {
   })
 
   it('does NOT claim a friend can reach ANY recipe of theirs', () => {
-    // The owner's note asked for "access any of their recipes" and it is FALSE: `can_view` gives a
-    // friend your `public` + `friends` recipes and never your `private` ones, and the recipe behind a
-    // post arrives by ASKING. Overclaiming here would be a promise the app refuses on the next
-    // screen — so the page sells the ask instead, which is true and is the better sell anyway.
+    // A review asked for "access any of their recipes" and it is FALSE: `can_view` withholds `private`
+    // recipes, and the recipe behind a post arrives by ASKING. Overclaiming here would be a promise
+    // the app refuses one screen later.
     const { container } = renderLanding()
     const text = container.textContent
     expect(text).not.toMatch(/any of their recipes/i)
@@ -141,18 +156,13 @@ describe('Landing', () => {
       /\baudio\b/i,
       /listen/i,
       /in (their|your|his|her)( own)? words/i,
-      // no lineage / family tree
       /family tree/i,
       /lineage/i,
       /generation(s|al)\b/i,
-      // the removed Remix model, reachable by wording alone
       /make it yours/i,
       /\bremix/i,
-      // a recipient cannot edit, and no like button exists
       /\blike button/i,
-      // nothing expires
       /expires?\b/i,
-      // never promise the unbuilt
       /shopping list/i,
       /convert.{0,12}units/i,
       /\bcomment/i,
