@@ -16,9 +16,26 @@ describe('defaultReferralMessage', () => {
     // handoff is the payload. A message that stopped at the hook would sell a photo app.
     const body = defaultReferralMessage()
     const hook = body.indexOf('Curious what your friends are cooking')
-    const payload = body.indexOf('sends you the recipe')
+    const payload = body.indexOf('the dish the way they really make it')
     expect(hook).toBe(0)
     expect(payload).toBeGreaterThan(hook)
+  })
+
+  it('summarises BOTH sides, matching the page it lands on', () => {
+    // The owner's note applied to the share text too: the first version framed issei as the thing
+    // that sends you a recipe you already tasted — the founding moment, and only half the product.
+    // This message and `Landing.jsx` are one tap apart and must describe the same app.
+    const body = defaultReferralMessage()
+    expect(body).toMatch(/see what people are actually making/i)
+    expect(body).toMatch(/ask them for the recipe/i)
+  })
+
+  it('does NOT claim access to any recipe of theirs', () => {
+    // FALSE: `can_view` gives a friend your public + friends recipes, never your private ones, and a
+    // recipe behind a post arrives by ASKING. A referral must not promise what the app refuses.
+    const body = defaultReferralMessage()
+    expect(body).not.toMatch(/any of their recipes/i)
+    expect(body).not.toMatch(/all (of )?their recipes/i)
   })
 
   it('carries the fidelity promise, which is the actual differentiator', () => {

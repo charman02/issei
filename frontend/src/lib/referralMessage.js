@@ -21,11 +21,19 @@
 export const REFERRAL_URL = 'https://issei.app'
 
 export function defaultReferralMessage() {
+  // BROADENED with the landing page, on the same owner note: the first version said "it's how
+  // someone sends you the recipe for the thing you just tasted", which is the FOUNDING moment and so
+  // describes only the side where you RECEIVE. This text and the page a tap later must summarise the
+  // same product, or the message sells one thing and the destination shows another.
+  //
+  // "ask them for it" rather than "get any of their recipes", and that is a correctness point rather
+  // than a style one: `can_view` gives a friend your `public` + `friends` recipes and never your
+  // `private` ones, and the recipe behind a post arrives by ASKING. The ask is also the better sell.
   return (
     'Curious what your friends are cooking today?\n\n' +
-    'I’m on issei — it’s how someone sends you the recipe for the thing you just ' +
-    'tasted. Not a scrubbed list of grams: the dish the way they actually make it, with ' +
-    '“a good splash” left as “a good splash.”'
+    'I’m on issei — you see what people are actually making and can ask them for the ' +
+    'recipe behind any of it. Not a scrubbed list of grams: the dish the way they really ' +
+    'make it, with “a good splash” left as “a good splash.”'
   )
 }
 
