@@ -37,7 +37,15 @@ export default function MealGlimpse({ className = '' }) {
       </div>
 
       <div className="px-4 py-3">
-        {/* Attribution in plum, which is reserved app-wide for a person's name. */}
+        {/* THE ONE DELIBERATE DEVIATION FROM THE REAL POST SURFACE, and a docs gate is right that it
+            is one: `PostCard` renders its author as an avatar plus a plain ink name, and plum is
+            reserved app-wide for a RECIPE's byline (`origin_attribution`) rather than a post's
+            author. It is kept anyway, because what round 3 fixed was that the two sample cards must
+            read as ONE sequence — the same dish, the same cook — and matching the byline idiom is
+            part of what makes them read that way rather than as two unrelated pictures. Tightening
+            this toward `PostCard` would weaken the thing the round-3 fix bought. Everything else
+            here is verbatim real: "Ask for the recipe" is `PostCard`'s own label, and the control
+            appears exactly where it does on a post whose recipe you cannot read. */}
         <p className="text-[12.5px] leading-none">
           <span className="font-sans text-ink-soft/80">from </span>
           <span className="font-display font-bold italic text-plum">Auntie Ling</span>
@@ -46,14 +54,26 @@ export default function MealGlimpse({ className = '' }) {
           Braised pork belly
         </p>
 
-        {/* THE ASK, shown as the app renders it. Not interactive — see the note above. */}
+        {/* THE ASK. `bg-saffron text-ink` and the exact label, matching `PostCard.jsx`'s live control
+            rather than approximating it — the first version used `bg-terra text-cream`, which would
+            have taught a stranger to look for a terra pill and hand them a saffron one after signup.
+            A ship gate caught it. Not interactive; see the note above. */}
         <span
           aria-hidden="true"
-          className="inline-block mt-2.5 font-display font-bold text-[12.5px] text-cream bg-terra border-2 border-ink rounded-full px-3 py-1 leading-tight shadow-[0_2px_0_#2E3A24]"
+          className="inline-block mt-2.5 font-display font-bold text-[13px] text-ink bg-saffron border-2 border-ink rounded-full px-3.5 py-1.5 leading-tight shadow-[0_2px_0_#2E3A24]"
         >
           Ask for the recipe
         </span>
       </div>
+
+      {/* AN ACCESSIBLE NAME, because without one a screen reader announces this card's contents as
+          though they were real content in the app rather than an illustration — and the decorative
+          `Wordmark` in the photo field reads out a stray "issei." mid-card. `sr-only` so it costs
+          nothing visually. A ship gate found this, and it matters here more than on `/welcome`
+          because this is the first PUBLIC surface either sample has appeared on. */}
+      <figcaption className="sr-only">
+        An example of a meal someone shared on issei.
+      </figcaption>
     </figure>
   )
 }

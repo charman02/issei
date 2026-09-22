@@ -19,15 +19,22 @@ const renderLanding = () =>
   )
 
 // The page's OWN copy — everything a stranger has to READ — excluding the two sample cards, which are
-// looked at rather than read. Measuring `container.textContent` would count the sample recipe's
-// ingredient names against the prose budget and reward deleting the demonstration.
-const proseOf = (container) =>
-  [...container.querySelectorAll('h1, p')]
-    .filter((el) => !el.closest('figure'))
-    .map((el) => el.textContent)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+// looked at rather than read. Measuring raw `container.textContent` would count the sample recipe's
+// ingredient names against the prose budget and so reward deleting the demonstration.
+//
+// EVERY TEXT NODE outside a `<figure>`, not just `h1, p`. A ship gate caught the narrower version as a
+// loophole for exactly the markup round 2 removed: the three deleted feature cards were a `<ul>` of
+// `<li>`, so restoring them would have added ~450 characters of prose and still passed a selector that
+// only looks at headings and paragraphs. A budget that ignores the shape prose is most likely to come
+// back in is not a budget.
+const proseOf = (container) => {
+  const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const out = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!n.parentElement?.closest('figure')) out.push(n.textContent)
+  }
+  return out.join(' ').replace(/\s+/g, ' ').trim()
+}
 
 describe('Landing', () => {
   it('summarises BOTH sides of the product, not one use case', () => {
@@ -58,6 +65,9 @@ describe('Landing', () => {
     // account, and a screen reader announcing one that does nothing is worse than silence.
     expect(meal.querySelector('button')).toBeNull()
     expect(meal.querySelector('a')).toBeNull()
+    // ...nor focusable by any other route: an onClick span or a [tabindex] would have passed the
+    // two checks above while still being a dead end for someone with no account.
+    expect(meal.querySelector('[tabindex]')).toBeNull()
     // And the cause/effect line that joins the two.
     expect(screen.getByText(/you ask\. they answer/i)).toBeInTheDocument()
   })
@@ -103,10 +113,15 @@ describe('Landing', () => {
     // recommending something. The page had three — the title, the cause-and-effect caption, and
     // `IsseiMeaning`'s gloss. Both of the page's own are gone (the title takes a comma, the caption
     // became three beats), leaving the shared gloss: it is one source for the word across this page,
-    // Login and InviteLanding, so rewriting it here would edit two other screens.
+    // `InviteLanding` and `Welcome`, so rewriting it here would edit two other screens.
     //
     // Counted on the RENDERED text, not the source, because that is what a visitor sees — and because
     // the file's own explanatory comments are full of them and must not count.
+    //
+    // KNOW THE BLAST RADIUS: this couples Landing's test to two SHARED components. `IsseiMeaning`
+    // supplies the one permitted dash and `RecipeGlimpse` is also rendered by `Welcome`, so if
+    // either gains a dash this fails and the only fix edits a component other screens render. That
+    // is correct for a rule about rendered copy, but it is not a local test. Only U+2014 is counted.
     const { container } = renderLanding()
     const emDashes = (container.textContent.match(/—/g) || []).length
     expect(emDashes).toBeLessThanOrEqual(1)
@@ -127,8 +142,12 @@ describe('Landing', () => {
     // REFERRED, not sent a recipe, so there is no link in their hand for the promise to be about —
     // and someone who does receive one finds out by opening it. The claim still lives where it earns
     // its place, on the unfurl card (`services/invite_og.py`).
+    // BOTH wordings, because the guard exists to keep the CLAIM out, not one phrasing of it: round 1
+    // said "read it without making an account" and round 2 "opens with no account at all". A gate
+    // pointed out the narrow version would have let round 1's sentence back in.
     const { container } = renderLanding()
     expect(container.textContent).not.toMatch(/no account/i)
+    expect(container.textContent).not.toMatch(/without (making|an) account/i)
   })
 
   it('THE SAMPLE MEAL AND THE SAMPLE RECIPE ARE THE SAME DISH', () => {

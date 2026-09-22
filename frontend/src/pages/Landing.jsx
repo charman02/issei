@@ -49,9 +49,11 @@ import RecipeGlimpse from '../components/RecipeGlimpse'
 // effect caption, and `IsseiMeaning`'s gloss. The two that went are mine: the title takes a comma
 // ("cooking today, and ask for…") and the caption became three beats ("You ask. They answer. This is
 // what arrives:"), which is punchier than the dash was anyway. The survivor is `IsseiMeaning`'s,
-// deliberately — it is a SHARED component (this page, Login, InviteLanding), its wording is a single
+// deliberately — it is a SHARED component (this page, `InviteLanding`, `Welcome`), its wording is one
 // source so the gloss cannot drift between the places someone first meets the word, and rewriting it
-// to satisfy a rule about this page would edit two other screens. A test pins the ceiling.
+// to satisfy a rule about this page would edit two other screens — `InviteLanding` and `Welcome`.
+// (An earlier version of this note said "Login", which does not import it at all. A docs gate
+// caught that; the reasoning holds, the list was wrong.) A test pins the ceiling.
 //
 // ONE CLAIM THIS PAGE DELIBERATELY DOES NOT MAKE, though a review asked for it: "access any of their
 // recipes". It is false — `can_view` gives a friend your `public` + `friends` recipes and never your
@@ -65,7 +67,12 @@ export default function Landing() {
     <div className="min-h-screen bg-cream">
       <div className="max-w-app mx-auto px-[18px] py-9">
         <div className="text-center">
-          <Wordmark className="text-[30px]" />
+          {/* SCALED, not re-sized with a `text-[…]` class: `Wordmark` already applies `text-[26px]`
+              via its own size prop, and a second font-size class of equal specificity only wins on
+              Tailwind's emission order — which happens to favour 30px over 26px today and would
+              silently lose for anything smaller. `InviteLanding` uses a transform for the same
+              reason. A ship gate caught the fragility. */}
+          <Wordmark className="scale-[1.15] origin-center" />
         </div>
 
         {/* THE TITLE. Both sides of the product — what you see, and what you get — in one sentence a
