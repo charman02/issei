@@ -51,10 +51,37 @@ strangers arrive. Security/privacy first.
   findability is not covered.** Instagram does not claim it either. That is a copy rule, not
   a code gap — see POSITIONING.
 
-- **No rate limiting anywhere.** `app/main.py` mounts only `CORSMiddleware`. Not created by
-  the directory, but the directory makes bulk name harvesting a single loop, and
-  `POST /auth/login`, `POST /auth/forgot-password` and **`POST /posts/{id}/request`** are equally unthrottled — the last one is a write into someone else's inbox, which is why its notification is deduped while unread. *Why flagged:*
-  it's the cheapest thing that turns an accepted disclosure into an abuse vector.
+- **Rate limiting: four things accepted rather than fixed (2026-09-21).** All four were raised by
+  the ship gate and each is a deliberate stop, recorded so nobody re-derives them:
+  1. **A distributed attacker still spends one bcrypt per guess.** The per-account limit bounds their
+     PROGRESS, not their LOAD, because a correct password must never be refused — so the CPU
+     protection is the per-address limit, which an address-rotating caller sidesteps. Closing this
+     needs a WAF at the edge, not code; `infra/README.md` item 3 is re-justified on exactly this.
+  2. **LRU eviction can flush a victim's `login:account:` bucket.** `_touch` creates a map entry per
+     distinct submitted email, so churning `MAX_TRACKED_KEYS` (20,000) keys evicts a victim's bucket
+     and frees 10 more guesses. ~2,000 requests per freed guess, and the per-address limit still
+     binds, so it is not a practical bypass — but the eviction policy is documented as safe and this
+     is the case it does not cover. (The reverse is impossible: a caller cannot evict their OWN
+     bucket, since every limited route `move_to_end`s it to most-recently-used.)
+  3. **`POST /feedback` and the two `/upload` routes are unlimited.** Both cost money per call (SES;
+     Cloudinary quota) and both are authenticated, so they are the same shape as `/recipes/parse`
+     before it got `PARSE_PER_USER`. Left out of scope deliberately — the scope was credentials,
+     tokens and the LLM — so this is the honest place for them rather than a comment nobody reads.
+  4. **A 429 on `/recipes/parse` is swallowed by `PasteRecipe`'s bare `catch {}`** and falls through
+     to the local line parser. That is CORRECT and consistent with the route's "never fail recipe
+     capture" contract — noted so nobody later "fixes" it into a blocking error and turns a graceful
+     degrade into a wall. It does mean `what="recipes parsed"` is copy no user will ever see.
+
+- **~~No rate limiting anywhere~~ — CLOSED for credentials, OPEN for the social writes
+  (2026-09-21).** `app/services/rate_limit.py` now bounds login, signup, forgot-password,
+  reset-password, the invite-token read/claim pair, the push-rotate write, the cron trigger
+  and `/recipes/parse`. What remains unthrottled is the part the DIRECTORY created:
+  **`GET /friends/discover`**, where bulk name harvesting is still a single loop, and
+  **`POST /posts/{id}/request`**, a write into someone else's inbox — which is why that
+  notification is deduped while unread, a mitigation that bounds the inbox and not the
+  request rate. *Why still flagged:* the cheapest remaining thing that turns an accepted
+  disclosure into an abuse vector. Both are per-user rather than per-address problems, so
+  they want a different key than anything shipped so far.
 
 - **Authorization is application-level, not query-level — the single most important
   thing to understand.** Read endpoints fetch the row by id, THEN call `can_view` /
@@ -413,10 +440,13 @@ strangers arrive. Security/privacy first.
   *Where:* `app/routers/recipes.py` (`browse_recipes`), `app/routers/posts.py` (`browse_posts`);
   frontends `frontend/src/pages/Browse.jsx`.
 
-- **JWT has no revocation, and login isn't rate-limited.** Tokens are valid until they
-  expire no matter what; changing/resetting a password does NOT log out existing sessions,
-  and nothing throttles password guessing. *Why flagged:* standard for v1, but real gaps
-  to close before scale — "I was hacked, I changed my password" won't evict an attacker.
+- **JWT has no revocation.** (The "and login isn't rate-limited" half of this entry was
+  closed on 2026-09-21 — see `app/services/rate_limit.py`; password guessing is now bounded
+  at 10 failures per account and 30 per address per 15 minutes.) Tokens are still valid until
+  they expire no matter what, and changing/resetting a password does NOT log out existing
+  sessions. *Why flagged:* standard for v1, but a real gap to close before scale — "I was
+  hacked, I changed my password" won't evict an attacker, and rate limiting does nothing
+  about a token already stolen.
   *Where:* `app/auth.py` (`create_access_token`, `get_current_user`); `app/routers/auth.py`
   (login, `update_me`, `reset_password`).
 
@@ -500,9 +530,12 @@ imminent scaling risk.
 ### LLM layer
 
 - **LLM cost & latency are per-call and user-facing, with no cap.** Each `/recipes/parse`
-  spends money and the user waits (up to 45s client / 25s server timeout); there's no
-  caching or rate-limiting beyond requiring login. A burst of parses = a burst of spend with
-  no ceiling in code. *Why flagged:* a cost/abuse surface to watch as usage grows. *Where:*
+  spends money and the user waits (up to 45s client / 25s server timeout). **There is a
+  ceiling in code now** — `rate_limit.PARSE_PER_USER`, 20 an hour keyed per USER rather than
+  per address, since the route has a session and the spender is therefore known (2026-09-21).
+  Still **no caching**, so the same text pasted twice is paid for twice, and the per-hour cap
+  bounds one account rather than total spend across many. *Why flagged:* a cost surface to
+  watch as usage grows, now bounded rather than open-ended. *Where:*
   `app/services/recipe_ai.py` (`extract_recipe`); `frontend/src/api/client.js` (timeout).
 
 - **LLM failures are invisible — silent fallback to a weaker parser.** When the model is

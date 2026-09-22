@@ -212,6 +212,34 @@ describe('InviteLanding', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
   })
 
+  it('names the WAIT on a 429, and offers no retry that could not work', async () => {
+    // Rate limiting (2026-09-21). Before this branch existed a 429 fell through to the generic
+    // "Something went wrong opening this recipe" WITH a Try again button — and that button fails
+    // identically for up to fifteen minutes, because the limiter deliberately does not count a
+    // refused call and so does not free a slot early. Tap, fail, tap, fail, conclude the sender's
+    // link is broken: exactly the outcome `describeFailure`'s own comment exists to prevent, on the
+    // one page whose visitor has no account and no support path.
+    //
+    // The server names the wait in `detail`; this asserts the page SHOWS it rather than replacing it
+    // with a generic sentence. Login, ForgotPassword and ResetPassword already got this for free via
+    // `toUserMessage`; this page has its own handler, which is how it missed out.
+    getInvitePreview.mockRejectedValueOnce({
+      response: { status: 429, data: { detail: 'Too many attempts. Try again in 12 minutes.' } },
+    })
+    renderAt('/invite/abc123')
+    await waitFor(() =>
+      expect(screen.getByText(/try again in 12 minutes/i)).toBeInTheDocument(),
+    )
+    // Must NOT read as a dead link — the link is fine, the network it arrived on is busy.
+    expect(screen.queryByText(/no longer/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/expired/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+    // And no button, because the wait IS the answer.
+    expect(
+      screen.queryByRole('button', { name: /try again/i }),
+    ).not.toBeInTheDocument()
+  })
+
   it('offers a RETRY when the server is up but broken (5xx)', async () => {
     getInvitePreview.mockRejectedValueOnce({ response: { status: 503 } })
     renderAt('/invite/abc123')

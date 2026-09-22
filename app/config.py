@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 
 # Words that mean "switch it off" / "leave it on" for `PROMPT_SCHEDULER_INTERVAL_SECONDS`. The
@@ -152,6 +152,53 @@ class Settings(BaseSettings):
             # still raises, deliberately: `600s` or `ten` is a typo to fix, not an intention to
             # obey.
             return 0
+        return v
+
+    # RATE LIMITING (`services/rate_limit.py`). On by default — a security control that ships
+    # disabled is the "setting nothing reads" defect this codebase keeps deleting.
+    #
+    # THE OFF SWITCH IS THE POINT. Every other failure in this app degrades quietly; a rate limiter
+    # that misfires locks real people out of their own accounts, and the person finding that out is
+    # the owner reading a message from a user who cannot sign in. So it is wired into BOTH
+    # `.aws/task-definition.json` and `infra/lib/issei-stack.ts` (pinned by
+    # `tests/test_deploy_config.py`) and can be turned off by hand on a task revision without a code
+    # change — with the same caveat that applies to the scheduler interval: the SERVICE holds a
+    # concrete revision, so it also needs `aws ecs update-service --task-definition <family>:<rev>
+    # --force-new-deployment`, and the next merge to main restores whatever the committed JSON says.
+    rate_limit_enabled: bool = True
+    # HOW MANY APPENDING PROXIES SIT IN FRONT of the app. 1 = the ALB and nothing else, which is
+    # today. This is not a tuning knob, it is a statement about the network, and getting it wrong
+    # breaks the limiter in one of two directions — see `rate_limit.client_ip` for both. Put
+    # CloudFront in front and this becomes 2; run with nothing in front and it must be 0, because
+    # with no proxy to append the real address every byte of `X-Forwarded-For` is attacker-written.
+    #
+    # BOUNDED, because BOTH out-of-range values fail SILENTLY and in opposite directions — a ship gate
+    # pointed out that `-1` was accepted and aliases 0 (ignore the header → every caller in the ALB's
+    # single bucket → the first attacker locks out the whole app), while `99` was accepted and clamps
+    # to index 0 (→ trusts the attacker-written end of the header → nothing is limited). Neither
+    # raised. 4 is a generous ceiling: nobody stacks five appending proxies in front of this app, and
+    # a value that high is a typo rather than an architecture.
+    trusted_proxy_hops: int = Field(default=1, ge=0, le=4)
+
+    @field_validator("rate_limit_enabled", "trusted_proxy_hops", mode="before")
+    @classmethod
+    def _blank_means_the_default(cls, v, info):
+        """The same landmine as `prompt_scheduler_interval_seconds`, on the same kind of field.
+
+        A blank value raised at `app.config` IMPORT, which takes down the API container and the
+        `alembic upgrade head` task together. Clearing a field is the instinctive way to switch
+        something off, and this pair is documented as exactly that — so blank meant total outage on
+        the control an operator reaches for while something is already going wrong.
+
+        Pydantic already parses a generous bool vocabulary (`true/false`, `yes/no`, `on/off`, `1/0`),
+        so only the empty case needs handling here; `trusted_proxy_hops` gets the same treatment
+        because it is an int and has the identical failure. Garbage still raises, deliberately — a
+        typo is to fix, not to obey.
+        """
+        if v is None:
+            return cls.model_fields[info.field_name].default
+        if isinstance(v, str) and not v.strip():
+            return cls.model_fields[info.field_name].default
         return v
 
     model_config = ConfigDict(env_file=".env", extra="ignore")

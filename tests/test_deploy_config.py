@@ -168,6 +168,19 @@ def _settings_with(raw):
 
 SETTINGS_THAT_MUST_BE_WIRED_AS_PLAIN_ENV = (
     "PROMPT_SCHEDULER_INTERVAL_SECONDS",
+    # The rate limiter's two levers. `RATE_LIMIT_ENABLED` is on this list for the reason the whole
+    # list exists: it is the emergency stop on the one control in this app whose misfire locks real
+    # people out of their own accounts, so "reachable without a code change" is the point of it, and
+    # a default standing in silently for a deliberate value is exactly the failure this file catches.
+    #
+    # `TRUSTED_PROXY_HOPS` is here for a different and stronger reason — it is not a preference, it is
+    # a claim about the network, and BOTH wrong values break the limiter silently. Too low and every
+    # caller is bucketed under the ALB's own address, so one attacker hitting the login limit locks
+    # out every real user; too high and it trusts an attacker-written element of `X-Forwarded-For`, so
+    # every request gets a fresh bucket and the limiter does nothing while looking correct. Neither
+    # shows up in any test that runs without a proxy in front, which is all of them.
+    "RATE_LIMIT_ENABLED",
+    "TRUSTED_PROXY_HOPS",
 )
 
 
@@ -279,6 +292,58 @@ def test_an_ON_word_means_the_DEFAULT_interval_rather_than_crashing(word):
     expected = Settings.model_fields["prompt_scheduler_interval_seconds"].default
     assert _settings_with(word).prompt_scheduler_interval_seconds == expected
     assert _settings_with(word.upper()).prompt_scheduler_interval_seconds == expected
+
+
+# ---------------------------------------------------------------------------------------------
+# THE TWO RATE-LIMIT SETTINGS. `.env.example` claimed the blank-value behaviour on both was
+# "pinned by a test" and it was not — `_settings_with` above only ever passes the scheduler
+# interval, so the shared `_blank_means_the_default` validator shipped with ZERO coverage, on the
+# two fields whose documented purpose is being cleared by hand mid-incident. A ship gate caught the
+# doc asserting a test that did not exist, which in this repo is the finding.
+# ---------------------------------------------------------------------------------------------
+def _limit_settings(**raw):
+    """`Settings` with rate-limit fields supplied as STRINGS, the way an env var arrives."""
+    return Settings(**{"database_url": "sqlite://", "jwt_secret": "x", **raw})
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_a_BLANK_rate_limit_setting_does_not_crash_the_container(blank):
+    """Clearing either field in the ECS console must not take the API down.
+
+    Identical landmine to `PROMPT_SCHEDULER_INTERVAL_SECONDS`: an empty string fails parsing at
+    `app.config` IMPORT, which kills the API container AND the pre-deploy `alembic upgrade head`
+    task together. And clearing a field is the instinctive way to switch something off — on the
+    control an operator reaches for *while* something is already going wrong.
+    """
+    assert _limit_settings(rate_limit_enabled=blank).rate_limit_enabled is True
+    assert _limit_settings(trusted_proxy_hops=blank).trusted_proxy_hops == 1
+
+
+@pytest.mark.parametrize(
+    "word,expected",
+    [("false", False), ("no", False), ("off", False), ("0", False), ("FALSE", False),
+     ("true", True), ("yes", True), ("on", True), ("1", True), ("On", True)],
+)
+def test_the_rate_limit_off_switch_accepts_the_words_an_operator_reaches_for(word, expected):
+    assert _limit_settings(rate_limit_enabled=word).rate_limit_enabled is expected
+
+
+@pytest.mark.parametrize("bad", ["-1", "5", "99", "banana", "1.5"])
+def test_trusted_proxy_hops_REFUSES_a_value_that_would_break_the_limiter_silently(bad):
+    """Both out-of-range directions fail SILENTLY, which is why this field is bounded [0, 4].
+
+    `-1` aliases 0 — ignore the header — so every caller lands in the ALB's single bucket and the
+    first attacker to hit the login limit locks out every real user. `99` clamps to index 0, i.e.
+    the attacker-written end of the header, so nothing is limited at all while everything looks
+    correct. Neither raised before a ship gate pointed it out; both now do.
+    """
+    with pytest.raises(ValidationError):
+        _limit_settings(trusted_proxy_hops=bad)
+
+
+@pytest.mark.parametrize("good", ["0", "1", "2", "4"])
+def test_trusted_proxy_hops_accepts_every_realistic_topology(good):
+    assert _limit_settings(trusted_proxy_hops=good).trusted_proxy_hops == int(good)
 
 
 @pytest.mark.parametrize("junk", ["600s", "ten", "1e3", "null", "6 0 0", "-"])

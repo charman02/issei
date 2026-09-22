@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from app.models.handoff import Handoff
 from app.models.password_reset import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse, AccountUpdate
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.services import rate_limit
 from app.services.email import send_password_reset_email
 from app.services.media import require_our_image_url
 
@@ -31,7 +32,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def signup(user_in: UserCreate, db: Session = Depends(get_db)):
+def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
+    # Bounded per address because this route CREATES PUBLIC STATE: since #80 every account is listed
+    # by name in `GET /friends/discover`, so mass signup does not just fill a table, it fills every
+    # real user's directory. Counted per attempt rather than per success — a script probing which
+    # addresses are already registered (this route answers "Email already registered", deliberately)
+    # is the same load and the same abuse.
+    rate_limit.enforce(rate_limit.ip_key(request, "signup"), *rate_limit.SIGNUP_PER_IP)
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
         raise HTTPException(
@@ -64,14 +71,56 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """Exchange credentials for a token.
+
+    THE TWO LIMITS HERE ARE ASYMMETRIC, AND THAT ASYMMETRY IS THE WHOLE DESIGN. Getting it wrong in
+    the obvious direction — one pre-check covering both dimensions — hands every account on the app a
+    remote lockout switch: the addresses are public (#80), so ten deliberate wrong guesses against
+    someone's email would lock that person out of their own account for fifteen minutes, repeatable
+    forever by a script. A safety feature that lets a stranger deny you your account is worse than
+    the brute-force exposure it closes.
+      - PER IP is a PRE-CHECK, refused before the bcrypt comparison runs. bcrypt is deliberately slow
+        (~100ms), so an unbounded attempt rate is a CPU exhaustion vector on a 0.5-vCPU task quite
+        apart from the guessing; refusing early is what actually protects it. An address is the
+        caller's own resource, so cutting it off costs nobody else.
+      - PER ACCOUNT is a POST-CHECK, and only failures count. The password is verified FIRST, so a
+        CORRECT password is never refused no matter how many wrong ones preceded it. The attacker
+        gains nothing (their guesses are all wrong, and they are still cut off), while the account's
+        real owner cannot be locked out by anyone but themselves.
+
+    A distributed attacker rotating addresses against one account still spends a bcrypt per guess —
+    the per-account limit bounds their progress, not their load. Bounding that needs a WAF in front,
+    which is a different purchase; this is recorded as a known edge rather than implied away.
+    """
+    ip_bucket = rate_limit.ip_key(request, "login")
+    account_bucket = rate_limit.account_key("login", form_data.username)
+    rate_limit.refuse_if_over(ip_bucket, *rate_limit.LOGIN_PER_IP)
+
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
+        rate_limit.note_failure(ip_bucket, *rate_limit.LOGIN_PER_IP)
+        rate_limit.note_failure(account_bucket, *rate_limit.LOGIN_PER_ACCOUNT)
+        # Asked AFTER recording, so the attempt that fills the bucket is itself answered with the
+        # wait rather than a 401 that invites one more try. Nothing is lost by that: the password was
+        # wrong either way, and the 429 is the more useful of the two answers.
+        rate_limit.refuse_if_over(account_bucket, *rate_limit.LOGIN_PER_ACCOUNT)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # A SUCCESS CLEARS THE ACCOUNT BUCKET AND DELIBERATELY NOT THE IP ONE. Clearing the account's
+    # failures is right: signing in is positive evidence of ownership, which is what the failure
+    # count was standing in for, so someone who fumbled nine passwords and then remembered is not
+    # left one mistake from a wait. Clearing the IP bucket would be a hole — an attacker holding ONE
+    # valid credential could log into their own account every twenty-nine guesses and reset the
+    # per-address limit forever, which is exactly the limit that protects the CPU.
+    rate_limit.clear(account_bucket)
     token = create_access_token({"sub": str(user.id)})
     return {
         "access_token": token,
@@ -293,12 +342,44 @@ def delete_account(
 
 
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
-def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    request: Request, body: ForgotPasswordRequest, db: Session = Depends(get_db)
+):
     """Request a password-reset email.
 
     Always returns 204 — even when the email is not registered — so the
     response gives no information about which accounts exist.
+
+    THE TIGHTEST PER-ACCOUNT LIMIT IN THE APP, because this is the only route where a stranger can
+    make a THIRD PARTY's phone buzz: the caller names the address and we send mail to it. Unthrottled,
+    that is a harassment channel with someone else's inbox as the target and our SES quota as the
+    fuel. Three an hour is enough for a first email that landed in spam, and useless for flooding.
+
+    BOTH LIMITS ARE CHECKED BEFORE THE ADDRESS IS RESOLVED, which is what keeps the unconditional 204
+    honest. Counting only addresses that exist, or refusing only those, would make the limiter answer
+    the question the 204 exists to refuse — and a 429 that arrives only for real accounts is a
+    cleaner existence oracle than an error message, because it is machine-readable.
     """
+    # THE COPY IS WRITTEN FOR THE PERSON WHO ACTUALLY HITS THIS, which a ship gate pointed out is
+    # almost never an attacker: it is someone whose reset mail went to spam, who clicked "send" three
+    # times in two minutes, and who cannot sign in. "Too many attempts" tells them nothing; naming the
+    # spam folder tells them where the email they already have is. It is UNCONDITIONAL — a real and an
+    # invented address get this identical sentence — so it stays no account-existence oracle, which is
+    # the property the unconditional 204 exists for and the limiter must not undo.
+    #
+    # Worth recording, because it is what makes 3/hr defensible rather than a denial-of-recovery
+    # weapon: an attacker burning a victim's three ALSO DELIVERS a working reset link to that victim,
+    # since this route deletes prior unused tokens and mails a fresh one valid for an hour. So the
+    # tight limit cannot be used to keep someone locked out of their own account.
+    _MAILED = "A reset link is already on its way — check your spam folder."
+    rate_limit.enforce(
+        rate_limit.ip_key(request, "forgot"), *rate_limit.FORGOT_PER_IP, message=_MAILED
+    )
+    rate_limit.enforce(
+        rate_limit.account_key("forgot", body.email),
+        *rate_limit.FORGOT_PER_ACCOUNT,
+        message=_MAILED,
+    )
     user = db.query(User).filter(User.email == body.email).first()
     if not user:
         return
@@ -329,8 +410,18 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
-def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    """Consume a reset token and update the password."""
+def reset_password(
+    request: Request, body: ResetPasswordRequest, db: Session = Depends(get_db)
+):
+    """Consume a reset token and update the password.
+
+    Per address only — there is no account to key on until the token resolves, and keying on the
+    token would give every guess its own fresh bucket, which is the shape of limiter that does
+    nothing. The token is a uuid4 (122 random bits), so guessing was never the realistic threat; this
+    is here so the route cannot be hammered for free, and so the limit exists before someone shortens
+    the token.
+    """
+    rate_limit.enforce(rate_limit.ip_key(request, "reset"), *rate_limit.RESET_PER_IP)
     if len(body.new_password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

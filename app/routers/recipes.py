@@ -2,7 +2,7 @@ from typing import Optional
 import secrets
 from dataclasses import dataclass
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -41,6 +41,7 @@ from app.services.scaling import scale_ingredient
 from app.services.blocks import blocked_ids, is_blocked
 from app.services.media import require_our_image_url
 from app.services import notify_push
+from app.services import rate_limit
 from app.services.notifications import notify
 from app.services.sharing import effective_visibility, can_view
 from app.services.friends import are_friends
@@ -861,12 +862,24 @@ async def parse_recipe_text(
     Auth-gated even though it touches no rows: it spends money per call, so it must not
     be reachable by anyone who happens to find the URL.
 
+    RATE-LIMITED PER USER, and it is the one limit in this app about MONEY rather than safety. The
+    auth gate above stops a stranger spending OpenRouter credits; it does nothing about one signed-in
+    account calling this in a loop, which costs exactly as much. Keyed per USER rather than per
+    address precisely because the route has a session: the spender is known, so the allowance belongs
+    to them rather than to whatever network they share — two housemates writing recipes should not eat
+    into each other's. Twenty an hour is far past anyone typing recipes by hand.
+
     NEVER 500s on the model's account. A missing key, a timeout, a rate limit or
     malformed JSON all return ai=False with empty fields, and the client falls back to
     its own line-based parser. That keeps /add working exactly as it did before this
     endpoint existed, which is the difference between adding a feature and adding a
     dependency.
     """
+    rate_limit.enforce(
+        rate_limit.user_key("parse", current_user.id),
+        *rate_limit.PARSE_PER_USER,
+        what="recipes parsed",
+    )
     try:
         data = await extract_recipe(payload.text)
     except RecipeAIUnavailable:
@@ -1070,7 +1083,13 @@ def accept_handoff(
 
 
 @router.get("/invite/{token}", response_model=InvitePreview)
-def preview_invite(token: str, db: Session = Depends(get_db)):
+def preview_invite(token: str, request: Request, db: Session = Depends(get_db)):
+    # RATE-LIMITED BECAUSE THE TOKEN IS THE CAPABILITY. This route returns a WHOLE recipe with no
+    # account, which makes a correct guess worth more here than anywhere else in the app — so it is
+    # the one place where an unlimited guess rate matters even against a `secrets.token_urlsafe(32)` token. Generous on
+    # purpose (60 in 15 minutes): a real recipient reloads the page, forwards the link, and comes back
+    # to a dish days later, and the person this route exists for must never meet the limit.
+    rate_limit.enforce(rate_limit.ip_key(request, "invite"), *rate_limit.INVITE_READ_PER_IP)
     # Unauthenticated read of a handed-off recipe. The token IS the capability:
     # whoever holds the link was given the dish, so they can read all of it
     # without an account — that's the handoff. What stays out of reach is bounded
@@ -1140,8 +1159,20 @@ class _InviteCard:
 
 
 @router.get("/invite/{token}/preview", response_class=HTMLResponse)
-def preview_invite_card(token: str, db: Session = Depends(get_db)):
+def preview_invite_card(token: str, request: Request, db: Session = Depends(get_db)):
     """Link-preview (Open Graph) HTML for a shared /invite/{token} link.
+
+    LIMITED ON ITS OWN, MUCH LARGER BUDGET (600 per 15 min), and the reasoning corrects a real error.
+    The first version shared the JSON read's 60 — "two doors onto the same secret" — which is sound
+    about the threat and wrong about the traffic. `frontend/vercel.json` uses a REWRITE: Vercel's edge
+    proxies crawler traffic here server-side, so the address the ALB appends is a VERCEL EDGE address
+    and every genuine unfurl for the whole app fans into one bucket. 60 per 15 minutes was therefore
+    an app-wide cap on real link previews, past which every shared recipe unfurls as the generic card
+    — silently, at 200. On the product's signature act. A ship gate found it.
+    A bigger number costs nothing because the token is 256 bits (`secrets.token_urlsafe(32)`): 60 and
+    600 are equally hopeless for a guesser, so these limits bound abuse VOLUME rather than protecting
+    the token, and this door reveals strictly less than the JSON read (OG tags carry the dish name,
+    byline and cover — never ingredients, steps or story).
 
     Crawlers (iMessage, WhatsApp, Slack, …) don't run the SPA's JS, so the recipe's
     OG tags have to be in the raw HTML. Vercel routes ONLY crawler user-agents on
@@ -1156,23 +1187,39 @@ def preview_invite_card(token: str, db: Session = Depends(get_db)):
     site_origin = settings.app_url.rstrip("/")
     recipe = None
     reached = True
-    try:
-        h = db.query(Handoff).filter(Handoff.token == token).first()
-        if h is not None:
-            recipe = (
-                db.query(Recipe)
-                .filter(Recipe.id == h.recipe_id, Recipe.deleted_at == None)
-                .options(selectinload(Recipe.user))
-                .first()
-            )
-        # h is None, or the recipe was deleted → recipe stays None with reached=True
-        # → the builder shows the honest "this link isn't here" card. (Not "expired or moved":
-        #   that copy was removed because nothing in issei expires, and a test forbids the word.)
-    except Exception:
-        # A DB blip: we could NOT confirm the token is gone, so this is distinct from
-        # a 404. reached=False makes the builder show a neutral 'open on issei' card
-        # rather than falsely calling a live link expired.
+    # THE LIMIT HERE DEGRADES INSTEAD OF REFUSING, which is why this is `over_limit` and not the
+    # `enforce` every other route uses. A 429 would satisfy the limiter and break the route's actual
+    # contract — the docstring's "a crawler must NEVER get an error" is about the OUTCOME, and a 429
+    # unfurls as nothing just as surely as a 500 does. That matters in a case that is not
+    # hypothetical: Apple, Meta and Slack crawl from concentrated address ranges, so ONE crawler
+    # address legitimately fetches previews for many different people's links, and a per-address limit
+    # is the wrong shape for them even though it is the right shape for a guesser.
+    #
+    # `reached = False` is the existing neutral-card path (below), and it is the ideal refusal: the
+    # token is never resolved, so a guesser learns nothing about whether it was real, while anyone
+    # who hit the limit honestly still gets a valid "open on issei" card.
+    if rate_limit.over_limit(
+        rate_limit.ip_key(request, "invite-preview"), *rate_limit.INVITE_PREVIEW_PER_IP
+    ):
         reached = False
+    else:
+        try:
+            h = db.query(Handoff).filter(Handoff.token == token).first()
+            if h is not None:
+                recipe = (
+                    db.query(Recipe)
+                    .filter(Recipe.id == h.recipe_id, Recipe.deleted_at == None)
+                    .options(selectinload(Recipe.user))
+                    .first()
+                )
+            # h is None, or the recipe was deleted → recipe stays None with reached=True
+            # → the builder shows the honest "this link isn't here" card. (Not "expired or moved":
+            #   that copy was removed because nothing in issei expires, and a test forbids the word.)
+        except Exception:
+            # A DB blip: we could NOT confirm the token is gone, so this is distinct from
+            # a 404. reached=False makes the builder show a neutral 'open on issei' card
+            # rather than falsely calling a live link expired.
+            reached = False
 
     from_name = _invite_from_name(recipe) if recipe is not None else None
     # Hand the builder a lightweight object carrying just the card fields, so it
@@ -1200,10 +1247,19 @@ def preview_invite_card(token: str, db: Session = Depends(get_db)):
 @router.post("/invite/{token}/claim", response_model=HandoffResponse)
 def claim_invite(
     token: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # KEYED PER ADDRESS RATHER THAN PER USER even though this route has a session, because the threat
+    # is token guessing and an attacker can hold as many accounts as they like — signup is cheap (and
+    # now limited separately). Per-user would let them reset the allowance by making another account;
+    # the address is the thing that costs them something. Its own bucket rather than the read's,
+    # because a claim WRITES a grant, so it deserves the tighter number.
+    rate_limit.enforce(
+        rate_limit.ip_key(request, "invite-claim"), *rate_limit.INVITE_CLAIM_PER_IP
+    )
     # Authenticated claim: the token IS the authorization to accept, so any
     # signed-in user holding the link can claim it — this resolves the
     # mismatched-email orphan (an invite to a@x claimed by someone who signed up

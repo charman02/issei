@@ -8,6 +8,28 @@ from app.database import Base, get_db
 from app.main import app
 from app.auth import hash_password, create_access_token
 from app.models.user import User
+from app.services import rate_limit
+
+
+@pytest.fixture(autouse=True)
+def _forget_rate_limits():
+    """Clear the rate limiter before AND after every single test. AUTOUSE, deliberately.
+
+    `services/rate_limit` keeps its buckets in module state, which outlives a test — so without this
+    every failed login in the suite counts against every later one. The per-IP login limit is 30 and
+    `TestClient` presents one address for the whole run, so the thirty-FIRST failed-login assertion
+    anywhere in the suite would start getting a 429 where it expected a 401. That failure lands in
+    whichever test happens to be thirty-first, moves when tests are reordered, and reads as flakiness
+    rather than as leaked state — which is the worst kind of test failure to inherit.
+
+    Autouse rather than opt-in because the coupling is invisible at the call site: a test asserting
+    something about handoffs has no reason to suspect a limiter, and a future test that logs in a few
+    times must not have to know this exists. Both sides of the yield, so a test that trips a limit
+    leaves nothing behind and arrives clean regardless of what ran before it.
+    """
+    rate_limit.reset()
+    yield
+    rate_limit.reset()
 
 
 @pytest.fixture

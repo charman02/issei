@@ -174,8 +174,12 @@ Stated up front, because knowing the gaps is the point of building it:
 1. **≥2 tasks across AZs** for real availability (currently 1 task = a single-AZ SPOF).
    The gated-migration design already assumes horizontal scale, so this is a count change.
 2. **Autoscaling** on CPU/request count — the service is fixed at `desiredCount: 1`.
-3. **Rate limiting / WAF** in front of the ALB — the `/parse` endpoint spends money per
-   call and auth is its only gate today.
+3. **A WAF** in front of the ALB. Application-level rate limiting shipped 2026-09-21
+   (`app/services/rate_limit.py`), so `/parse` and every credential surface are bounded —
+   but it is per-task in-process state keyed on the client address, which leaves exactly one
+   gap that only edge infrastructure closes: a DISTRIBUTED attacker rotating addresses still
+   spends one bcrypt per guess, because the per-account limit bounds their progress and not
+   their load. That module's own docstring records this rather than implying it away.
 4. **Alarms + dashboards** (CloudWatch) on 5xx rate, task health, and DB errors — right
    now failures are visible in logs but nothing pages.
 5. **Private subnets + NAT** if a compliance posture ever required no public-IP tasks.

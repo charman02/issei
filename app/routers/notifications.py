@@ -1,6 +1,6 @@
 import secrets
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,7 +21,7 @@ from app.schemas.push import (
     PushSubscriptionRotate,
     VapidKeyResponse,
 )
-from app.services import prompt, push
+from app.services import prompt, push, rate_limit
 from app.services.notifications import ANONYMOUS_TYPES, mark_read, unread_count
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -236,6 +236,7 @@ def unsubscribe(
 
 @router.post("/subscribe/rotate", status_code=status.HTTP_204_NO_CONTENT)
 def rotate_subscription(
+    request: Request,
     body: PushSubscriptionRotate,
     db: Session = Depends(get_db),
 ):
@@ -265,7 +266,15 @@ def rotate_subscription(
 
     The user_id is carried over from the row being replaced, never taken from the request, so this
     cannot be used to attach a device to an arbitrary account.
+
+    RATE-LIMITED PER ADDRESS, and this route earns it twice over: it is the app's only unauthenticated
+    WRITE, and the 404 documented above is an acknowledged existence oracle for push endpoints. An
+    oracle you can consult without limit is a different thing from one you can consult — so the limit
+    is what keeps "confirming an endpoint you already hold reveals nothing" true, rather than leaving
+    it as an invitation to enumerate. A real browser rotates a subscription rarely (it is a
+    platform-initiated event, not a user action), so twenty an hour is orders of magnitude above use.
     """
+    rate_limit.enforce(rate_limit.ip_key(request, "rotate"), *rate_limit.ROTATE_PER_IP)
     old = (
         db.query(PushSubscription)
         .filter(PushSubscription.endpoint == body.old_endpoint)
@@ -306,6 +315,7 @@ def rotate_subscription(
 
 @router.post("/run-daily-prompt")
 def run_daily_prompt_endpoint(
+    request: Request,
     x_issei_cron_key: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
@@ -318,6 +328,14 @@ def run_daily_prompt_endpoint(
     the workflow alone could not cover a four-hour send window. This route stays because the two
     triggers are idempotent per (user, local_date) and the cron covers what the loop cannot: the
     window where the task is restarting or a deploy is mid-roll.
+
+    RATE-LIMITED PER ADDRESS, VERY GENEROUSLY (2026-09-21). The secret is compared with
+    `compare_digest` and a wrong key is a 404, so guessing was never a realistic threat — but "not
+    realistic" and "unbounded" are different claims, and this was the last credential-presenting
+    surface in the app with no ceiling at all. 60 an hour cannot cost anybody a nudge: GitHub delivers
+    this workflow 5-7 times A DAY in total, and the PRIMARY trigger never comes through HTTP. Found
+    by a docs gate, which noticed it falsified the README's claim that every unauthenticated surface
+    is bounded — and softening that sentence would have been the wrong repair for a three-line hole.
 
     NOT a user route: there is no `get_current_user` here because there is no user — the caller is
     a cron job acting for everybody. Authenticated by a shared secret in a header instead, compared
@@ -344,6 +362,12 @@ def run_daily_prompt_endpoint(
     have they not been sent" rather than "is it exactly their hour" — so a run 40 minutes late still
     catches everyone, and `prompt_sends`' UNIQUE (user, local_date) is what makes that safe.
     """
+    # BEFORE the secret comparison, so an unbounded guesser is refused without the route doing any
+    # work at all. It also means the limiter cannot become an oracle in the other direction: a right
+    # key and a wrong one are equally subject to it, so a 429 says nothing about the key.
+    rate_limit.enforce(
+        rate_limit.ip_key(request, "cron-trigger"), *rate_limit.CRON_TRIGGER_PER_IP
+    )
     # Compared as BYTES. `compare_digest` on two `str`s raises TypeError the moment either holds a
     # non-ASCII character — and Starlette latin-1-decodes header bytes, so one 0x80-0xFF byte in
     # this header reached the comparison as a non-ASCII str. That was an unauthenticated 500 on

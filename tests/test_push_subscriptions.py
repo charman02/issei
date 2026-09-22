@@ -453,11 +453,23 @@ def test_a_non_ascii_cron_key_is_a_404_not_a_500(monkeypatch):
 
     monkeypatch.setattr(settings, "cron_secret", "the-real-secret", raising=False)
 
+    # A minimal stand-in for the `Request` the route now takes (it gained one with rate limiting,
+    # 2026-09-21). `client_ip` reads only `.headers` and `.client`, so this is the whole surface —
+    # spelled out here rather than mocked, because the point of calling the handler directly is that
+    # nothing between the test and the function reinterprets the header bytes.
+    class _Req:
+        # REAL `Headers`, not a dict — `client_ip` calls `.getlist()`, because a caller may send
+        # `X-Forwarded-For` twice and reading only the first line would read only what they wrote.
+        from starlette.datastructures import Headers as _H
+
+        headers = _H(raw=[])
+        client = None
+
     # A latin-1-decoded high byte is exactly what Starlette hands the handler.
     non_ascii = bytes([0x73, 0xE9, 0x63]).decode("latin-1")
     for key in (non_ascii, "wrong-but-ascii", ""):
         try:
-            run_daily_prompt_endpoint(x_issei_cron_key=key, db=None)
+            run_daily_prompt_endpoint(_Req(), x_issei_cron_key=key, db=None)
         except HTTPException as exc:
             assert exc.status_code == 404, repr(key)
             assert exc.detail == "Not found", repr(key)
@@ -467,7 +479,7 @@ def test_a_non_ascii_cron_key_is_a_404_not_a_500(monkeypatch):
     # Unset secret: the same input gets the same answer, so there is no oracle in either direction.
     monkeypatch.setattr(settings, "cron_secret", "", raising=False)
     try:
-        run_daily_prompt_endpoint(x_issei_cron_key=non_ascii, db=None)
+        run_daily_prompt_endpoint(_Req(), x_issei_cron_key=non_ascii, db=None)
     except HTTPException as exc:
         assert exc.status_code == 404
     else:

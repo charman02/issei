@@ -455,3 +455,66 @@ than preferences: a notification on a lock screen cannot be recalled, edited or 
 row at all** — the inbox is for things addressed to you, and its persistent counterpart is the
 feed's `is_new` mark (invariant 10). A test asserts the absence of the row, because adding one
 later would look like a fix and would in fact turn the inbox into a second feed and bury the asks.
+
+### Invariant 17 — a rate limit must never become a way to lock someone out of their own account
+
+Rate limiting (2026-09-21) has two silent failure modes, and both look like working software: it
+can refuse people it should not, or refuse nobody while appearing to. Three rules, each pinned:
+
+1. **A correct password is never refused by the per-ACCOUNT limit.** The password is verified
+   FIRST; only a *failed* attempt is counted. Every address on this app is public (#80), so a
+   per-account limit checked BEFORE the credential — the obvious way to write it — would let
+   anyone lock any person out of their own account with ten deliberate wrong guesses, repeatable
+   by a script, forever. A safety feature that lets a stranger deny you your account is worse
+   than the exposure it closes. The per-**address** limit is the opposite and DOES refuse before
+   bcrypt runs, because bcrypt is deliberately slow (a CPU vector on its own) and an address is
+   the caller's own resource. A success clears the account bucket and **not** the address one —
+   otherwise an attacker with one valid credential resets the CPU limit every twenty-nine guesses.
+   → `tests/test_rate_limit.py::test_A_CORRECT_PASSWORD_STILL_WORKS_AFTER_THE_ACCOUNT_LIMIT_IS_HIT`,
+   `test_the_PER_IP_limit_refuses_even_a_correct_password`,
+   `test_a_successful_login_does_NOT_clear_the_IP_bucket`
+
+2. **The client address comes from the RIGHTMOST `X-Forwarded-For` entry.** An ALB *appends* what
+   it saw, so the last element is the only one the infrastructure wrote and everything to its left
+   is attacker-chosen. The ubiquitous `xff.split(",")[0]` would hand a script a fresh bucket on
+   every request — a limiter that is decorative while looking correct, and invisible to any test
+   that runs without a proxy in front, which is all of them. Reading `request.client.host` instead
+   is the opposite failure: every user on earth shares the ALB's address in one bucket, so the
+   first attacker to hit the login limit locks out the whole app.
+   → `test_the_RIGHTMOST_forwarded_entry_is_used_because_the_ALB_appends`,
+   `test_a_spoofed_forwarded_header_cannot_win_a_fresh_bucket`,
+   `test_two_different_callers_do_not_share_a_login_budget`
+
+3. **A 429 must never be an account-existence oracle, and never break an unfurl.** `forgot-password`
+   answers an unconditional 204 so it says nothing about which addresses exist; both its limits are
+   therefore applied BEFORE the address is resolved, and the refusal is byte-identical for a real and
+   an invented one — a 429 that differs is a *cleaner* oracle than an error message, because it needs
+   no parsing. And `GET /recipes/invite/{token}/preview` degrades to the neutral OG card rather than
+   refusing, because a crawler that receives an error is a shared link that unfurls as nothing — on
+   its OWN much larger budget rather than the read's, because `frontend/vercel.json` REWRITES crawler
+   traffic, so every genuine unfurl for the whole app arrives from a handful of Vercel edge addresses
+   and a shared bucket was an app-wide cap on real link previews. (Splitting costs nothing: the invite
+   token is 256 bits, so 60 and 600 guesses a window are equally hopeless — these limits bound abuse
+   VOLUME, not guessability. Both halves of that were ship-gate corrections.)
+   → `test_forgot_password_is_limited_and_the_LIMIT_ITSELF_LEAKS_NOTHING`,
+   `test_the_OG_PREVIEW_degrades_to_a_card_instead_of_refusing`,
+   `test_the_invite_read_and_its_OG_PREVIEW_have_SEPARATE_budgets`
+
+4. **A 429 must never read as "your link is broken".** `InviteLanding` has its OWN error handler
+   rather than going through `toUserMessage`, so a 429 fell through to "Something went wrong opening
+   this recipe" **with a Try again button** — which fails identically for up to fifteen minutes,
+   because a refused call is deliberately not counted and so frees no slot early. The recipient has
+   no account and no support path, so that costs them the recipe: they tap, fail, tap, fail, and
+   conclude the sender's link is dead. It now shows the wait the server named and offers no button.
+   Any new unauthenticated surface with its own error handler inherits this obligation.
+   → `frontend/src/pages/InviteLanding.test.jsx` ("names the WAIT on a 429"),
+   `frontend/src/pages/Login.test.jsx` ("renders a 429 as the wait the server named")
+
+**The fixture that makes all of this testable at all:** `_forget_rate_limits` in `tests/fixtures.py`
+is **autouse**, and must stay that way. The limiter keeps its buckets in module state, which outlives
+a test; `TestClient` presents one address for the whole run; the per-address login limit is 30. So
+without it the thirty-FIRST failed-login assertion anywhere in the suite starts getting a 429 where
+it expected a 401 (the address limit is a pre-check, so 1-30 pass and 31 is refused) — a failure that
+lands in whichever test happens to run thirty-first and moves when tests
+are reordered. It is imported into `conftest.py` explicitly, because an autouse fixture only applies
+where pytest can see it, and leaving it out would silently disable it everywhere.

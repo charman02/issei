@@ -168,6 +168,19 @@ export class IsseiStack extends cdk.Stack {
         // Wired in both places per infra/RUNBOOK.md: only the JSON ships, and keeping them in step
         // is what stops the stack file from quietly describing something prod isn't doing.
         PROMPT_SCHEDULER_INTERVAL_SECONDS: '600',
+        // THE OFF SWITCH FOR RATE LIMITING (`app/services/rate_limit.py`). Wired here for the same
+        // reason as the line above -- only the JSON ships, and a stack file describing a prod that
+        // doesn't exist is the drift `tests/test_deploy_config.py` pins. This one is worth reaching
+        // for by hand: every other failure in this app degrades quietly, but a misfiring limiter
+        // locks real people out of their own accounts, and the same `update-service` caveat applies.
+        RATE_LIMIT_ENABLED: 'true',
+        // HOW MANY APPENDING PROXIES SIT IN FRONT. 1 = the ALB below and nothing else. NOT a tuning
+        // knob -- a statement about the network, and the limiter breaks in one of two directions if
+        // it is wrong: too low and every user shares the ALB's address in one bucket (the first
+        // attacker locks out the whole app), too high and it reads an attacker-written element of
+        // `X-Forwarded-For` (every request gets a fresh bucket and the limit does nothing). Put
+        // CloudFront in front of this ALB and it becomes 2.
+        TRUSTED_PROXY_HOPS: '1',
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'ecs' }),
       healthCheck: {

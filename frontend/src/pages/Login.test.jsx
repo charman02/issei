@@ -315,6 +315,35 @@ describe('Login', () => {
     expect(screen.getByText(/First name needs at least 1 character/i)).toBeInTheDocument()
   })
 
+  it('renders a 429 as the wait the server named, not a generic failure', async () => {
+    // The user-facing half of rate limiting, and the reason it needed NO frontend change: the
+    // server's 429 carries `detail` as a plain string, which `toUserMessage` passes through
+    // untouched. This is the test that keeps that true — a future refactor that started
+    // special-casing status codes could send "Something went wrong." to someone who was told a
+    // specific number of minutes, and the whole point of naming the wait is that it is actionable.
+    //
+    // The wait is in `detail` rather than read from the `Retry-After` header on purpose: a browser
+    // cannot read that header cross-origin unless CORS exposes it, which this app does not do.
+    client.post.mockRejectedValue({
+      response: {
+        status: 429,
+        data: { detail: 'Too many attempts. Try again in 12 minutes.' },
+      },
+    })
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    )
+    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'pw123456' } })
+    fireEvent.submit(screen.getByPlaceholderText('Password').closest('form'))
+
+    const pill = await screen.findByText(/Try again in 12 minutes/i)
+    expect(pill).toBeInTheDocument()
+    expect(pill.textContent).not.toMatch(/Something went wrong|object Object/)
+  })
+
   it('passes a plain-string detail through as the router wrote it', async () => {
     client.post.mockRejectedValue({
       response: { status: 401, data: { detail: 'Invalid email or password' } },

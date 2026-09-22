@@ -213,6 +213,31 @@ remember step 5 is that steps 3 and 4 are now mandatory.
    `aws ecs update-service --task-definition <family>:<rev> --force-new-deployment` before new
    tasks use it; the next merge to main reverts it regardless.
 
+5c. **Two more plain env vars, same rule, for rate limiting** (`app/services/rate_limit.py`,
+   2026-09-21). Both in `environment[]` of the JSON that ships AND in the stack file; both pinned
+   by `tests/test_deploy_config.py`, name and VALUE.
+   - `RATE_LIMIT_ENABLED` (`true`) — **the off switch you may actually need.** Every other failure
+     in this app degrades quietly; a misfiring rate limiter locks real people out of their own
+     accounts, and you learn about it from a user who cannot sign in. Same emergency-stop mechanics
+     as 5b: register a revision with `false`, then `update-service --force-new-deployment`, and know
+     that the next merge to main restores `true`. Blank means "unset" and yields the default rather
+     than crashing the container.
+     **The case it is actually for, named so nobody has to work it out live:** an in-person user
+     testing session. `SIGNUP_PER_IP` is 20 an hour and everyone in one room shares one address, so a
+     session bigger than that will refuse the twenty-first person with "Too many attempts. Try again
+     in 54 minutes." and nothing in the copy hints it is a per-network signup cap. Flip this to
+     `false` for the session, flip it back after. (A ship gate raised this against this project's own
+     history of testing in batches; 10 was the original number and would have bitten a dozen people.)
+   - `TRUSTED_PROXY_HOPS` (`1`) — how many appending proxies sit in front. **Not a preference: a
+     statement about this network**, and both wrong values break the limiter silently and in
+     opposite directions. Too low and every caller is bucketed under the ALB's own private address,
+     so one attacker hitting the login limit locks out every real user. Too high and it trusts an
+     element of `X-Forwarded-For` that the CLIENT wrote, so a script rotating that header gets a
+     fresh bucket per request and nothing is limited at all. An ALB APPENDS the address it saw,
+     which is why the rightmost entries are the trustworthy ones. **If you ever put CloudFront in
+     front of this ALB, this becomes 2 in the same change** — it is the one number in the
+     deployment that a new hop invalidates, and nothing will fail to tell you.
+
 6. **Two GitHub repo secrets** for `.github/workflows/daily-prompt.yml` — the SECOND of two
    triggers since 2026-09-18 (the primary one is `app/services/prompt_scheduler.py`, in-process,
    which needs no secret because it makes no HTTP call). Still worth wiring: it covers the window

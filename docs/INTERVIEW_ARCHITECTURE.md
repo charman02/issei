@@ -1,10 +1,10 @@
 # issei — architecture refresher
 
-Written to be reread before an interview. Verified against the code on 2026-09-18, not
+Written to be reread before an interview. Verified against the code on 2026-09-21, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 67 endpoints · 18 tables · 29 migrations · 895 backend tests · 982 frontend
-tests · 10,228 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
+**Scale:** 67 endpoints · 18 tables · 29 migrations · 947 backend tests · 983 frontend
+tests · 10,737 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
@@ -367,7 +367,10 @@ Volunteering these is what separates "I built a thing" from "I understand what I
 3. **Invite tokens have no expiry or revocation.** Fine for texting a recipe to your
    sister; not fine in a regulated context.
 4. **No CHECK constraint** on the ingredient denormalization.
-5. **No rate limiting on `/parse`.** It costs money per call and auth is the only gate.
+5. **Rate limiting is application-level, not edge-level.** Shipped 2026-09-21 for every
+   credential surface and for `/parse` (20/hour per user, a cost cap) — but it is
+   in-process per-task state keyed on the client address, so a DISTRIBUTED attacker
+   rotating addresses still spends one bcrypt per guess. That needs a WAF, not code.
 6. **`/parse` is unhandled for prompt injection.**
 7. **No structured logging or request tracing.** No way to reconstruct what happened.
 

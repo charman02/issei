@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 895
-backend tests, 982 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 947
+backend tests, 983 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -253,9 +253,14 @@ layer, not inside a list feature. Start with an alias table; fuzzy or LLM normal
   a corpus worth filtering. Filters over a dozen recipes are decoration.
 - **A load test for the API.** One Fargate task, `desiredCount: 1`, and no idea where it
   falls over. Cheap to learn before it matters.
-- **Rate limiting.** `app/main.py` mounts CORS and nothing else. Login, forgot-password and
-  the people directory are all unthrottled — the last one turns an accepted disclosure into a
-  harvesting loop.
+- **Rate limiting on the PEOPLE DIRECTORY.** Narrowed 2026-09-21: login, signup,
+  forgot-password, reset-password, the invite-token pair, the push-rotate write, the cron
+  trigger and `/recipes/parse` are all limited now (`app/services/rate_limit.py`). Still
+  unthrottled: **`GET /friends/discover`**, which is the one that turns an accepted
+  disclosure into a harvesting loop, and `GET /recipes/browse`. Note `app/main.py` really
+  does still mount CORS and nothing else — the limiter is per-route, not middleware, which is
+  deliberate (each route's limit is a different number keyed on a different thing) but does
+  mean "check the middleware stack" is not how you audit coverage.
 - **A deploy that can't half-ship.** The backend deploy is gated on a green suite, but Vercel
   isn't — so a red backend suite ships the frontend alone and prod calls endpoints that don't
   exist. That happened twice on 2026-09-03 and cost a day of invisible non-deployment.

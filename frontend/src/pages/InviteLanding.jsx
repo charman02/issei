@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getInvitePreview } from '../api/sharing'
+import { toUserMessage } from '../api/client'
 import RecipeBody from '../components/RecipeBody'
 import Loader from '../components/Loader'
 import IsseiMeaning from '../components/IsseiMeaning'
@@ -33,6 +34,23 @@ function describeFailure(err) {
       message: 'This link is no longer good — ask whoever sent it for a new one.',
       canRetry: false,
     }
+  }
+  if (status === 429) {
+    // RATE LIMITED, and this branch exists because without it the most consequential page in the
+    // product gave the least useful answer. A 429 fell through to "Something went wrong opening this
+    // recipe" WITH a Try again button — which fails identically for up to fifteen minutes, because
+    // the limiter deliberately doesn't count a refused call and so doesn't free a slot early. So the
+    // recipient tapped, failed, tapped, failed, and concluded the sender's link was broken: verbatim
+    // the outcome the comment above this function was written to prevent.
+    //
+    // The server names the wait in `detail` ("Try again in 12 minutes"), so `toUserMessage` passes
+    // through real copy — the same path Login, ForgotPassword and ResetPassword already use. This
+    // page has its own handler, which is exactly how it missed out. `canRetry: false` because the
+    // wait is the answer; a button that cannot work is worse than no button.
+    //
+    // Reaching this at all means a shared or carrier-NAT address spent 60 invite reads in 15
+    // minutes. Rare, and not the recipient's fault, which is why the copy must not blame the link.
+    return { message: toUserMessage(err), canRetry: false }
   }
   if (status >= 500) {
     return { message: 'issei is having trouble right now.', canRetry: true }
