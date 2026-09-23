@@ -431,3 +431,143 @@ def test_an_arrival_is_not_a_fulfilment_and_a_claim_is_not_a_keep(client, make_u
     # Neither new type is anonymous — both are addressed acts between two people who know
     # which act it was.
     assert ANONYMOUS_TYPES == {"recipe_kept"}
+
+
+# --- the two shapes a ship gate found the fix got wrong, at the ROUTE level ---
+
+
+def test_an_AMBIGUOUS_address_delivers_to_NOBODY_rather_than_to_a_guess(
+    client, make_user, db_session
+):
+    """THE WORST DEFECT THE FIX INTRODUCED, before this: a PRIVATE recipe delivered to the wrong
+    account.
+
+    `users.email` has a plain case-SENSITIVE unique index, signup's duplicate check is `==`, and
+    `EmailStr` normalises only the domain — so `ANA@x.com` and `ana@x.com` are two independently
+    loginable accounts. Binding the grant to a `.first()` over a `lower()` predicate meant the winner
+    followed physical row order, and a gate reproduced the dish name, byline, story, per-step notes
+    and photos landing on the case twin's shelf with a `recipe_arrived` naming the cook, while the
+    person actually addressed got nothing and the sender saw "sent ✓".
+
+    A tie now binds to nobody and stays a pending invite: the cook still holds the token, and
+    delivering to a coin flip is the one outcome worse than not delivering.
+    """
+    from app.models.handoff import Handoff
+
+    cook, ch = make_user()
+    # NEITHER twin matches the typed address EXACTLY, which is what makes this a genuine tie. An
+    # exact hit is unambiguous by definition (the column is unique) and is preferred — the test below
+    # covers that path, and it is why this pair is spelled with two different mixed cases.
+    twin_a, ah = make_user(email="TWIN@example.com")
+    twin_b, bh = make_user(email="TwIn@example.com")
+    recipe = _recipe(client, ch)
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff",
+        json={"to_email": "twin@example.com"},
+        headers=ch,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["state"] == "pending"
+    assert r.json()["to_user_id"] is None
+    # NEITHER account can read it, and neither was told anything.
+    for headers in (ah, bh):
+        assert client.get(f"/recipes/{recipe['id']}", headers=headers).status_code == 404
+        assert client.get("/recipes/shared", headers=headers).json() == []
+        assert _inbox(client, headers, "recipe_arrived") == []
+    row = db_session.query(Handoff).filter(Handoff.recipe_id == recipe["id"]).one()
+    assert row.to_user_id is None
+
+
+def test_an_EXACT_address_match_wins_over_a_case_twin(client, make_user):
+    """And the twin pair must not break the honest case. `users.email` is unique, so an exact match
+    is by definition one account — preferring it makes the common path deterministic even when a twin
+    exists, instead of falling into the tie above."""
+    cook, ch = make_user()
+    twin_upper, uh = make_user(email="ANA@example.com")
+    ana, anah = make_user(email="ana@example.com")
+    recipe = _recipe(client, ch)
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": "ana@example.com"}, headers=ch
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["state"] == "accepted"
+    assert r.json()["to_user_id"] == ana.id
+    assert client.get(f"/recipes/{recipe['id']}", headers=anah).status_code == 200
+    # The twin gained nothing.
+    assert client.get(f"/recipes/{recipe['id']}", headers=uh).status_code == 404
+
+
+def test_re_sending_does_NOT_hand_back_a_grant_bound_to_SOMEONE_ELSE(
+    client, make_user, db_session
+):
+    """The dedupe's second disjunct must be constrained to UNBOUND rows.
+
+    `claim_invite` sets `to_user_id` without clearing `to_email`, so a row can be accepted, bound to
+    whoever actually held the link, and still carry the address it was sent to — the documented
+    mismatched-email orphan flow, live in production. Matching on the stale address alone made a
+    re-send return the CLAIMER's grant: the addressee got a 201 and nothing else, permanently, for
+    that (recipe, address) pair — the exact defect this branch exists to remove, one shape over, with
+    no in-app workaround since the client only ever sends `to_email`.
+    """
+    from app.models.handoff import Handoff
+
+    cook, ch = make_user()
+    claimer, clh = make_user()
+    ben, bh = make_user()
+    recipe = _recipe(client, ch)
+
+    # A row bound to the claimer but still carrying Ben's address — what claim_invite leaves behind.
+    db_session.add(
+        Handoff(
+            recipe_id=recipe["id"],
+            from_user_id=cook.id,
+            to_user_id=claimer.id,
+            to_email=ben.email,
+            state="accepted",
+            token="tok-orphan-route",
+        )
+    )
+    db_session.commit()
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": ben.email}, headers=ch
+    )
+    assert r.status_code == 201, r.text
+    # Ben gets his OWN grant, and it actually works.
+    assert r.json()["to_user_id"] == ben.id
+    assert r.json()["state"] == "accepted"
+    assert client.get(f"/recipes/{recipe['id']}", headers=bh).status_code == 200
+    assert len(_inbox(client, bh, "recipe_arrived")) == 1
+    # The claimer keeps theirs.
+    assert client.get(f"/recipes/{recipe['id']}", headers=clh).status_code == 200
+
+
+def test_accepting_a_legacy_invite_TWICE_tells_the_cook_once(client, make_user, db_session):
+    """Coverage the rewrite dropped: nothing called `/recipes/handoffs/{id}/accept` twice any more,
+    so its `was_unaccepted` guard had no repeat-call test. The route only serves pre-fix rows now, so
+    the row is built by hand — but a double tap on a slow connection is exactly the case the guard
+    exists for, and a second `recipe_claimed` would be the flood `dedupe` is meant to prevent."""
+    from app.models.handoff import Handoff
+
+    cook, ch = make_user(first_name="Lola")
+    guest, gh = make_user(first_name="Ben")
+    recipe = _recipe(client, ch, name="Kare-kare")
+    row = Handoff(
+        recipe_id=recipe["id"],
+        from_user_id=cook.id,
+        to_user_id=None,
+        to_email=guest.email,
+        state="pending",
+        token="tok-legacy-repeat",
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    for _ in range(3):
+        assert client.post(f"/recipes/handoffs/{row.id}/accept", headers=gh).status_code == 200
+
+    rows = _inbox(client, ch, "recipe_claimed")
+    assert len(rows) == 1
+    assert rows[0]["actor_first_name"] == "Ben"

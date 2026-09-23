@@ -78,12 +78,16 @@ def client(db_session):
 def make_user(db_session):
     created = {"n": 0}
 
-    def _make(first_name="Test", last_name="Cook"):
+    # `email` is overridable because some tests need a SPECIFIC address rather than a unique one —
+    # notably the case-twin pair (`TWIN@x.com` / `twin@x.com`), which exists because `users.email`
+    # carries a plain case-SENSITIVE unique index and `EmailStr` normalises only the domain. Default
+    # stays the generated address so no existing caller changes.
+    def _make(first_name="Test", last_name="Cook", email=None):
         created["n"] += 1
         user = User(
             first_name=first_name,
             last_name=last_name,
-            email=f"user{created['n']}@example.com",
+            email=email or f"user{created['n']}@example.com",
             hashed_password=hash_password("password123"),
         )
         db_session.add(user)

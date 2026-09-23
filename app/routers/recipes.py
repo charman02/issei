@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -274,13 +274,51 @@ def handoff_recipe(
     #
     # Case-insensitive, because an email address is: a sender typing "Ana@x.com" for "ana@x.com"
     # would otherwise resolve to nobody, skip both checks, and mint a row no signup ever claims.
-    recipient = resolved_user
-    if recipient is None and to_email:
-        recipient = (
-            db.query(User).filter(func.lower(User.email) == to_email.strip().lower()).first()
+    #
+    # AND THE CASE-INSENSITIVE MATCH CAN RETURN MORE THAN ONE ACCOUNT, which is why this is a list
+    # and not a `.first()`. `users.email` carries a plain case-SENSITIVE unique index, signup's
+    # duplicate check is `User.email == user_in.email`, and Pydantic's `EmailStr` normalises only the
+    # DOMAIN ("Ana@X.com" → "Ana@x.com"). So `ANA@x.com` and `ana@x.com` are two separate,
+    # independently loginable accounts, and nothing in the app prevents that — an honest duplicate
+    # signup produces it, and so does anyone who wants it deliberately.
+    #
+    # A ship gate found what that did once the grant was bound to the match: `.first()` over a
+    # `lower()` predicate cannot use the btree index, so the winner follows physical row order, and
+    # a PRIVATE recipe — dish name, byline, story, per-step notes, photos — was delivered to the
+    # case twin with a `recipe_arrived` naming the cook, while the person the sender actually
+    # addressed got nothing and the sender saw "sent ✓". Reproduced end to end before this fix.
+    #
+    # So the two questions are answered from the same list, differently, and the asymmetry is the
+    # point:
+    #   · WHO THE GRANT BINDS TO must be unambiguous — an exact match (the column is unique, so an
+    #     exact hit is by definition one account), else the sole case-insensitive match. On a genuine
+    #     tie it binds to NOBODY and stays a pending invite: delivering to a coin flip is the one
+    #     outcome worse than not delivering, and the cook still has the link, which is the capability
+    #     this product is built on.
+    #   · WHO THE CHECKS CONSULT is EVERY candidate. Ambiguity must not become a way to skip a
+    #     block: if any account behind that address has blocked the cook, or restricts invites, the
+    #     send is refused. #105 added those checks precisely because an email-addressed handoff used
+    #     to walk past #85, and a tie must not reopen that door.
+    candidates: list[User] = []
+    if resolved_user is not None:
+        candidates = [resolved_user]
+    elif to_email:
+        typed = to_email.strip()
+        candidates = (
+            db.query(User).filter(func.lower(User.email) == typed.lower()).all()
         )
+        exact = next((u for u in candidates if u.email == typed), None)
+        resolved_user = exact or (candidates[0] if len(candidates) == 1 else None)
+    recipient = resolved_user
 
-    if recipient is not None and recipient.id != current_user.id:
+    # EVERY CANDIDATE, not just the one the grant binds to — see the note above. With two case-twin
+    # accounts behind one address, checking only the bound one would let a tie (or an arbitrary
+    # `.first()`) decide whose block gets consulted, which is the #105 hole reopened by accident.
+    # Refusing if ANY of them refuses is the conservative direction and costs an honest sender
+    # nothing, since a tie needs two accounts differing only in the case of one address.
+    for person in candidates:
+        if person.id == current_user.id:
+            continue
         # No NEW grant across a block (#85), either direction. The locked decision is that a grant
         # which ALREADY EXISTED at block time survives — you genuinely gave them that dish and a
         # block means "no new contact", not "unsend". Minting one AFTER the block is the opposite:
@@ -288,7 +326,7 @@ def handoff_recipe(
         # friendship, without this check a blocked person could put arbitrary text (name, story,
         # byline, step notes) plus their own name straight onto the blocker's Kept shelf, once per
         # recipe they care to write. Same 404 body as an unknown user, so the block is undetectable.
-        if is_blocked(current_user.id, recipient.id, db):
+        if is_blocked(current_user.id, person.id, db):
             raise HTTPException(status_code=404, detail="User not found")
         # WHO MAY PRE-ADDRESS A HANDOFF TO THIS PERSON (#105). "friends" requires an accepted
         # friendship; "anyone" (the default, and today's behaviour) checks nothing.
@@ -306,8 +344,8 @@ def handoff_recipe(
         #
         # The LINK-ONLY handoff is deliberately untouched: no recipient means nothing to check,
         # and the token is the capability this product is built on.
-        if recipient.invite_permission == "friends" and not are_friends(
-            current_user.id, recipient.id, db
+        if person.invite_permission == "friends" and not are_friends(
+            current_user.id, person.id, db
         ):
             raise HTTPException(status_code=404, detail="User not found")
 
@@ -328,7 +366,20 @@ def handoff_recipe(
             existing = existing_q.filter(
                 or_(
                     Handoff.to_user_id == recipient.id,
-                    func.lower(Handoff.to_email) == recipient.email.lower(),
+                    # THE SECOND DISJUNCT IS CONSTRAINED TO UNBOUND ROWS, and the `and_` is the whole
+                    # correctness of it. `claim_invite` and `accept_handoff` both set `to_user_id`
+                    # WITHOUT clearing `to_email`, so a row can be accepted, bound to Carla, and
+                    # still carry ben@x.com — that is the documented mismatched-email orphan flow (a
+                    # link addressed to one person, claimed by whoever actually held it). Without
+                    # `to_user_id IS NULL` here, a cook re-sending to Ben would match CARLA's grant,
+                    # skip the heal (it is already bound), and return it — so Ben gets a 201 and
+                    # nothing else, permanently, for that (recipe, address) pair. That is the exact
+                    # defect this branch exists to remove, reintroduced one shape over. Found by a
+                    # ship gate, reproduced end to end.
+                    and_(
+                        Handoff.to_user_id.is_(None),
+                        func.lower(Handoff.to_email) == recipient.email.lower(),
+                    ),
                 )
             ).first()
         else:
@@ -1100,7 +1151,16 @@ def accept_handoff(
     if h.to_user_id is not None:
         is_recipient = h.to_user_id == current_user.id
     else:
-        is_recipient = h.to_email is not None and h.to_email == current_user.email
+        # CASE-INSENSITIVE, like both other halves of this feature. This route now serves only
+        # pre-2026-09-23 rows, which makes it the place a case mismatch is MOST likely to be
+        # sitting — the send side lower-cased from #105, the signup loop did not until this
+        # round, so a row addressed to "Ana@x.com" for an account opened as "ana@x.com" is
+        # exactly the shape that survived here. A third half disagreeing about case is how the
+        # first two came to disagree.
+        is_recipient = (
+            h.to_email is not None
+            and h.to_email.lower() == current_user.email.lower()
+        )
     if not is_recipient:
         raise HTTPException(status_code=404, detail="Invite not found")
     # Read the state BEFORE mutating it, so the cook is told once — when the grant actually

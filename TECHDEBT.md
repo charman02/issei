@@ -212,10 +212,60 @@ strangers arrive. Security/privacy first.
   *Where:* `alembic/versions/b3c4d5e6f7a8_*.py`, `app/models/user.py`, `app/schemas/user.py`,
   `frontend/src/components/NotificationSettings.jsx`.
 
+- **ACCOUNT EMAIL UNIQUENESS IS CASE-SENSITIVE, AND THE DURABLE FIX IS STILL OPEN.** Found by the
+  ship gate on the handoff-grant fix below, and it is the root cause under two of that round's
+  findings rather than a curiosity. `users.email` is a plain `unique=True` column, signup's duplicate
+  check is `User.email == user_in.email`, `login` and `PATCH /auth/me` compare the same way, and
+  Pydantic's `EmailStr` normalises only the DOMAIN (measured: `Ana@X.com` → `Ana@x.com`). So
+  `ANA@x.com` and `ana@x.com` are **two independently loginable accounts** — an honest duplicate
+  signup produces that, and so does anyone who wants it deliberately.
+
+  Everything that resolves a person BY ADDRESS therefore has an ambiguous input. `handoff_recipe` and
+  the repair migration now each refuse to guess (exact match preferred; a genuine tie binds to
+  nobody; every candidate is checked for a block), which makes the ambiguity SAFE but does not remove
+  it — and it means two people can be told "that address is taken" and "that address is free" about
+  the same mailbox. *The durable fix* is a functional unique index on `lower(email)` plus
+  case-insensitive comparisons in `signup`, `login` and `PATCH /auth/me`. *Why it is not done here:*
+  it is a data-model change that can FAIL on a database that already contains a twin pair, so it
+  wants a look at prod first (`SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) >
+  1`) and a decision about which of a colliding pair wins. Owner's call. *Where:*
+  `app/models/user.py`, `app/routers/auth.py` (`signup`, `login`, `update_me`).
+
+- **A dead grant can still be created by an EMAIL CHANGE.** `PATCH /auth/me` sets
+  `current_user.email` and does NOT run signup's claim loop, so a pending invite to `new@x.com` plus
+  someone changing their address to `new@x.com` reproduces exactly the shape the entry below declares
+  fixed: pending, `to_user_id` NULL, address belongs to an account, unreachable unless the cook still
+  holds the token. *Deliberately not fixed by adding the claim loop there*, which looked obvious and
+  is worse: signup can claim an address once, while an email change can be repeated from one
+  authenticated account, turning the loop into a way to harvest pending invites by cycling through
+  guessed addresses. Closing it properly means claiming only on a VERIFIED address, and signup
+  doesn't verify email ownership either (see the entry above about that). Rare in practice — it needs
+  a pending invite to the exact address someone then moves to. *Where:* `app/routers/auth.py`
+  (`update_me`).
+
+- **The deploy window can mint one duplicate grant, and it self-heals.** The pipeline runs `alembic
+  upgrade head` BEFORE it pushes the image, so for a minute or two the OLD code serves traffic
+  against repaired rows. Old `handoff_recipe` dedupes on `Handoff.to_email == to_email` exactly, and
+  a repaired row has `to_email` NULL — so a re-send by email inside that window mints a second
+  pending row for the same (recipe, person). The new image then heals whichever the `.first()` finds.
+  Consequences are cosmetic: `/recipes/shared` dedupes through `Recipe.id.in_(...)`, `can_view` uses
+  `.first()`, and the only visible artefact is `RecipeResponse.shared_with_count` over-counting for
+  the cook. Recorded rather than fixed because the fix is a unique constraint on (recipe, grantee)
+  that the link-only path deliberately cannot satisfy — each link is an independent grant.
+
+- **`GET /friends/suggestions` now sees email-addressed handoffs.** It is seeded from the handoff
+  graph on `to_user_id`, which email-addressed grants never used to have — so binding them produces
+  friend suggestions where there previously were none. Believed benign (it is the same behaviour the
+  `to_user_id` path always had, and the block filter there is intact, pinned by `test_blocks.py`),
+  but it is a real behaviour change that nothing in the branch tests or mentions, found by the ship
+  gate. *Where:* `app/routers/friends.py::friend_suggestions`.
+
 - **RESOLVED 2026-09-23: a handoff addressed to an EMAIL that already had an account was
-  unreachable in-app, forever.** The fix bound the resolved account and accepted the grant, exactly
-  as the `to_user_id` path always did — `handoff_recipe` now has ONE `recipient` variable where it
-  had two, and the split between them was the bug. Four things came out of doing it, each worth
+  unreachable in-app, forever.** ("Resolved" for every shape the app WRITES — the two entries above
+  name the edges that survive: an email change can still create one, and a case-twin pair makes the
+  address ambiguous rather than dead.) The fix bound the resolved account and accepted the grant,
+  exactly as the `to_user_id` path always did — `handoff_recipe` now has ONE `recipient` variable
+  where it had two, and the split between them was the bug. Four things came out of doing it, each worth
   keeping:
   - **The signup auto-accept compared `Handoff.to_email == new_user.email` EXACTLY**, while the send
     side has lower-cased since #105. So "Ana@x.com" for an account opened as "ana@x.com" minted a
@@ -232,12 +282,12 @@ strangers arrive. Security/privacy first.
     legacy shape by hand rather than through the route, so the #88 exemption and the #107 block
     suppression stay covered instead of quietly testing a shape nothing writes. Removing the route
     is a separate decision; don't do it without checking the `handoffs` table for unbound rows.
-  - **Migration `a1b2c3d4e5f7` repairs the rows already in the database** — UPDATE-only, idempotent,
+  - **Migration `b9d3f07a4c81` repairs the rows already in the database** — UPDATE-only, idempotent,
     and tested against all five shapes (dead, case-mismatched, stranger-pending, already-accepted,
     link-only) in `tests/test_handoff_grant_repair.py`, which imports the statement from the
     migration rather than paraphrasing it.
   *Where:* `app/routers/recipes.py`, `app/routers/auth.py`,
-  `alembic/versions/a1b2c3d4e5f7_bind_dead_email_handoff_grants.py`.
+  `alembic/versions/b9d3f07a4c81_bind_dead_email_handoff_grants.py`.
 
   *The original entry, kept because the diagnosis is the useful part:*
   `handoff_recipe` resolves `to_email` to a `User` for its two permission checks (#105) but

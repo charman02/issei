@@ -356,18 +356,23 @@ mystery later.
 psql "$MIGRATION_DATABASE_URL" -c 'SELECT version_num FROM alembic_version;'
 ```
 
-**Read the expected value off `alembic heads` in the repo, and read it carefully.** Two revisions
-differ only in their last character and BOTH are about handoff grants:
+**Read the expected value off `alembic heads` in the repo, and compare the whole string.** The
+current head is `b9d3f07a4c81` — *binds dead email-addressed handoff grants* (2026-09-23), which
+**rewrites authorization state** rather than schema, so it is the one migration in this chain where
+"did it run?" has a user-visible answer.
 
-| revision | what it is |
-|---|---|
-| `a1b2c3d4e5f6` | indexes the handoff grant lookup |
-| `a1b2c3d4e5f7` | **binds dead email-addressed grants** (2026-09-23) — rewrites authorization state |
+That revision was deliberately renamed before it merged. It was first written as `a1b2c3d4e5f7`,
+one character off the existing `a1b2c3d4e5f6` (*indexes the handoff grant lookup*) — and both are
+about handoff grants, so anyone checking this deploy could read one for the other and believe a data
+repair had run when it hadn't. **Keep picking ids that don't rhyme with their neighbours**; renaming
+is free before a migration is applied anywhere and becomes a schema-history edit afterwards.
 
-Eyeballing one for the other is easy and would leave you believing a data repair ran when it didn't.
 If the value is behind, read the workflow's Alembic step log rather than re-running by hand — a
 second `upgrade head` is safe (every migration in this chain is idempotent or additive), but the
-reason it was behind is the thing to find.
+reason it was behind is the thing to find. One failure mode worth naming: `b9d3f07a4c81` will
+**abort** rather than mis-apply if it ever meets a state it can't resolve safely, and an aborted
+migration halts the deploy *before* the image ships, so a red pipeline here means the old code is
+still serving traffic against an unchanged database. That is the safe direction.
 
 ```bash
 # liveness + readiness (readiness proves the task reached Neon)

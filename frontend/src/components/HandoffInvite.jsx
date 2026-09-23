@@ -322,8 +322,8 @@ export default function HandoffInvite({
           ("if they sign up"), which was the bug's own description. Worded to cover both without
           saying which — see the note on the share-stage line. */}
       <p className="font-display italic text-[12px] text-ink-soft mb-3">
-        We won&rsquo;t email them — you send the link. Their address also puts the
-        recipe in their kitchen.
+        We won&rsquo;t email them — you send the link. Their address also keeps the
+        recipe for them.
       </p>
       {error && (
         <p className="mb-3">
