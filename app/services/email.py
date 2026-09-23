@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 
 import boto3
 from botocore.exceptions import ClientError
@@ -159,42 +160,86 @@ def announcement_sender() -> str:
     return (settings.sender_email or "").strip()
 
 
+def unsubscribe_address() -> str:
+    """Where an unsubscribe reply goes -- and it has to be a mailbox somebody READS.
+
+    THIS IS THE FEATURE'S ONE PROMISE, and the first version pointed it at the wrong thing. It used
+    `announcement_sender()`, which prod sets to `noreply@issei.app` (`.aws/task-definition.json`,
+    `infra/lib/issei-stack.ts`). Both ship gates spelled out the consequence independently: a person
+    taps their mail client's Unsubscribe, a message goes to `noreply@`, nobody reads it, they stay on
+    the list, and the next broadcast reaches them -- the opt-out failing silently for the only person
+    who used the mechanism this whole `send_raw_email` path exists to support.
+
+    So it points at `feedback_recipient()` instead: the address #101 already sends real user feedback
+    to, i.e. one the owner has a reason to read. **That is a better VARIABLE, not yet a fixed
+    mailbox** -- `FEEDBACK_NOTIFY_EMAIL` is absent from the prod task definition, so today it falls
+    back to `sender_email` and lands on `noreply@` all the same. Setting it to a read inbox is a
+    deploy action, and `scripts/send_announcement.py` REFUSES TO SEND while this still looks like a
+    no-reply address, rather than letting a broadcast proceed on a promise it cannot keep.
+    """
+    return feedback_recipient()
+
+
+def looks_unmonitored(addr: str) -> bool:
+    """True for an address whose local part announces that nobody reads it.
+
+    A heuristic, deliberately, and used only to REFUSE or to warn -- never to rewrite an address. The
+    alternative to a heuristic here is nothing, and nothing is how the first version shipped a
+    `noreply@` unsubscribe target alongside a comment correctly explaining why that was wrong.
+    """
+    local = addr.partition("@")[0].strip().lower()
+    for ch in ".-_+":
+        local = local.replace(ch, "")
+    return local.startswith(("noreply", "donotreply", "nomail")) or local == ""
+
+
 def build_announcement(
     *,
     to_email: str,
     subject: str,
     body: str,
     from_email: str,
-) -> "EmailMessage":
+    unsubscribe_to: str | None = None,
+):
     """Build the MIME message, separately from sending it, so the headers can be tested.
 
     WHY `send_raw_email` AND NOT `send_email`. SES's simple `send_email` API accepts a Subject and a
-    Body and nothing else — there is no way to attach `List-Unsubscribe`. That header is the whole
-    unsubscribe mechanism chosen for this feature (owner's call): Gmail and Apple Mail render their
-    own native "unsubscribe" control from it, and since 2024 Gmail and Yahoo expect it from anything
-    that looks like bulk mail. Without it an announcement is filtered harder, which is the feature
-    silently not working rather than failing. So the message is assembled here and sent raw.
+    Body and nothing else -- there is no way to attach `List-Unsubscribe`. That header is the whole
+    unsubscribe mechanism chosen for this feature (owner's call): a mail client renders its own
+    unsubscribe control from it, and since 2024 Gmail and Yahoo expect it from anything that looks
+    like bulk mail. Without it an announcement is filtered harder, which is the feature silently not
+    working rather than failing. So the message is assembled here and sent raw.
 
-    `List-Unsubscribe-Post` is what makes a mail client treat the control as ONE-CLICK rather than
-    "open this link and figure it out". It is paired with a `mailto:` target on purpose: a real
-    one-click HTTP endpoint would be a new unauthenticated write surface with its own token scheme
-    and rate limit, and this beta does not need that to honour an opt-out — the in-app switch is the
-    primary control, and a mailto lands in an inbox the owner already reads.
+    THERE IS NO `List-Unsubscribe-Post`, AND ITS ABSENCE IS A CORRECTION. The first version paired one
+    with this `mailto:`, which claims ONE-CLICK -- and RFC 8058's one-click flow specifies an
+    **https:** URI, so the pairing was outside the spec (a conforming client ignores the header and
+    falls back to ordinary mailto behaviour) while also advertising an automation nothing here
+    performs. Both ship gates caught it. The plain `List-Unsubscribe` deliverability argument survives
+    intact; it was only the word "one-click" that was never earned. A real HTTPS one-click route was
+    considered and declined -- a new unauthenticated write surface with its own token scheme and rate
+    limit -- because the in-app switch is the primary control and this is the convenience layer.
 
-    The footer names the in-app switch, because the header is invisible to anyone whose mail client
-    doesn't surface it, and "how do I stop these" must have an answer inside the message.
+    `Reply-To` goes to the same read inbox. A reply to a broadcast is the most engaged response a beta
+    can get, and the first version aimed it at `noreply@`.
+
+    `Date` and `Message-ID` are set HERE rather than left to SES. `Date` is mandatory under RFC 5322
+    and its absence is a spam-scoring signal; SES may well add both, but "may well" is not a thing to
+    rest deliverability on when two lines settle it.
     """
     from email.message import EmailMessage
+    from email.utils import formatdate, make_msgid
 
+    unsubscribe_to = unsubscribe_to or from_email
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = from_email
     message["To"] = to_email
-    # `mailto` rather than an HTTPS endpoint — see the docstring.
-    message["List-Unsubscribe"] = f"<mailto:{from_email}?subject=unsubscribe>"
-    message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    message["Date"] = formatdate(localtime=False, usegmt=True)
+    message["Message-ID"] = make_msgid(domain=from_email.partition("@")[2] or "issei.app")
+    message["Reply-To"] = unsubscribe_to
+    message["List-Unsubscribe"] = "<mailto:" + unsubscribe_to + "?subject=unsubscribe>"
     message.set_content(
-        f"{body}\n\n"
+        body + "\n\n"
         "--\n"
         "You are getting this because you have an issei account.\n"
         "Turn these off any time: open issei, go to You, then Notifications.\n"
@@ -202,19 +247,66 @@ def build_announcement(
     return message
 
 
-def send_announcement(*, to_email: str, subject: str, body: str) -> bool:
-    """Send ONE announcement. Returns True if SES accepted it.
+def announcement_bytes(message) -> bytes:
+    """Serialise for the wire, and the line-length cap is the load-bearing part.
 
-    RAISES `AnnouncementUnavailable` when no sender is configured, and that is deliberately the
-    OPPOSITE of `send_feedback_notification`'s degrade-to-no-op. The difference is the caller: that
-    one runs inside a user-facing write where a silent skip is the kind thing to do, while this one
-    is called by `scripts/send_announcement.py`, a deliberate manual act whose whole output is "who
-    did this reach". A script that prints "sent to 14 people" having sent to nobody is worse than a
-    script that stops — this is the same reasoning `services/push.py` records for why IT degrades
-    and `email.py` does not.
+    Under the default policy a `List-Unsubscribe` value longer than ~48 characters gets folded, and
+    past that threshold the whole header is emitted as an RFC 2047 encoded-word
+    (`=?utf-8?q?=3Cmailto=3A...?=`) which no RFC 2369 parser reads as a URI -- the unsubscribe control
+    simply vanishes. `noreply@issei.app` is 17 characters so it cannot fire today, but the obvious
+    next change (adding an https: URI beside the mailto) crosses it immediately. A ship gate measured
+    the threshold at exactly 49. `policy.SMTP` also gives CRLF line endings, which is what the wire
+    format actually calls for.
+
+    Separate from `build_announcement` so a test can assert the BYTES rather than the in-memory
+    object -- the first version's header tests read the header back off the object, which round-trips
+    regardless of how it serialises, so they passed on output a mail client could not parse.
+    """
+    from email import policy
+
+    return message.as_bytes(policy=policy.SMTP.clone(max_line_length=0))
+
+
+@lru_cache(maxsize=1)
+def _ses_client():
+    """One SES client, not one per recipient.
+
+    `boto3.client` resolves credentials on every call, which is invisible at a dozen users and wrong
+    at four hundred -- a broadcast would spend a credential lookup per message. Cached lazily rather
+    than built at import time so a deploy with no AWS role still imports this module cleanly.
+    """
+    return boto3.client("ses", region_name=_SES_REGION)
+
+
+def send_announcement(
+    *, to_email: str, subject: str, body: str, unsubscribe_to: str | None = None
+) -> bool:
+    """Send ONE announcement to ONE address. Returns True if SES accepted it.
+
+    **THIS FUNCTION DOES NOT CHECK `announcement_emails`, AND CANNOT.** It takes a bare address and
+    has no session. The opt-out is enforced one level up, by `RECIPIENTS_SQL` in
+    `scripts/send_announcement.py`, its only caller -- and a ship gate correctly named the shape that
+    makes that fragile: it is exactly how #98 shipped an unvalidated photo field, because "the inline
+    copy in the first router never reached the second". So the contract is stated here in the loudest
+    place available rather than assumed:
+
+        ANY NEW CALLER MUST FILTER ON `User.announcement_emails` ITSELF.
+
+    A welcome email, an owner-gated route, a re-send helper -- none of them would get a guard from
+    this function and none would fail a test. `TESTING.md` invariant 18 records the same rule, and the
+    honest fix if a second caller ever appears is to move the check inside by taking a `User` row
+    instead of a string.
+
+    RAISES `AnnouncementUnavailable` when no sender is configured, deliberately the OPPOSITE of
+    `send_feedback_notification`'s degrade-to-no-op. The difference is the caller: that one runs
+    inside a user-facing write where a silent skip is the kind thing to do, while this one is called
+    by a script whose whole output is "who did this reach" -- a run printing "sent to 14 people"
+    having sent to nobody is worse than one that stops.
 
     A per-recipient SES failure is NOT raised: it returns False so the caller can carry on down the
-    list and report the failures at the end. One bad address must not strand the other thirteen.
+    list and report the failures at the end. One bad address must not strand the other thirteen, and
+    in the SES sandbox every unverified recipient fails exactly this way, so this is the NORMAL path
+    until production access is granted.
     """
     from_email = announcement_sender()
     if not from_email:
@@ -222,32 +314,41 @@ def send_announcement(*, to_email: str, subject: str, body: str) -> bool:
             "SENDER_EMAIL is not set, so there is no verified SES identity to send from."
         )
     message = build_announcement(
-        to_email=to_email, subject=subject, body=body, from_email=from_email
+        to_email=to_email,
+        subject=subject,
+        body=body,
+        from_email=from_email,
+        unsubscribe_to=unsubscribe_to or unsubscribe_address(),
     )
     try:
-        client = boto3.client("ses", region_name=_SES_REGION)
-        client.send_raw_email(
+        _ses_client().send_raw_email(
             Source=from_email,
             Destinations=[to_email],
-            RawMessage={"Data": message.as_bytes()},
+            RawMessage={"Data": announcement_bytes(message)},
         )
         return True
     except ClientError as exc:
         # NAMED, because in the SES sandbox this is the expected failure for every recipient who is
-        # not a verified identity, and the operator needs to be able to tell that apart from a
-        # genuine problem. The script surfaces the code.
+        # not a verified identity, and the operator needs to tell that apart from a genuine problem.
         code = exc.response.get("Error", {}).get("Code", "?")
-        logger.warning("announcement to %s failed: %s", _redact(to_email), code)
+        logger.warning("announcement to %s failed: %s", redact_address(to_email), code)
         return False
     except Exception:
-        logger.warning("announcement to %s failed", _redact(to_email), exc_info=True)
+        logger.warning("announcement to %s failed", redact_address(to_email), exc_info=True)
         return False
 
 
-def _redact(addr: str) -> str:
-    """`ana@example.com` -> `a**@example.com`. Announcements are bulk, so a failure loop would
-    otherwise write every recipient's address into CloudWatch in plain text."""
+def redact_address(addr: str) -> str:
+    """`ana@example.com` -> `a**@example.com`.
+
+    Exported rather than duplicated: announcements are bulk, so a failure loop would otherwise write
+    every recipient's address into CloudWatch in plain text, and two copies of a redaction rule is how
+    one of them ends up not redacting (the `services/media.py` lesson).
+
+    NOT used for the send script's own failure list, which prints in full on purpose -- the operator
+    already holds `DATABASE_URL`, and a redacted address cannot be passed back to `--only`.
+    """
     local, _, domain = addr.partition("@")
     if not domain:
         return "***"
-    return f"{local[:1]}{'*' * max(len(local) - 1, 1)}@{domain}"
+    return local[:1] + "*" * max(len(local) - 1, 1) + "@" + domain

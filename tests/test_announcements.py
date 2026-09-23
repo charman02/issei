@@ -18,9 +18,12 @@ from sqlalchemy import text
 
 from app.services.email import (
     AnnouncementUnavailable,
+    announcement_bytes,
     announcement_sender,
     build_announcement,
+    looks_unmonitored,
     send_announcement,
+    unsubscribe_address,
 )
 
 # The send script, loaded by path: `scripts/` is not a package. Its recipient query is imported
@@ -127,25 +130,78 @@ def test_the_query_is_not_secretly_filtering_on_anything_else(db_session, make_u
 # --- the message itself ---
 
 
-def test_every_announcement_carries_the_unsubscribe_headers():
+def test_every_announcement_carries_the_unsubscribe_header():
     """WHY `send_raw_email` EXISTS IN THIS FEATURE. SES's simple `send_email` takes a subject and a
-    body and nothing else, so there is no way to attach these. Gmail and Yahoo expect
+    body and nothing else, so there is no way to attach this. Gmail and Yahoo expect
     `List-Unsubscribe` from bulk senders and filter harder without it — so the header is
     deliverability, not manners, and an announcement in spam is the feature not working.
-
-    `List-Unsubscribe-Post` is what makes a mail client treat its control as one-click rather than
-    "open a link and work it out"."""
+    """
     message = build_announcement(
         to_email="ana@example.com",
         subject="issei: what's new",
         body="We shipped a thing.",
-        from_email="hello@issei.app",
+        from_email="noreply@issei.app",
+        unsubscribe_to="hello@issei.app",
     )
     assert message["List-Unsubscribe"] == "<mailto:hello@issei.app?subject=unsubscribe>"
-    assert message["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     assert message["To"] == "ana@example.com"
-    assert message["From"] == "hello@issei.app"
+    assert message["From"] == "noreply@issei.app"
     assert message["Subject"] == "issei: what's new"
+    # A reply to a broadcast is the most engaged response a beta gets; the first version aimed it at
+    # whatever `SENDER_EMAIL` was, i.e. at `noreply@`.
+    assert message["Reply-To"] == "hello@issei.app"
+    # `Date` is mandatory under RFC 5322 and its absence is a spam signal. SES may add one; two lines
+    # here mean we do not have to find out.
+    assert message["Date"]
+    assert message["Message-ID"]
+
+
+def test_it_does_NOT_claim_ONE_CLICK():
+    """THE CORRECTION BOTH SHIP GATES FOUND. The first version paired `List-Unsubscribe-Post:
+    List-Unsubscribe=One-Click` with a `mailto:`-only target. RFC 8058's one-click flow specifies an
+    **https:** URI, so that pairing is outside the spec — a conforming client ignores the header — and
+    worse, it advertises an automation nothing here performs: the mailto goes to a human inbox.
+
+    Claiming one-click while delivering a manual mailto is the shape of promise this project refuses
+    everywhere else (an unwired switch, a "sent ✓" on a grant that delivered nothing). The plain
+    header stays, because the deliverability argument for it is real.
+    """
+    message = build_announcement(
+        to_email="ana@example.com",
+        subject="s",
+        body="b",
+        from_email="noreply@issei.app",
+        unsubscribe_to="hello@issei.app",
+    )
+    assert message["List-Unsubscribe-Post"] is None
+
+
+def test_the_unsubscribe_header_survives_SERIALISATION():
+    """THE ASSERTION THE FIRST VERSION'S TESTS ONLY LOOKED LIKE THEY MADE.
+
+    They read `message["List-Unsubscribe"]` back off the in-memory object, which round-trips whatever
+    the wire format does, and the raw-bytes test asserted only that the header NAME appeared. A ship
+    gate measured the real hazard: past a 48-character header value the default policy emits the whole
+    thing as an RFC 2047 encoded-word (`=?utf-8?q?=3Cmailto=3A...?=`), which no RFC 2369 parser reads
+    as a URI — so the unsubscribe control silently vanishes while both old assertions still passed.
+    `noreply@issei.app` is short enough that it cannot fire today; adding an https: URI beside the
+    mailto, the obvious next change, crosses the threshold immediately.
+    """
+    long_inbox = "unsubscribe-requests-for-announcements@issei-app-example.com"
+    assert len(long_inbox) > 49
+    message = build_announcement(
+        to_email="ana@example.com",
+        subject="s",
+        body="b",
+        from_email="noreply@issei.app",
+        unsubscribe_to=long_inbox,
+    )
+    raw = announcement_bytes(message)
+    # The URI, on the wire, unencoded — not merely the header name.
+    assert b"<mailto:" + long_inbox.encode() in raw.replace(b"\r\n ", b"")
+    assert b"=?utf-8?q?" not in raw
+    # `policy.SMTP` also gives the CRLF line endings the wire format calls for.
+    assert b"\r\n" in raw
 
 
 def test_the_body_says_how_to_stop_them_without_needing_the_header():
@@ -178,6 +234,41 @@ def test_the_body_survives_punctuation_people_actually_type():
 
 
 # --- refusing, rather than pretending ---
+
+
+def test_the_unsubscribe_target_is_the_FEEDBACK_inbox_not_the_sender(monkeypatch):
+    """THE DEFECT BOTH GATES FOUND, pinned so it cannot come back.
+
+    The header pointed at `SENDER_EMAIL`, and prod sets that to `noreply@issei.app` — so a person
+    tapping their mail client's Unsubscribe mailed a box nobody reads, stayed on the list, and
+    believed they had left it. The single promise this feature makes, failing silently, for the only
+    person who used the mechanism the whole `send_raw_email` path exists for.
+
+    It now points at `feedback_recipient()`: the address #101 already sends real user feedback to,
+    i.e. one there is a reason to read. That fixes the VARIABLE — the deployed VALUE is a separate
+    problem, which the next test covers.
+    """
+    from app.services import email as email_service
+
+    monkeypatch.setattr(email_service.settings, "sender_email", "noreply@issei.app")
+    monkeypatch.setattr(email_service.settings, "feedback_notify_email", "hello@issei.app")
+    assert unsubscribe_address() == "hello@issei.app"
+    assert announcement_sender() == "noreply@issei.app"
+
+
+def test_a_noreply_address_is_recognised_as_unmonitored():
+    """What the send script refuses on. A heuristic, used only to REFUSE — never to rewrite an
+    address — because the alternative to a heuristic here is nothing, and nothing is how the first
+    version shipped a `noreply@` unsubscribe target with a comment explaining why that was wrong.
+
+    `FEEDBACK_NOTIFY_EMAIL` is ABSENT from the prod task definition, so `unsubscribe_address()` falls
+    back to `SENDER_EMAIL` and lands on `noreply@` regardless of the fix above. The refusal is what
+    stops a broadcast going out on a promise it cannot keep.
+    """
+    for bad in ("noreply@issei.app", "no-reply@issei.app", "NoReply@issei.app", "do.not.reply@x.com"):
+        assert looks_unmonitored(bad), bad
+    for good in ("hello@issei.app", "charlie@example.com", "feedback@issei.app"):
+        assert not looks_unmonitored(good), good
 
 
 def test_it_RAISES_with_no_sender_configured_rather_than_no_opping(monkeypatch):
@@ -213,6 +304,7 @@ def test_a_single_recipient_failure_returns_False_instead_of_raising(monkeypatch
                 {"Error": {"Code": "MessageRejected", "Message": "not verified"}}, "SendRawEmail"
             )
 
+    email_service._ses_client.cache_clear()
     monkeypatch.setattr(email_service.boto3, "client", lambda *a, **k: _Refusing())
     assert send_announcement(to_email="ana@example.com", subject="s", body="b") is False
 
@@ -224,7 +316,9 @@ def test_a_successful_send_reports_True_and_passes_the_raw_message(monkeypatch):
     would notice."""
     from app.services import email as email_service
 
-    monkeypatch.setattr(email_service.settings, "sender_email", "hello@issei.app")
+    monkeypatch.setattr(email_service.settings, "sender_email", "noreply@issei.app")
+    monkeypatch.setattr(email_service.settings, "feedback_notify_email", "hello@issei.app")
+    email_service._ses_client.cache_clear()
     captured = {}
 
     class _Accepting:
@@ -234,7 +328,10 @@ def test_a_successful_send_reports_True_and_passes_the_raw_message(monkeypatch):
 
     monkeypatch.setattr(email_service.boto3, "client", lambda *a, **k: _Accepting())
     assert send_announcement(to_email="ana@example.com", subject="s", body="b") is True
-    assert captured["Source"] == "hello@issei.app"
+    assert captured["Source"] == "noreply@issei.app"
     assert captured["Destinations"] == ["ana@example.com"]
     raw = captured["RawMessage"]["Data"]
-    assert b"List-Unsubscribe" in raw
+    # The URI, not just the header name — see the serialisation test above for why that distinction
+    # is the whole point.
+    assert b"<mailto:" in raw
+    assert b"List-Unsubscribe-Post" not in raw

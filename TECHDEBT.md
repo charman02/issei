@@ -681,9 +681,32 @@ imminent scaling risk.
 
 ### Infra & deployment
 
-- **THE ANNOUNCEMENT UNSUBSCRIBE HEADER POINTS AT `noreply@issei.app`, AND CLAIMS ONE-CLICK.**
-  (#107, found by the ship gate. **The most consequential entry on this list — it is the feature's
-  only promise, failing invisibly.**)
+- **`FEEDBACK_NOTIFY_EMAIL` IS UNSET IN PROD, SO THE ANNOUNCEMENT UNSUBSCRIBE TARGET IS STILL
+  `noreply@issei.app` — AND THAT IS NOW A HARD BLOCK RATHER THAN A SILENT DEFECT.** (#107)
+  *Fixed in code 2026-09-23, still open as a deploy action.* What was wrong and what changed:
+  the header pointed at `SENDER_EMAIL` and ALSO carried `List-Unsubscribe-Post`, i.e. it claimed
+  ONE-CLICK while aiming at a mailbox nobody reads. The `-Post` header is gone (RFC 8058's
+  one-click flow specifies an `https:` URI, so pairing it with a `mailto:` was outside the spec
+  *and* advertised an automation nothing performed), the target is now `feedback_recipient()`,
+  and `scripts/send_announcement.py` **refuses to send** while that address still looks
+  unmonitored. **The remaining action is yours:** set `FEEDBACK_NOTIFY_EMAIL` to an inbox you
+  read. Until then a broadcast cannot go out — which is the intended failure direction, but it
+  is a block, not a warning. Worth knowing separately: that same variable being unset means
+  #101's feedback notifications have also been landing on `noreply@issei.app`.
+  *Where:* `app/services/email.py` (`unsubscribe_address`, `looks_unmonitored`),
+  `.aws/task-definition.json`, `infra/lib/issei-stack.ts`.
+
+- **An announcement can reach an address nobody ever confirmed, and a bounce spike can pause
+  the identity PASSWORD RESET depends on.** (#107, raised by the ship gate)
+  `POST /auth/signup` does no email verification — there is no `email_verified` column, no
+  bounce or complaint handling, and no suppression list anywhere in `app/`. So `users.email` is
+  a set of syntactically valid, never-confirmed addresses, and a broadcast mails all of them.
+  The blast radius is cross-feature: a bounce/complaint spike gets the SES identity's sending
+  paused, and that identity is also the Source for `send_password_reset_email` — **the app's
+  only account-recovery path** — and for the feedback notification. Mitigation is procedural for
+  now and belongs in the runbook: `--only` yourself first, then small batches, watching the
+  account's bounce rate. A real fix is a bounce/complaint SNS topic feeding a suppression
+  column, which is a feature of its own.
   `build_announcement` sets `List-Unsubscribe: <mailto:{sender}?subject=unsubscribe>` plus
   `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and `sender` is `SENDER_EMAIL`, which prod
   sets to **`noreply@issei.app`** (`.aws/task-definition.json`, `infra/lib/issei-stack.ts`). Two

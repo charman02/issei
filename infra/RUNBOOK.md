@@ -318,9 +318,19 @@ Request production access in the SES console, then prove the path end to end wit
 `scripts/send_announcement.py --only your@address --send` before the first real send — it is
 dry-run by default and a real send makes you type the recipient count back, because mail has no undo.
 
-One thing to decide before that first send, recorded in TECHDEBT rather than here: the
-`List-Unsubscribe` header on every announcement points at `SENDER_EMAIL`, i.e. at `noreply@` today,
-while also advertising ONE-CLICK. If nobody reads that mailbox the opt-out fails silently.
+**`FEEDBACK_NOTIFY_EMAIL` HAS TO BE SET BEFORE A BROADCAST WILL RUN AT ALL.** Every announcement
+carries a `List-Unsubscribe` header pointing at that address, so it must be an inbox somebody reads —
+otherwise an unsubscribe request goes nowhere and the person stays on the list believing they left it.
+It is **absent** from the prod task definition today, so it falls back to `SENDER_EMAIL`
+(`noreply@issei.app`) and `scripts/send_announcement.py` will **refuse to send**, by design. Setting it
+also stops #101's feedback notifications landing on `noreply@`, which they currently do.
+
+One more caution, and it is the one with reach beyond this feature: **signup never verifies an email
+address**, and there is no bounce or complaint handling anywhere in the app. A bounce spike on a
+broadcast can get the whole SES identity's sending paused — and that identity is also the Source for
+password-reset mail, which is the app's only account-recovery path. So: `--only` yourself, then small
+batches, watching the account's bounce rate in the SES console. See TECHDEBT for the shape of a real
+fix (a bounce/complaint SNS topic feeding a suppression column).
 
 
 ## Step 2 — Bootstrap CDK (one-time per account/region)

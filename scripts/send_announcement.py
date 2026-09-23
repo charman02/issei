@@ -94,13 +94,6 @@ OPTED_OUT_SQL = text("SELECT count(*) FROM users WHERE announcement_emails = fal
 SECONDS_BETWEEN_SENDS = 0.2
 
 
-def _redact(addr: str) -> str:
-    local, _, domain = addr.partition("@")
-    if not domain:
-        return "***"
-    return f"{local[:1]}{'*' * max(len(local) - 1, 1)}@{domain}"
-
-
 def _show(chunk: str) -> None:
     """Print text that may contain ANY character, on a console that may not be able to encode it.
 
@@ -185,10 +178,13 @@ def main() -> int:
         AnnouncementUnavailable,
         announcement_sender,
         build_announcement,
+        looks_unmonitored,
         send_announcement,
+        unsubscribe_address,
     )
 
     sender = announcement_sender()
+    unsub = unsubscribe_address()
     host = engine.url.host or engine.url.database or "(local)"
 
     try:
@@ -222,6 +218,7 @@ def main() -> int:
 
     print(f"database host : {host}")
     print(f"sender        : {sender or '(NONE -- SENDER_EMAIL is not set, a real send will refuse)'}")
+    print(f"unsubscribe   : {unsub or '(NONE)'}")
     print(f"recipients    : {len(rows)}")
     print(f"opted out     : {opted_out}")
     print()
@@ -231,9 +228,11 @@ def main() -> int:
         subject=args.subject,
         body=body,
         from_email=sender or "unset@example.com",
+        unsubscribe_to=unsub or sender or "unset@example.com",
     )
     _show(f"Subject: {preview['Subject']}")
     print(f"List-Unsubscribe: {preview['List-Unsubscribe']}")
+    print(f"Reply-To: {preview['Reply-To']}")
     print()
     _show(preview.get_content())
     print("--- end of message ---")
@@ -245,7 +244,35 @@ def main() -> int:
 
     if not args.send:
         print("DRY RUN -- nothing was sent. Re-run with --send to send it for real.")
+        if unsub and looks_unmonitored(unsub):
+            print()
+            print(f"WARNING: the unsubscribe address is {unsub!r}, which looks unmonitored.")
+            print("A real send will REFUSE until that is a mailbox somebody reads. See below.")
         return 0
+
+    # REFUSE, rather than warn, and only on a REAL send -- a dry run still shows everything above so
+    # the problem is diagnosable without argument.
+    #
+    # This is the one promise the feature makes. `List-Unsubscribe` tells a mail client where to send
+    # an unsubscribe request; if that address is a `noreply@`, the person taps their client's
+    # Unsubscribe, the mail goes nowhere, and they stay on the list believing they left it. Both ship
+    # gates found the first version doing exactly that, because the header pointed at `SENDER_EMAIL`
+    # and prod sets it to `noreply@issei.app`. Pointing it at `FEEDBACK_NOTIFY_EMAIL` fixed the
+    # VARIABLE, not the deployed value -- that variable is absent in prod and falls back to the same
+    # address -- so the code refuses instead of shipping a broken promise quietly.
+    if not unsub or looks_unmonitored(unsub):
+        print(
+            f"Refusing to send: the unsubscribe address is {unsub or '(none)'!r}.\n"
+            "\n"
+            "Every announcement carries a List-Unsubscribe header pointing there, so it has to be a\n"
+            "mailbox somebody actually reads -- otherwise an unsubscribe request goes nowhere and the\n"
+            "person stays on the list thinking they left it.\n"
+            "\n"
+            "Set FEEDBACK_NOTIFY_EMAIL to a real inbox (it is also where #101 sends user feedback,\n"
+            "and it is currently unset in prod, which is why this falls back to SENDER_EMAIL).",
+            file=sys.stderr,
+        )
+        return 2
 
     # THE CONFIRMATION IS A TYPED NUMBER, not y/N. A single keystroke is too easy to give to a
     # question you did not read, and mail has no undo: this is the only action in the repo that
@@ -253,7 +280,13 @@ def main() -> int:
     # forces the number above to be looked at, which is also the number most likely to be wrong if
     # the connection string points somewhere unexpected.
     print(f"About to email {len(rows)} people from {sender!r}. This cannot be undone.")
-    answer = input(f"Type the recipient count ({len(rows)}) to confirm, anything else to abort: ")
+    try:
+        answer = input(f"Type the recipient count ({len(rows)}) to confirm, anything else to abort: ")
+    except EOFError:
+        # No terminal to confirm on. Fails CLOSED either way, but a traceback reads as the script
+        # being broken rather than as the guard doing its job.
+        print("\nNo input available, so nothing was confirmed and nothing was sent.", file=sys.stderr)
+        return 1
     if answer.strip() != str(len(rows)):
         print("Aborted. Nothing was sent.")
         return 1
@@ -274,8 +307,14 @@ def main() -> int:
     print()
     print(f"sent    : {sent}")
     print(f"failed  : {len(failed)}")
+    # IN FULL, not redacted, and that is a correction. The line below tells the operator to retry
+    # with `--only`, which a redacted `a**@x.com` cannot be passed to -- so the first version's
+    # recovery instruction was impossible to follow, and the only move left was re-running the whole
+    # thing, which (since nothing is recorded) mails everyone who succeeded a SECOND time. This is
+    # the operator's own terminal, they already hold DATABASE_URL, and the preview above already
+    # prints one address in full. Redaction still applies to the CloudWatch logs, where it belongs.
     for addr in failed:
-        print(f"  {_redact(addr)}")
+        print(f"  {addr}")
     if failed:
         print(
             "\nIn the SES sandbox every unverified recipient fails this way. If that is where you\n"

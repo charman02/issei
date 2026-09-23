@@ -471,6 +471,20 @@ describe('NotificationSettings — the email switch (#107)', () => {
     expect(body).toEqual({ announcement_emails: false })
   })
 
+  it('sends TRUE when toggled back on, not just false on the way out', async () => {
+    // A switch that only writes one direction is a trap, and the asymmetry is easy to ship because
+    // the interesting assertion is always the opt-OUT. Cheap to pin here; the server-side round trip
+    // is covered by `tests/test_announcements.py`.
+    signIn({ announcement_emails: false })
+    render(<NotificationSettings />)
+    const emailSwitch = await screen.findByRole('switch', { name: /updates about issei/i })
+    expect(emailSwitch).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(emailSwitch)
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalled())
+    expect(api.patch.mock.calls.at(-1)[1]).toEqual({ announcement_emails: true })
+  })
+
   it('defaults to ON for a cached user that predates the column', async () => {
     // A user object written by an older build has no `announcement_emails` at all, and `undefined`
     // must read as ON rather than OFF — the column defaults true server-side, so rendering it off

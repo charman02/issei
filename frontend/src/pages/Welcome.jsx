@@ -383,6 +383,14 @@ export default function Welcome() {
            already use: `notify_people`, `notify_friend_posts`, `notify_prompt_me`. Anything new must
            either fit one of these three or add a fourth line here as well as a fourth switch.
 
+           SCOPED TO PUSH, which the rule did not say until #107 added a switch and no line. This
+           panel exists to disclose what the browser PERMISSION buys — it is the screen where an
+           irrevocable grant is asked for — so it enumerates the three push gates and nothing else.
+           `announcement_emails` is email: it needs no permission, cannot be asked for here, and
+           reaches people for whom this panel renders the install instruction instead. A gate that
+           is not a push does not belong on this list, and a reader finding a fourth switch should
+           not conclude the rule was broken.
+
            WHY THE SYSTEM DIALOG IS NOT FIRED ON MOUNT, which is the version of "ask on first
            launch" that costs you the user. A permission prompt is ONE SHOT: a decline sets
            `denied` for the origin permanently, and no web app can ask again — the person has to go
