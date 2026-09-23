@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""What the handoff-grant repair migration (`b9d3f07a4c81`) will actually do to THIS database.
+# The docstring is a RAW string because the per-shell usage examples below contain Windows paths, and
+# `\v` in `.\venv\...` is a vertical tab as far as Python is concerned.
+r"""What the handoff-grant repair migration (`b9d3f07a4c81`) will actually do to THIS database.
 
 WHY THIS EXISTS
 ---------------
@@ -30,8 +32,32 @@ It answers four questions the ship gate raised and nothing on a dev machine can:
 
 USAGE
 -----
-    DATABASE_URL="postgresql://..." python scripts/check_handoff_grants.py
-    DATABASE_URL="postgresql://..." python scripts/check_handoff_grants.py --json
+Simplest — run it with no arguments and paste the connection string when it asks. It is read with
+`getpass`, so it is not echoed to the screen and never enters shell history:
+
+    ./venv/Scripts/python.exe scripts/check_handoff_grants.py
+
+Or set the variable yourself, if you prefer. The syntax differs per shell, which is worth spelling
+out because `VAR=value command` is bash-only and fails silently-ish in the other two:
+
+    bash/git-bash : DATABASE_URL="postgresql://..." ./venv/Scripts/python.exe scripts/check_handoff_grants.py
+    PowerShell    : $env:DATABASE_URL="postgresql://..."; .\venv\Scripts\python.exe scripts\check_handoff_grants.py
+    cmd.exe       : set DATABASE_URL=postgresql://...
+                    venv\Scripts\python.exe scripts\check_handoff_grants.py
+
+Add `--json` for machine-readable output, and `--prompt` to be asked even when `DATABASE_URL` is
+already set. Run it from the repository root either way.
+
+READ THIS IF IT SAYS "password authentication failed". That is the most likely first outcome and it is
+not a problem with the script. Both the working copy's `.env` and the exported `DATABASE_URL` on the
+machine this was written on hold a **rotated** Neon credential, so the default path connects to the
+right host with the wrong password. Get a fresh connection string from the Neon console and re-run
+with `--prompt`. The script reports that failure as one sentence rather than forty frames of
+psycopg2, because the traceback is what "it isn't working" looks like.
+
+It never falls back to `.env` silently: if nothing is set and nothing is pasted, it exits without
+connecting. Reporting "0 rows to repair" from a database it never reached is the one failure mode
+worth designing out of a tool whose whole job is to tell you a count.
 
 SELECT ONLY. No session is opened, no transaction is committed, nothing is written — same shape as
 `scripts/read_feedback.py`. Safe against production, which is the point; prefer a read-only Neon role
@@ -44,6 +70,7 @@ local-part plus a count, because the point is "a pair exists", not who.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -51,6 +78,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
 
 # The exact predicate the migration uses, so this cannot drift into reporting on a different
 # population than the one that gets repaired. Kept as a fragment rather than importing the migration's
@@ -121,7 +149,7 @@ VERSION_SQL = text("SELECT version_num FROM alembic_version")
 
 
 def _mask(addr: str) -> str:
-    """`ana@example.com` → `a**@example.com`. Enough to tell two findings apart, not enough to be a
+    """`ana@example.com` -> `a**@example.com`. Enough to tell two findings apart, not enough to be a
     disclosure in a terminal scrollback or a pasted screenshot."""
     local, _, domain = addr.partition("@")
     if not domain:
@@ -130,26 +158,105 @@ def _mask(addr: str) -> str:
     return f"{head}{'*' * max(len(local) - 1, 1)}@{domain}"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--json", action="store_true", help="machine-readable output")
-    args = parser.parse_args()
+def _ask_for_url(reason: str) -> str | None:
+    """Prompt for a connection string, or return None if there is no terminal to ask on.
 
-    if not os.environ.get("DATABASE_URL"):
+    ASKING rather than making the caller get their shell's env-var syntax right. `VAR=value command`
+    is bash-only; PowerShell needs `$env:VAR=`, cmd needs a separate `set` on its own line. That was
+    the first thing to go wrong with this script in practice, and the failure reads as the script
+    being broken rather than as a quoting problem. `getpass` also keeps the credential off the screen
+    and out of shell history, which is a better answer than the env var either way.
+    """
+    if not sys.stdin.isatty():
         print(
-            "DATABASE_URL is not set. Point it at the database you want to inspect:\n"
-            '  DATABASE_URL="postgresql://..." python scripts/check_handoff_grants.py',
+            f"{reason}\nNo terminal to ask on -- set DATABASE_URL yourself. The syntax differs per\n"
+            "shell; see the usage note at the top of this file.",
             file=sys.stderr,
         )
-        return 2
+        return None
+    print(reason)
+    print("Paste a connection string (it will not be echoed), or press Enter to give up.")
+    print("Neon console -> your project -> Connection string, if the local copy has been rotated.")
+    supplied = getpass.getpass("DATABASE_URL: ").strip()
+    return supplied or None
 
-    # Imported here, not at module scope: `app.database` builds the engine at import time, so a
-    # missing variable would otherwise raise a traceback before the sentence above could be printed.
+
+def _build_engine(url: str | None):
+    """Build the app's engine, optionally against an overriding URL.
+
+    `app.database` reads the setting at IMPORT time, so an override has to be in `os.environ` before
+    the import -- and on a re-try the module is already imported, which is why this reaches for
+    `create_engine` directly the second time rather than trying to re-import.
+    """
+    if url is not None:
+        os.environ["DATABASE_URL"] = url
+    if "app.database" in sys.modules and url is not None:
+        from sqlalchemy import create_engine
+
+        kwargs = {}
+        if url.startswith("sqlite"):
+            kwargs["connect_args"] = {"check_same_thread": False}
+        return create_engine(url, **kwargs)
     from app.database import engine  # noqa: E402
 
+    return engine
+
+
+def main() -> int:
+    # A SHORT ASCII description rather than `__doc__`. argparse prints the description on --help, and
+    # a Windows console defaults to cp1252 — one em dash in the module docstring would turn `--help`
+    # into a UnicodeEncodeError traceback. The full reasoning stays in the docstring, where it is read
+    # in an editor rather than encoded to a terminal.
+    parser = argparse.ArgumentParser(
+        description=(
+            "Report what the handoff-grant repair migration (b9d3f07a4c81) will do to a database. "
+            "SELECT-only. Reads DATABASE_URL, or asks for a connection string. "
+            "See the docstring at the top of this file for the full account."
+        )
+    )
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--prompt",
+        action="store_true",
+        help="ask for the connection string even if DATABASE_URL is already set "
+        "(use when the exported one is stale)",
+    )
+    args = parser.parse_args()
+
+    override = None
+    if args.prompt or not os.environ.get("DATABASE_URL"):
+        reason = (
+            "DATABASE_URL is already set; --prompt overrides it."
+            if args.prompt
+            else "DATABASE_URL is not set."
+        )
+        override = _ask_for_url(reason)
+        if override is None and not os.environ.get("DATABASE_URL"):
+            return 2
+
+    engine = _build_engine(override)
     host = engine.url.host or engine.url.database or "(local)"
 
-    with engine.connect() as conn:
+    # ONE SENTENCE ON A FAILED CONNECTION, not a hundred lines of psycopg2 and SQLAlchemy frames.
+    # The traceback is what "the script isn't working" looks like, and the single most likely cause
+    # here is a rotated credential -- the working copy's `.env` holds one, and so does the exported
+    # variable on the machine this was written on, so the default path lands on it.
+    try:
+        conn_ctx = engine.connect()
+    except SQLAlchemyError as exc:
+        detail = str(getattr(exc, "orig", exc)).strip().splitlines()
+        print(f"Could not connect to {host}.", file=sys.stderr)
+        if detail:
+            print(f"  {detail[0]}", file=sys.stderr)
+        if "password authentication failed" in str(exc).lower():
+            print(
+                "\nThat is a rotated or wrong credential rather than a problem with this script.\n"
+                "Get a fresh connection string from the Neon console and re-run with --prompt.",
+                file=sys.stderr,
+            )
+        return 1
+
+    with conn_ctx as conn:
         twins = [dict(r._mapping) for r in conn.execute(CASE_TWINS_SQL)]
         result = {
             "host": host,
@@ -177,12 +284,12 @@ def main() -> int:
     print(f"bound rows still carrying an addr: {result['bound_rows_with_stale_address']}")
     print()
     if result["case_twin_pairs"]:
-        print("CASE-TWIN ACCOUNTS EXIST — the address ambiguity is live on this database:")
+        print("CASE-TWIN ACCOUNTS EXIST -- the address ambiguity is live on this database:")
         for pair in result["case_twin_pairs"]:
             print(f"  {pair['address']}  ({pair['accounts']} accounts)")
         print(
             "  Nothing will be mis-delivered (the route and the migration both refuse to guess),\n"
-            "  but the durable fix — case-insensitive uniqueness on users.email — cannot be applied\n"
+            "  but the durable fix -- case-insensitive uniqueness on users.email -- cannot be applied\n"
             "  until you decide which account of each pair keeps the address. See TECHDEBT."
         )
     else:
