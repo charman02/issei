@@ -363,20 +363,31 @@ describe('NotificationSettings (#89)', () => {
     expect(api.patch).toHaveBeenCalledWith('/auth/me', { notify_people: false })
   })
 
-  it('has exactly four switches, in subject order, and no fifth appears by accident', async () => {
+  it('has exactly FOUR PUSH switches then ONE EMAIL switch, in that order, and no sixth', async () => {
     // Asserted as a COUNT and an ORDER, because every previous version of this screen either grew a
     // control that consulted nothing or modelled two unrelated things as one. The order is the
     // argument: the device, then the app asking YOU, then news about THEM, then things addressed to
-    // you. Any fifth control needs a consumer and a reason to be a separate kind.
+    // you. Any new control needs a consumer and a reason to be a separate kind.
+    //
+    // THE FIFTH IS A DIFFERENT CHANNEL, and this test is where that stays legible (#107). The four
+    // above it gate a PUSH: each needs a subscription on a device, each respects quiet hours, and
+    // none can fire on an iPhone in Safari. `announcement_emails` is MAIL, so none of that is true
+    // of it — which is why it sits last, under its own "By email" heading, rather than becoming a
+    // fourth push toggle by adjacency. This test failed when the switch was added, which is exactly
+    // what it is for; updating it is a deliberate act, not a formality.
     signIn()
     render(<NotificationSettings />)
     await screen.findByRole('switch', { name: /remind me to share a meal/i })
     const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(4)
+    expect(switches).toHaveLength(5)
     expect(switches[0]).toHaveAccessibleName(/notify me on this device/i)
     expect(switches[1]).toHaveAccessibleName(/remind me to share a meal/i)
     expect(switches[2]).toHaveAccessibleName(/when a friend shares a meal/i)
     expect(switches[3]).toHaveAccessibleName(/when someone reaches you/i)
+    expect(switches[4]).toHaveAccessibleName(/updates about issei/i)
+    // The heading is what keeps the last one from reading as push. Without it the switch is just a
+    // fifth item in a list of notification toggles.
+    expect(screen.getByText(/by email/i)).toBeInTheDocument()
     expect(screen.queryAllByRole('radiogroup')).toHaveLength(0)
     // Four selects: the reminder's hour and frequency, and the two quiet-hour bounds. Counted for
     // the same reason as the switches — every previous version of this screen grew a control that
@@ -442,5 +453,58 @@ describe('inQuietHours — mirrors app/services/push.in_quiet_hours', () => {
     // Someone setting both to the same number means "don't bother", and the destructive reading of
     // an ambiguous input is the wrong one.
     expect(inQuietHours(12, 9, 9)).toBe(false)
+  })
+})
+
+describe('NotificationSettings — the email switch (#107)', () => {
+  it('writes announcement_emails and nothing else', async () => {
+    // The one preference on this screen that is not a push. It must not be sent alongside the push
+    // fields, because `PATCH /auth/me` applies whatever it receives and a switch that quietly
+    // rewrote a neighbour would be undiagnosable from the UI.
+    signIn()
+    render(<NotificationSettings />)
+    const emailSwitch = await screen.findByRole('switch', { name: /updates about issei/i })
+    await userEvent.click(emailSwitch)
+
+    await waitFor(() => expect(api.patch).toHaveBeenCalled())
+    const body = api.patch.mock.calls.at(-1)[1]
+    expect(body).toEqual({ announcement_emails: false })
+  })
+
+  it('defaults to ON for a cached user that predates the column', async () => {
+    // A user object written by an older build has no `announcement_emails` at all, and `undefined`
+    // must read as ON rather than OFF — the column defaults true server-side, so rendering it off
+    // would show someone an opt-out they never chose, and one tap "back on" would be a no-op write.
+    signIn({ announcement_emails: undefined })
+    render(<NotificationSettings />)
+    const emailSwitch = await screen.findByRole('switch', { name: /updates about issei/i })
+    expect(emailSwitch).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('is reachable on an iPhone in Safari, where it is the ONLY channel that works', async () => {
+    // `install-first` replaces the device switch with the Add-to-Home-Screen instruction, and every
+    // push preference below it is moot until they install. Email is not — so this switch must render
+    // outside that branch. If it ever moves inside one, the platform that most needs it loses it.
+    push.pushAvailability.mockReturnValue('install-first')
+    signIn()
+    render(<NotificationSettings />)
+    expect(await screen.findByRole('switch', { name: /updates about issei/i })).toBeInTheDocument()
+  })
+
+  it('says what the mail is, and what it is not', async () => {
+    // "Updates about issei" alone reads like it could mean friend activity. The hint draws the line
+    // against the switches directly above it, which are the things people actually worry about.
+    signIn()
+    render(<NotificationSettings />)
+    await screen.findByRole('switch', { name: /updates about issei/i })
+    expect(screen.getByText(/not recipes, not friend activity/i)).toBeInTheDocument()
+  })
+
+  it('claims nothing about voice or audio', async () => {
+    signIn()
+    const { container } = render(<NotificationSettings />)
+    await screen.findByRole('switch', { name: /updates about issei/i })
+    const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
+    expect(container.textContent).not.toMatch(BANNED)
   })
 })

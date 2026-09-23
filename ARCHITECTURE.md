@@ -387,8 +387,8 @@ React app                FastAPI app          Postgres (Neon)
   automatic. Watch for them when reviewing changes.
 - **Two servers must be running to use the app locally**: `uvicorn app.main:app
   --reload` (backend) and `npm run dev` in `frontend/` (frontend).
-- **Verifying changes:** backend has `pytest` (**992 tests** across `tests/`);
-  frontend has Vitest + React Testing Library (**1,031 tests in 64 files**) — run
+- **Verifying changes:** backend has `pytest` (**1,003 tests** across `tests/`);
+  frontend has Vitest + React Testing Library (**1,036 tests in 64 files**) — run
   `npm test` (`vitest run`) in `frontend/`. `npm run build` still catches
   syntax/import errors. These counts move; re-run both suites rather than
   quoting a number from a doc.

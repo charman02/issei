@@ -137,6 +137,25 @@ class User(Base):
     notify_prompt_every_days: Mapped[int] = mapped_column(nullable=False, server_default="1")
     notify_friend_posts: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     notify_people: Mapped[bool] = mapped_column(nullable=False, server_default="1")
+    # THE ONE ABOVE THIS LINE ARE PUSH; THIS ONE IS EMAIL, and the split is the reason it is named
+    # `announcement_emails` rather than `notify_announcements` (#107). Every `notify_*` field gates a
+    # Web Push delivery through `services/push.py`, which needs a subscription on a device the person
+    # installed the app on. An announcement cannot use that channel and reach everyone: most of this
+    # audience is on an iPhone in Safari, where `pushAvailability()` is `install-first` and there is no
+    # subscription to send to. So the one message that has to reach EVERY account goes by email, and
+    # a name that said `notify_` would invite the next person to gate a push on it.
+    #
+    # AN OPT-OUT, NOT AN OPT-IN: default TRUE, because these accounts signed up for a product in
+    # beta and "the thing you joined has changed" is the mail they are owed. It is also why this is
+    # the ONLY email the app sends unasked — a password reset is a reply to a request, and the
+    # feedback notification goes to the owner's own inbox.
+    #
+    # THE SWITCH IS THE ONLY WAY TO SET IT and it lives on the You page beside the push switches,
+    # under its own EMAIL heading, so nobody reads it as another push toggle. Every send also carries
+    # a `List-Unsubscribe` header (see `services/email.send_announcement`) so Gmail and Apple Mail
+    # offer their own native unsubscribe — which is not politeness, it is deliverability: bulk mail
+    # without that header is filtered harder, and an announcement in spam is the feature not working.
+    announcement_emails: Mapped[bool] = mapped_column(nullable=False, server_default="1")
     # `notify_prompt` and `notify_posts` USED TO SIT HERE, and are gone as of migration
     # `e6f7a8b9c0d1` — release 3 of 3. Left as a note rather than a clean deletion because the
     # SEQUENCE is the reusable part, and the next person to remove a column from this table needs

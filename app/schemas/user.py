@@ -55,6 +55,8 @@ class UserResponse(UserBase):
     notify_prompt_every_days: int = 1
     notify_friend_posts: bool = True
     notify_people: bool = True
+    # EMAIL, not push — see `User.announcement_emails` for why the name says so.
+    announcement_emails: bool = True
     quiet_from: int = 22
     quiet_to: int = 8
     # The two #105 settings. Safe to expose for the same reason as the others: both are NOT NULL
@@ -140,6 +142,10 @@ class AccountUpdate(BaseModel):
     notify_prompt_every_days: Optional[int] = Field(default=None, ge=1, le=30)
     notify_friend_posts: Optional[bool] = None
     notify_people: Optional[bool] = None
+    # The one EMAIL preference (#107). No password required, like every other switch here:
+    # it only narrows what reaches the person, it exposes nothing to anyone else, and it is
+    # instantly reversible.
+    announcement_emails: Optional[bool] = None
     quiet_from: Optional[int] = Field(default=None, ge=0, le=23)
     quiet_to: Optional[int] = Field(default=None, ge=0, le=23)
     # TWO DEPRECATED ALIASES, kept only for the deploy window — and this file now has two

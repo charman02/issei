@@ -141,3 +141,113 @@ def send_feedback_notification(
         # a class of failure that turns a working write into a 500.
         logger.warning("feedback email failed", exc_info=True)
         return False
+
+
+# --- announcements (#107) -------------------------------------------------------------------------
+
+
+class AnnouncementUnavailable(RuntimeError):
+    """No verified sender is configured, so no announcement can be sent from this deploy."""
+
+
+def announcement_sender() -> str:
+    """The verified SES identity every announcement is sent FROM, or "" for nowhere.
+
+    Same single source as the other two senders: SES requires the Source to be a verified identity,
+    and `SENDER_EMAIL` is the one address the deploy is certain about.
+    """
+    return (settings.sender_email or "").strip()
+
+
+def build_announcement(
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+    from_email: str,
+) -> "EmailMessage":
+    """Build the MIME message, separately from sending it, so the headers can be tested.
+
+    WHY `send_raw_email` AND NOT `send_email`. SES's simple `send_email` API accepts a Subject and a
+    Body and nothing else — there is no way to attach `List-Unsubscribe`. That header is the whole
+    unsubscribe mechanism chosen for this feature (owner's call): Gmail and Apple Mail render their
+    own native "unsubscribe" control from it, and since 2024 Gmail and Yahoo expect it from anything
+    that looks like bulk mail. Without it an announcement is filtered harder, which is the feature
+    silently not working rather than failing. So the message is assembled here and sent raw.
+
+    `List-Unsubscribe-Post` is what makes a mail client treat the control as ONE-CLICK rather than
+    "open this link and figure it out". It is paired with a `mailto:` target on purpose: a real
+    one-click HTTP endpoint would be a new unauthenticated write surface with its own token scheme
+    and rate limit, and this beta does not need that to honour an opt-out — the in-app switch is the
+    primary control, and a mailto lands in an inbox the owner already reads.
+
+    The footer names the in-app switch, because the header is invisible to anyone whose mail client
+    doesn't surface it, and "how do I stop these" must have an answer inside the message.
+    """
+    from email.message import EmailMessage
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = from_email
+    message["To"] = to_email
+    # `mailto` rather than an HTTPS endpoint — see the docstring.
+    message["List-Unsubscribe"] = f"<mailto:{from_email}?subject=unsubscribe>"
+    message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    message.set_content(
+        f"{body}\n\n"
+        "--\n"
+        "You are getting this because you have an issei account.\n"
+        "Turn these off any time: open issei, go to You, then Notifications.\n"
+    )
+    return message
+
+
+def send_announcement(*, to_email: str, subject: str, body: str) -> bool:
+    """Send ONE announcement. Returns True if SES accepted it.
+
+    RAISES `AnnouncementUnavailable` when no sender is configured, and that is deliberately the
+    OPPOSITE of `send_feedback_notification`'s degrade-to-no-op. The difference is the caller: that
+    one runs inside a user-facing write where a silent skip is the kind thing to do, while this one
+    is called by `scripts/send_announcement.py`, a deliberate manual act whose whole output is "who
+    did this reach". A script that prints "sent to 14 people" having sent to nobody is worse than a
+    script that stops — this is the same reasoning `services/push.py` records for why IT degrades
+    and `email.py` does not.
+
+    A per-recipient SES failure is NOT raised: it returns False so the caller can carry on down the
+    list and report the failures at the end. One bad address must not strand the other thirteen.
+    """
+    from_email = announcement_sender()
+    if not from_email:
+        raise AnnouncementUnavailable(
+            "SENDER_EMAIL is not set, so there is no verified SES identity to send from."
+        )
+    message = build_announcement(
+        to_email=to_email, subject=subject, body=body, from_email=from_email
+    )
+    try:
+        client = boto3.client("ses", region_name=_SES_REGION)
+        client.send_raw_email(
+            Source=from_email,
+            Destinations=[to_email],
+            RawMessage={"Data": message.as_bytes()},
+        )
+        return True
+    except ClientError as exc:
+        # NAMED, because in the SES sandbox this is the expected failure for every recipient who is
+        # not a verified identity, and the operator needs to be able to tell that apart from a
+        # genuine problem. The script surfaces the code.
+        code = exc.response.get("Error", {}).get("Code", "?")
+        logger.warning("announcement to %s failed: %s", _redact(to_email), code)
+        return False
+    except Exception:
+        logger.warning("announcement to %s failed", _redact(to_email), exc_info=True)
+        return False
+
+
+def _redact(addr: str) -> str:
+    """`ana@example.com` -> `a**@example.com`. Announcements are bulk, so a failure loop would
+    otherwise write every recipient's address into CloudWatch in plain text."""
+    local, _, domain = addr.partition("@")
+    if not domain:
+        return "***"
+    return f"{local[:1]}{'*' * max(len(local) - 1, 1)}@{domain}"

@@ -396,6 +396,29 @@ export default function NotificationSettings() {
             {hourLabel(hour)} is inside your quiet hours, so the reminder won&rsquo;t arrive.
           </p>
         )}
+
+        {/* EMAIL, UNDER ITS OWN HEADING, and the heading is the whole point of putting it here
+            rather than in the list above (#107). Every switch above this line gates a PUSH — it
+            needs a subscription on a device, it respects quiet hours, and on an iPhone in Safari it
+            can't fire at all. This one is mail, so none of that applies to it: it arrives whatever
+            the device, and quiet hours have nothing to do with it. Filed under the same section
+            because a person thinking "stop sending me things" looks in one place, but separated by a
+            heading so nobody reads it as a fourth push toggle.
+
+            OUTSIDE every `availability` branch too — an iPhone in Safari shows the install
+            instruction instead of the device switch, and this must still be reachable there. It is
+            the only channel that works on that platform today. */}
+        <div className="border-t-2 border-line pt-3">
+          <span className="section-label">By email</span>
+          <Toggle
+            label="Updates about issei"
+            hint="Occasional mail from us when something changes. Not recipes, not friend activity — those are the switches above."
+            on={user.announcement_emails !== false}
+            disabled={savingPref}
+            onChange={(v) => savePref({ announcement_emails: v })}
+          />
+        </div>
+
         {error && (
           <p className="pb-3">
             <span className="error-pill">{error}</span>

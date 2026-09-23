@@ -196,6 +196,7 @@ def login(
             "notify_prompt_every_days": user.notify_prompt_every_days,
             "notify_friend_posts": user.notify_friend_posts,
             "notify_people": user.notify_people,
+            "announcement_emails": user.announcement_emails,
             "quiet_from": user.quiet_from,
             "quiet_to": user.quiet_to,
         },
@@ -328,6 +329,7 @@ def update_me(
         "notify_prompt_every_days",
         "notify_friend_posts",
         "notify_people",
+        "announcement_emails",
         "quiet_from",
         "quiet_to",
     ):
