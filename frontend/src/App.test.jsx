@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
-import { MemoryRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import App from './App'
 import { resolve } from 'node:path'
@@ -211,6 +211,11 @@ describe('`/join` is the referral door, and `/` is the app (#111)', () => {
     )
     expect(screen.queryByText('LANDING RENDERED')).not.toBeInTheDocument()
     expect(screen.queryByText('FEED RENDERED')).not.toBeInTheDocument()
+    // AND the form is actually there. Two absences alone would also be satisfied by deleting the
+    // `/` route outright, so the commit's promise — "returning users get the sign-in form" — needs
+    // a positive assertion or nothing pins it. `Login` is deliberately not mocked in this file.
+    expect(await screen.findByPlaceholderText(/^email$/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/^password$/i)).toBeInTheDocument()
   })
 
   it('still serves Home, inside Layout, to a signed-in user at `/`', async () => {

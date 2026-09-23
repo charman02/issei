@@ -47,13 +47,25 @@ import { enable, primeVapidKey, pushAvailability } from '../lib/push'
 //
 // THE PHOTO PANEL WAS DROPPED (owner's call, and it is the one thing here that lost a conversion
 // point). It asked for something that produces no content, and it already has a fallback that nags
-// nobody: the You-page nudge (#77) plus the retro prompt for older accounts (#84). Its framing
+// nobody: the You-page nudge (#77) plus the Home strip (#84) — which were the backstop for people who
+// skipped this panel and are now, between them, the app's ONLY photo ask. Its framing
 // machinery — `useAvatarUpload`, `PhotoFramer`, `PHOTO_ACCEPT`, `Avatar` — came out with it rather
 // than being left imported and unused.
 //
 // EVERY ACTION STEP STAYS GENUINELY OPTIONAL, with a fallback elsewhere: Skip in the header finishes
-// from anywhere, "Not now" advances one panel, and each act has a second home — Home's own empty
-// state carries a "📸 Share a meal" button to the same route, and `NotifyNudge` still asks on Home.
+// from anywhere, "Not now" advances one panel, and each act has a second home. State those fallbacks
+// precisely, because a ship gate found both of them narrower than the sentence they replaced:
+//   · the MEAL ask — Home's empty state carries a "📸 Share a meal" button to the same route, but it
+//     is gated on `posts.length === 0 && ownPosts.length === 0`, and the cold-start `everyone` fetch
+//     means a new account in a beta with any public post has posts and therefore no empty state. The
+//     unconditional fallback is the bottom nav's Add tab, so nobody is stranded either way.
+//   · the NOTIFICATIONS ask — `NotifyNudge` re-asks on Home, but ONLY where `pushAvailability()` is
+//     `'ready'`. On an iPhone in a Safari tab it is `'install-first'` and the strip deliberately
+//     renders nothing (its own header: a strip saying "install the app first" mid-feed is an ad, not
+//     a nudge). So on that platform this panel is the only place outside `/profile` → Notifications
+//     that teaches Add to Home Screen — and tapping panel 2's primary action leaves before reaching
+//     it, since seen is marked on mount. That gap is recorded rather than papered over; closing it
+//     is a product call about panel ORDER, not something to fix silently in a comment.
 //
 // SEEN IS MARKED ON MOUNT, not on exit. Any way out counts as final: both
 // buttons, a nav tap, a closed tab. Nothing here is worth making someone sit
@@ -90,8 +102,8 @@ export function hasSeenWelcome() {
   return Array.isArray(seen) && seen.includes(id)
 }
 
-// The eyebrow badge — reused on both panels so the panel count is stated up
-// front. "1 of 3" is a promise that this is short; a bare dot row isn't.
+// The eyebrow badge — on every panel, so the count is stated up front. "1 of 3"
+// is a promise that this is short; a bare dot row isn't.
 function StepBadge({ children }) {
   return (
     <span className="inline-block font-display font-bold uppercase tracking-[0.14em] text-[10.5px] text-ink bg-saffron border-2 border-ink rounded-full px-3 py-1">
@@ -100,8 +112,12 @@ function StepBadge({ children }) {
   )
 }
 
-// A line on the notifications panel. A dot rather than the numbered disc `Step` uses: these are
-// two facts, not a sequence, and numbering them would imply an order to do something in.
+// A bulleted line, used on the teaching panel and the notifications panel. A dot rather than the
+// numbered disc `Step` uses, and the reason differs per caller: on the notifications panel the three
+// items are facts about what arrives, in no order at all, so numbering them would invent a sequence;
+// on panel 1 they genuinely are a sequence (see it → ask → what arrives), but numbering them would
+// read as three things to DO, which is what the dropped "two things to do" panel got wrong. Neither
+// caller wants a numbered list, for opposite reasons.
 function NotifyLine({ children }) {
   return (
     <li className="flex gap-2.5">
@@ -198,7 +214,7 @@ export default function Welcome() {
           ) : (
             <button
               onClick={() => setPanel((p) => p - 1)}
-              className="chip shadow-[0_2px_0_#2E3A24] sticker-press"
+              className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press"
             >
               &larr; Back
             </button>
@@ -207,8 +223,16 @@ export default function Welcome() {
               buttons, and the underlines made them read as links). `.chip` is the app's own outlined
               pill — ink border, cream fill — so they are unmistakably pressable while staying clearly
               secondary to the terra `btn-primary`. Same treatment on Back, Skip and "Not now", since
-              all three are the same KIND of control: a way out that is not the main act. */}
-          <button onClick={done} className="chip shadow-[0_2px_0_#2E3A24] sticker-press">
+              all three are the same KIND of control: a way out that is not the main act.
+
+              `py-[11px]` OVERRIDES `.chip`'s own `py-[6px]`, and it is the difference between a
+              44px tap target and a 35px one. `.chip` is sized to sit in a ROW of filter chips, where
+              the row is the target and 35px is fine; here each of these is a lone control, and these
+              three are the only ways out of the intro — a missed tap on "Skip" is someone stuck on a
+              screen they are trying to leave. 12.5px text at the inherited 1.5 line-height plus 22px
+              of padding plus 4px of border lands just over 44. Tailwind utilities are emitted after
+              @layer components, so the arbitrary value wins without an `!`. */}
+          <button onClick={done} className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press">
             Skip
           </button>
         </div>
@@ -291,14 +315,15 @@ export default function Welcome() {
                 panel. Two words that do different things must not share a label. Centred under the
                 full-width primary, as a chip rather than an underlined link. */}
             <div className="text-center mt-4">
-              <button onClick={() => setPanel(2)} className="chip shadow-[0_2px_0_#2E3A24] sticker-press">
+              <button onClick={() => setPanel(2)} className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press">
                 Not now
               </button>
             </div>
           </div>
         ) : (
-          /* PANEL 4 — NOTIFICATIONS (#110). An ACTION step like the photo, not teaching, and
-           deliberately LAST.
+          /* PANEL 3 — NOTIFICATIONS (#110). An ACTION step like the meal ask, not teaching, and
+           deliberately LAST. (It was panel 4 until #111 cut the intro to three; the photo panel that
+           used to sit beside it as the other action step is gone.)
 
            WHY ASK HERE AT ALL. Before this, the only prompt was `NotifyNudge`, a dismissible strip
            on Home — so someone had to happen across it. The owner's call was that a new person
@@ -395,7 +420,7 @@ export default function Welcome() {
                     <div className="text-center mt-4">
                       <button
                         onClick={done}
-                        className="chip shadow-[0_2px_0_#2E3A24] sticker-press"
+                        className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press"
                       >
                         Not now
                       </button>

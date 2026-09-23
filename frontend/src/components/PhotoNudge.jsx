@@ -8,11 +8,16 @@ import PhotoFramer from './PhotoFramer'
 
 // A one-time, dismissible "add a photo" strip on Home (#84).
 //
-// WHY IT EXISTS AT ALL, given #77 already prompts: #77's prompt is panel 3 of `Welcome`,
-// which fires once per account and only for accounts created AFTER it shipped. Every earlier
-// account — the owner's and every first-wave beta tester's — never saw it and never will.
-// From the inside that looks like the photo setting is "hiding in settings", which is exactly
-// how it was reported.
+// WHY IT EXISTS — and the answer CHANGED with #111, so read this rather than inheriting the old one.
+// It was built as a retro fix for one cohort: #77's prompt was panel 3 of `Welcome`, which fires once
+// per account and only for accounts created AFTER it shipped, so every earlier account — the owner's
+// and every first-wave beta tester's — never saw it and never would. From the inside that looks like
+// the photo setting is "hiding in settings", which is exactly how it was reported.
+//
+// #111 dropped that panel when onboarding went to three, so there is now NO photo prompt in
+// onboarding for anybody. This strip and the You-page nudge are the only two places the app ever
+// asks, for every account. That makes it load-bearing rather than a backfill — worth stating,
+// because the old sentence above read as "delete me once the old cohort ages out."
 //
 // It is NOT in the signup form, deliberately: the loudest finding from the first round of
 // user testing (#1) was that the add-a-recipe flow felt effortful, and signup is the worst
@@ -24,12 +29,12 @@ import PhotoFramer from './PhotoFramer'
 // which is the right trade here: the cost of a shared phone showing this once to the second
 // person is a single dismissible line, whereas a per-account key would need a server field.
 //
-// Uploading happens INLINE via the same hook the Welcome panel and Profile use — upload,
-// PATCH /auth/me, refresh the cached issei_user — so this is one tap, not a trip to Settings.
+// Uploading happens INLINE via the same hook Profile uses — upload, PATCH /auth/me, refresh the
+// cached issei_user — so this is one tap, not a trip to Settings.
 export default function PhotoNudge({ onDone }) {
-  // From the shared store, so adding a photo ANYWHERE (the You page, the Welcome panel, or
-  // the inline upload below) removes this strip. Reading localStorage at mount is what left
-  // it on screen after the photo was already set.
+  // From the shared store, so adding a photo ANYWHERE (the You page or the inline upload below)
+  // removes this strip. Reading localStorage at mount is what left it on screen after the photo
+  // was already set.
   const user = useCurrentUser()
 
   const { onPick, uploading, error, photoUrl, framerProps } = useAvatarUpload({ onDone })

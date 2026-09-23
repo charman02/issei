@@ -83,7 +83,7 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       {/* The post-signup welcome. Protected (it's for an account that exists,
           and a signed-out visitor has nothing to be welcomed to) but pointedly
-          NOT wrapped in Layout: no bottom nav, because a two-panel intro whose
+          NOT wrapped in Layout: no bottom nav, because a three-panel intro whose
           own buttons lead out doesn't need a second set of exits, and tab bars
           invite wandering off mid-explanation. Welcome self-redirects to Home
           once seen, so nobody can be stranded here. */}
@@ -112,9 +112,11 @@ export default function App() {
           seen by exactly the audience it was written for.
 
           AND NOT THE POST-SIGNUP SLOT EITHER, which was the other candidate — `/welcome` already
-          holds it, with two TEACHING panels that explain what issei is for using `RecipeGlimpse` and
+          holds it, and its teaching panel explains what issei is for using `RecipeGlimpse` and
           `IsseiMeaning`, the same two components this page uses. Putting this there would have been a
-          duplicate of a screen that already exists.
+          duplicate of a screen that already exists. (It had TWO teaching panels when that call was
+          made; the same review cut it to one, precisely because this page now teaches a referred
+          stranger before they ever sign up.)
 
           Public, deliberately: the entire point is that the reader has no account. */}
       <Route path="/join" element={<Landing />} />

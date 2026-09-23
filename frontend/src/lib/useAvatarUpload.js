@@ -4,15 +4,18 @@ import { createUploader } from './photoUpload'
 import { usePhotoFramer } from './usePhotoFramer'
 import { patchUser, readUser } from './currentUser'
 
-// The pick → upload → save-photo flow, shared by the You page (#33) and the Welcome
-// prompt (#77) so the upload/PATCH/cache-refresh logic lives in one place. Reuses the
-// race-safe uploader pointed at the avatar endpoint (square face-crop), then PATCHes
-// /auth/me with the returned URL and refreshes the cached issei_user so the avatar
-// updates everywhere it shows without a reload.
+// The pick → upload → save-photo flow, shared by the You page (#33) and `PhotoNudge` (#84) so the
+// upload/PATCH/cache-refresh logic lives in one place. Reuses the race-safe uploader pointed at the
+// avatar endpoint (square face-crop), then PATCHes /auth/me with the returned URL and refreshes the
+// cached issei_user so the avatar updates everywhere it shows without a reload.
 //
-// Returns { onPick, uploading, error, photoUrl } — photoUrl reflects the just-saved
-// value so a caller (the Welcome panel) can show the new photo immediately, and
-// onDone(url) fires after a successful save for callers that want to advance a step.
+// It had a THIRD caller until #111: `Welcome`'s photo panel (#77), dropped when onboarding went to
+// three panels. Which means those two ARE the app's photo ask now, rather than the backstop for one.
+//
+// Returns { onPick, uploading, error, photoUrl } — photoUrl reflects the just-saved value so a
+// caller can show the new photo immediately, and onDone(url) fires after a successful save for
+// callers that want to advance a step (the reason the callback exists at all was the Welcome panel;
+// `PhotoNudge` uses it to self-hide).
 export function useAvatarUpload({ onDone } = {}) {
   const uploader = useRef(createUploader())
   // The framing step (#103). "Can't edit profile photo to make sure it looks as u want" was one of
@@ -56,6 +59,6 @@ export function useAvatarUpload({ onDone } = {}) {
   // `photoUpload` awaits the promise it returns, which only `framerProps.onDone`/`onCancel` can
   // settle. A caller that renders no framer therefore leaves the pick hanging forever — busy flag
   // off, nothing on screen, the photo simply never appears — rather than falling back to the old
-  // centre-crop. All three consumers (Profile, Welcome, PhotoNudge) render it; a test pins that.
+  // centre-crop. Both consumers (Profile, PhotoNudge) render it; a test pins that.
   return { onPick, uploading, error, photoUrl, framerProps, framing }
 }

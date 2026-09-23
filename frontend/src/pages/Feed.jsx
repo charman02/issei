@@ -225,8 +225,9 @@ export default function Feed() {
         unread={unread}
       />
 
-      {/* A one-time "add a photo" strip (#84) for anyone who never saw #77's Welcome panel —
-          which is every account created before it shipped. Self-hides once there's a photo or
+      {/* A one-time "add a photo" strip (#84). It was built for accounts predating #77's Welcome
+          panel; #111 dropped that panel, so this is now one of the app's only two photo asks (the
+          other is on the You page) and it applies to everyone. Self-hides once there's a photo or
           it's dismissed, and `nudgeKey` forces a remount so it disappears immediately rather
           than on the next navigation. */}
       <PhotoNudge key={nudgeKey} onDone={() => setNudgeKey((k) => k + 1)} />

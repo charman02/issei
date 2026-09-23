@@ -39,9 +39,14 @@ const callSites = files.filter(
 
 describe('the photo framer is rendered wherever it is requested (#103)', () => {
   it('finds the call sites at all, so a rename cannot quietly empty this test', () => {
-    // Today SIX: PostComposer, RecipeForm, PostPage (direct — PostPage joined in #106) + Profile,
-    // Welcome, PhotoNudge (via useAvatarUpload). The floor below is deliberately looser than the
-    // exact count, so adding a seventh surface doesn't fail a test for the wrong reason.
+    // Today FIVE: PostComposer, RecipeForm, PostPage (direct — PostPage joined in #106) + Profile,
+    // PhotoNudge (via useAvatarUpload). It was SIX until #111 dropped `Welcome`'s photo panel.
+    //
+    // The floor is a FLOOR because the failure it exists to catch is the scan matching NOTHING — a
+    // rename of the hook or the component silently emptying this file, which would leave every
+    // `it.each` below with no cases and the suite green. So adding a surface can never fail it. It
+    // now happens to sit exactly ON the real count, which is left that way on purpose: a surface
+    // REMOVED without updating this comment goes red, and that is how the number above stays true.
     expect(callSites.length).toBeGreaterThanOrEqual(5)
   })
 

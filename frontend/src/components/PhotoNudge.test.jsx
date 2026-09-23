@@ -28,7 +28,9 @@ beforeEach(() => {
   hook.photoUrl = null
 })
 
-describe('PhotoNudge (#84) — the retro ask for accounts that predate #77', () => {
+// Built as the retro ask for accounts predating #77, and no longer retro: #111 dropped Welcome's
+// photo panel, so this strip and the You-page nudge are the app's only photo asks, for every account.
+describe('PhotoNudge (#84) — the app\'s one photo ask on Home', () => {
   it('goes away when a photo is added ANYWHERE ELSE — the reported bug', async () => {
     // Reported on prod 2026-09-08: the strip stayed on Home after a photo was added on the You
     // page. It read localStorage once at mount, so it never learned. It now reads the shared

@@ -29,6 +29,24 @@ function renderWelcome() {
   )
 }
 
+// Runs `check` on EVERY one of the three panels, in order.
+//
+// THE REASON IT EXISTS: an absence test that renders and asserts on panel 1 alone is not a claim
+// about the intro at all. The two removal tests below were both written that way and both PASSED
+// against the pre-change code, because the markup they guard against lived on panels this file
+// never advanced to — "that's the whole app" on the old panel 2, the photo picker on the old panel
+// 3. A ship gate caught it. That is exactly the shape this file's own history calls out: a test
+// that cannot fail is worse than no test, because it reads as coverage. Absence has to be swept
+// wherever the thing could be, so a reintroduction on ANY panel goes red.
+async function onEveryPanel(check) {
+  renderWelcome()
+  check('1 of 3')
+  await userEvent.click(screen.getByRole('button', { name: /next/i }))
+  check('2 of 3')
+  await userEvent.click(screen.getByRole('button', { name: /not now/i }))
+  check('3 of 3')
+}
+
 // "Seen" is recorded per user id, so a signed-in user has to exist for any of
 // this to mean anything — that scoping is what stops the second person to sign up
 // on a shared phone from being silently skipped.
@@ -62,12 +80,17 @@ describe('Welcome — what it teaches', () => {
     expect(screen.getByText(/一世 · issei/)).toBeInTheDocument()
   })
 
-  it('does NOT still claim the app is two verbs', async () => {
+  it('does NOT still claim the app is two verbs, on ANY panel', async () => {
     // The specific false sentence, pinned so it cannot come back: "that's the whole app" described
     // write-then-send, on an app whose Home is a feed and whose central act is the ask.
-    const { container } = renderWelcome()
-    expect(container.textContent).not.toMatch(/the whole app/i)
-    expect(container.textContent).not.toMatch(/two things to do/i)
+    //
+    // Swept across all three panels, because the sentence lived on the SECOND one — so the first
+    // version of this test, which asserted on panel 1 only, passed against the very code it was
+    // written to condemn.
+    await onEveryPanel((badge) => {
+      expect(document.body.textContent, badge).not.toMatch(/the whole app/i)
+      expect(document.body.textContent, badge).not.toMatch(/two things to do/i)
+    })
   })
 
   it('asks for CONTENT on panel two — the thing onboarding never did', async () => {
@@ -156,12 +179,17 @@ describe('Welcome — what it teaches', () => {
     expect(screen.queryByRole('button', { name: /next/i })).toBeNull()
   })
 
-  it('no longer asks for a profile photo here', async () => {
+  it('no longer asks for a profile photo on ANY panel', async () => {
     // Dropped on owner review: it produces no content, and it already has a fallback that nags
-    // nobody — the You-page nudge (#77) plus the retro prompt for older accounts (#84).
-    const { container } = renderWelcome()
-    expect(container.textContent).not.toMatch(/add a photo/i)
-    expect(screen.queryByLabelText(/add a profile photo/i)).toBeNull()
+    // nobody — the You-page nudge (#77) plus the Home strip (#84), which between them are now the
+    // only two places the app ever asks.
+    //
+    // Swept across all three panels for the same reason as the test above: the photo picker was the
+    // THIRD panel, so asserting on panel 1 proved nothing and passed before the removal.
+    await onEveryPanel((badge) => {
+      expect(document.body.textContent, badge).not.toMatch(/add a photo/i)
+      expect(screen.queryByLabelText(/add a profile photo/i), badge).toBeNull()
+    })
   })
 
   it('claims nothing about voice or audio', async () => {
