@@ -52,9 +52,41 @@ class Report(Base):
     would be the larger mistake. Rows are read directly from Postgres for now — so claim the
     mechanism to users, never a response (POSITIONING says this explicitly).
 
-    No `post_id`/`recipe_id` column yet. Reporting a specific meal or recipe is a real thing to
-    want and will need one, but there is no UI for it today, and a nullable column nothing
-    writes is the same half-wired mistake as an API field nothing sends.
+    **A REPORT CAN NOW NAME A SUBJECT (#87 part two).** `post_id` and `recipe_id` are nullable and
+    mutually exclusive: a report is about a person, optionally *because of* one specific thing they
+    posted or wrote. Guideline 1.2 asks for a way to report objectionable CONTENT as well as the
+    people posting it, so this is the other half of the App Store requirement. (The previous version
+    of this paragraph explained why the columns did not exist yet — "a nullable column nothing writes
+    is the same half-wired mistake as an API field nothing sends" — and that rule is why they arrive
+    in the same change as the two screens that write them.)
+
+    Three more decisions, each of which could have gone the other way:
+
+    4. **`SET NULL`, not `CASCADE`, on the content FKs — unlike the two user FKs above.** Deleting the
+       post is exactly what someone does when they are reported for it, so CASCADE would hand the
+       subject of a report a delete button for the report. The reporter's words and the reported
+       person both outlive the content; what remains is a report about a person with no subject
+       attached, which is precisely what every report was before this column existed.
+
+    5. **ONE OPEN REPORT PER (reporter, target, SUBJECT)**, a change from per (reporter, target).
+       Two different bad posts are two different incidents and a reviewer needs to see WHICH one;
+       folding the second into the first would bury it under an older unrelated complaint and leave
+       the subject visible only in prose. Re-reporting the SAME subject still appends, so the
+       flooding the dedupe exists to stop is still stopped — and this serves the reason the
+       accumulate behaviour was introduced at all: a genuinely new incident was being thrown away.
+       Still enforced in the router rather than by a UNIQUE constraint, for the original reason
+       (`state == "open"` is a predicate a constraint cannot express) plus a new one: two of the
+       three key columns are nullable, and Postgres treats NULLs as distinct in a UNIQUE index, so
+       the constraint would not enforce the person-only case anyway.
+
+    6. **Mutually exclusive, validated at the schema boundary.** A report names a person, or a person
+       AND one post, or a person AND one recipe — never both kinds. Allowing both makes "which thing
+       is this about" unanswerable, and there is no interface in which to disambiguate it.
+
+    What is deliberately NOT here: any check that the reporter could SEE the content. A report is not
+    a read, `can_view` is not consulted, and that is decision 1 again — someone shown a post in a
+    feed that was then made private, or who was blocked straight after, must still be able to report
+    it. The id is recorded whether or not it still resolves for them.
     """
 
     __tablename__ = "reports"
@@ -91,6 +123,17 @@ class Report(Base):
     # The reporter's own words, optional. The most useful field on the row and the one a
     # reader reaches for first, which is why it's allowed to be long-ish (1000 in the schema).
     note: Mapped[Optional[str]] = mapped_column(nullable=True)
+    # WHAT the report is about, optionally. Both nullable, at most one set (#87 part two).
+    #
+    # `SET NULL` rather than CASCADE, and the asymmetry with the user FKs above IS the decision:
+    # deleting the post is what a person does when they are reported for it, so CASCADE would hand
+    # the subject of a report a delete button for the report itself. The case survives its subject.
+    post_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("posts.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+    recipe_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     state: Mapped[str] = mapped_column(server_default="open", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

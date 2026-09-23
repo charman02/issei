@@ -259,6 +259,9 @@ describe('UserProfile — blocking', () => {
   })
 })
 
+// The fourth argument is the SUBJECT (#87 part two): the post or recipe a report is about. It is
+// `null` on a profile, where the thing in front of you IS the person. `SafetyMenu.test.jsx` covers
+// the cases where it is set.
 describe('UserProfile — reporting (#87)', () => {
   const openReport = async () => {
     await openMenu()
@@ -279,7 +282,7 @@ describe('UserProfile — reporting (#87)', () => {
     renderAt()
     await openReport()
     await userEvent.click(screen.getByRole('button', { name: /send report/i }))
-    await waitFor(() => expect(reportUser).toHaveBeenCalledWith(2, 'harassment', ''))
+    await waitFor(() => expect(reportUser).toHaveBeenCalledWith(2, 'harassment', '', null))
   })
 
   it('sends the chosen reason and what you typed', async () => {
@@ -290,7 +293,7 @@ describe('UserProfile — reporting (#87)', () => {
     await userEvent.type(screen.getByLabelText(/anything you want to add/i), 'same link 40 times')
     await userEvent.click(screen.getByRole('button', { name: /send report/i }))
     await waitFor(() =>
-      expect(reportUser).toHaveBeenCalledWith(2, 'spam', 'same link 40 times'),
+      expect(reportUser).toHaveBeenCalledWith(2, 'spam', 'same link 40 times', null),
     )
   })
 

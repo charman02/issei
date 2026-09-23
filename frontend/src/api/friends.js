@@ -46,5 +46,17 @@ export const getBlocks = () => client.get('/friends/blocks')
 // caller can't tell a first report from a duplicate (deliberate: "you already reported them"
 // makes someone doubt the first one landed). NOT gated on blocking in either direction, so you
 // can still report someone who has blocked you.
-export const reportUser = (userId, reason, note) =>
-  client.post('/friends/reports', { user_id: userId, reason, note: note || null })
+// `subject` is `{ post_id }` or `{ recipe_id }` — what the report is ABOUT (#87 part two), optional
+// and at most one. Spread rather than passed as a nested object because that is the wire shape the
+// schema validates, and the mutual exclusion is enforced server-side (a 422) rather than here: a
+// client-side guard would be a second copy of a rule that has to hold at the boundary anyway.
+//
+// The report is always about the PERSON — `user_id` stays required. The subject is why, not instead
+// of who.
+export const reportUser = (userId, reason, note, subject = null) =>
+  client.post('/friends/reports', {
+    user_id: userId,
+    reason,
+    note: note || null,
+    ...(subject || {}),
+  })

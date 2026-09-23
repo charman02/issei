@@ -10,6 +10,14 @@ vi.mock('../api/client', async () => ({
   toUserMessage: (await vi.importActual('../api/client')).toUserMessage,
 }))
 // #57: keeping a recipe that isn't yours.
+// `SafetyMenu` (#87 part two) reaches api/friends, and RecipePage also asks it for the cook's
+// first name — `RecipeResponse` carries no author name, and `origin_attribution` is the BYLINE
+// (whoever the dish came from), which is frequently not the account holder.
+vi.mock('../api/friends', () => ({
+  reportUser: vi.fn(() => Promise.resolve({})),
+  blockUser: vi.fn(() => Promise.resolve({})),
+  getUserProfile: vi.fn(() => Promise.resolve({ data: { first_name: 'Ana' } })),
+}))
 vi.mock('../api/sharing', () => ({
   deleteRecipe: vi.fn(),
   keepRecipe: vi.fn(() => Promise.resolve({ data: {} })),
@@ -36,6 +44,7 @@ function renderAt() {
     </MemoryRouter>,
   )
 }
+import { reportUser, getUserProfile } from '../api/friends'
 import RecipePageDefault from './RecipePage'
 
 beforeEach(() => {
@@ -214,5 +223,45 @@ describe('RecipePage — how many people keep this (#96)', () => {
     renderOther({ keeper_count: null })
     await screen.findByText('Adobo')
     expect(screen.queryByText(/keep this in their kitchen/i)).toBeNull()
+  })
+})
+
+describe('RecipePage — reporting the recipe (#87 part two)', () => {
+  // recipe.user_id is 9; the shared beforeEach signs in as id 1 (a non-owner).
+  it('offers the safety menu to a non-owner, labelled for the RECIPE', async () => {
+    renderAt()
+    const dots = await screen.findByRole('button', { name: /more options for this recipe/i })
+    await userEvent.click(dots)
+    expect(screen.getByRole('button', { name: 'Report this recipe' })).toBeInTheDocument()
+    // The cook is named on the block, from the fetched profile — not from `origin_attribution`,
+    // which is the byline and often somebody else entirely.
+    expect(screen.getByRole('button', { name: 'Block Ana' })).toBeInTheDocument()
+  })
+
+  it('sends the recipe id with the report', async () => {
+    renderAt()
+    await userEvent.click(await screen.findByRole('button', { name: /more options/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Report this recipe' }))
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await waitFor(() =>
+      expect(reportUser).toHaveBeenCalledWith(9, 'harassment', '', { recipe_id: 1 }),
+    )
+  })
+
+  it('NEVER offers it on your own recipe, and makes no profile call', async () => {
+    localStorage.setItem('issei_user', JSON.stringify({ id: 9 })) // the owner
+    renderAt()
+    await screen.findByText('Adobo')
+    expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
+    expect(getUserProfile).not.toHaveBeenCalled()
+  })
+
+  it('stays hidden if the cook’s name never arrives', async () => {
+    // A safety control that named the wrong person — or nobody — would break the locked rule that
+    // both items name who they land on. The profile is one tap away with the same menu on it.
+    getUserProfile.mockRejectedValueOnce(new Error('offline'))
+    renderAt()
+    await screen.findByText('Adobo')
+    expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
   })
 })

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import client, { toUserMessage } from '../api/client'
 import { deleteRecipe, keepRecipe, unkeepRecipe } from '../api/sharing'
+import { getUserProfile } from '../api/friends'
 import VisibilityControl from '../components/VisibilityControl'
 import RecipeBody from '../components/RecipeBody'
+import SafetyMenu from '../components/SafetyMenu'
 import Icon from '../components/Icon'
 import Loader from '../components/Loader'
 
@@ -85,6 +87,24 @@ export default function RecipePage() {
   // API's is a number — an uncoerced === would then hide the owner's own edit,
   // visibility, handoff and delete controls from them.
   const isOwner = recipe && String(currentUser.id) === String(recipe.user_id)
+
+  // The cook's first name, for the safety menu at the bottom and nothing else. Fetched rather than
+  // read off the recipe — see the note where SafetyMenu renders. Failure is silent and the menu
+  // simply doesn't appear: a safety control is worth less than a control that names the wrong
+  // person, and the profile is one tap away with the same menu on it.
+  const [cookName, setCookName] = useState('')
+  useEffect(() => {
+    if (!recipe || isOwner) return
+    let cancelled = false
+    getUserProfile(recipe.user_id)
+      .then(({ data }) => {
+        if (!cancelled) setCookName(data?.first_name || '')
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [recipe, isOwner])
 
   async function handleDelete() {
     if (deleting) return
@@ -264,6 +284,30 @@ export default function RecipePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* REPORT THIS RECIPE (#87 part two) — non-owner only, bottom of the page, behind a ⋯. Same
+          shape and the same reasons as the meal page; see `components/SafetyMenu`.
+
+          THE COOK'S NAME IS FETCHED, not read off the recipe, and that is worth knowing before
+          "simplifying" it. `RecipeResponse` carries `user_id` but no author name — `origin_attribution`
+          is the BYLINE ("from Lola"), which is whoever the dish came from and frequently not the
+          account holder at all, so using it here would name the wrong person on a safety control.
+          Adding an author name to `RecipeResponse` would mean populating it in every path that
+          serialises a recipe (get, browse, kept, profile grids), so this asks the one route that
+          already answers "who is this person" instead. Only for a non-owner, so the owner's own
+          recipe page makes no extra call.
+
+          Both the menu and the block confirm NAME the person, which is a locked rule — a safety
+          control must not be tappable without knowing who it lands on. So the menu renders only once
+          the name has arrived; a ⋯ that opened onto "Block undefined" would break exactly that. */}
+      {!isOwner && cookName && (
+        <SafetyMenu
+          userId={recipe.user_id}
+          personName={cookName}
+          subject={{ recipe_id: recipe.id }}
+          subjectLabel="this recipe"
+        />
       )}
     </div>
   )

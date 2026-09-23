@@ -13,6 +13,7 @@ import VisibilityChoice from '../components/VisibilityChoice'
 import { toUserMessage } from '../api/client'
 import BackButton from '../components/BackButton'
 import Avatar from '../components/Avatar'
+import SafetyMenu from '../components/SafetyMenu'
 import Loader from '../components/Loader'
 import { toUtcMs } from '../utils/time'
 import { createUploader, PHOTO_ACCEPT } from '../lib/photoUpload'
@@ -645,6 +646,27 @@ export default function PostPage() {
           )}
         </div>
       </article>
+
+      {/* REPORT THIS MEAL (#87 part two) — for a non-author only, at the bottom, behind a ⋯.
+          Guideline 1.2 wants a way to report objectionable CONTENT as well as the people posting
+          it, and a photo of someone's dinner is the highest-risk content this app carries.
+
+          ON THE PAGE, NOT THE CARD, deliberately: #104's rule is that a consequential control two
+          taps from a scrolling feed is a mis-tap, which is why `PostCard`'s ⋯ only NAVIGATES. You
+          tap through to the meal, then report it — and by then you are looking at the thing you are
+          reporting, which is also what makes the label honest.
+
+          `isMine` is answered by the SERVER (`res.data.user_id`), not by the navigation, same as the
+          edit/delete controls above. `subjectLabel` is what the report copy calls it; the block item
+          still names the person, because a block is never about a post. */}
+      {!isMine && post.user_id && (
+        <SafetyMenu
+          userId={post.user_id}
+          personName={post.author_first_name}
+          subject={{ post_id: post.id }}
+          subjectLabel="this meal"
+        />
+      )}
     </div>
   )
 }

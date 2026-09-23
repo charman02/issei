@@ -15,6 +15,12 @@ vi.mock('../api/posts', () => ({
   detachRecipe: vi.fn(),
 }))
 vi.mock('../api/client', () => ({ default: { get: vi.fn() }, toUserMessage: (e, f) => f }))
+// `SafetyMenu` (#87 part two) reaches api/friends; mocked so the report path is observable and
+// no real call is attempted.
+vi.mock('../api/friends', () => ({
+  reportUser: vi.fn(() => Promise.resolve({})),
+  blockUser: vi.fn(() => Promise.resolve({})),
+}))
 // #106 — the photo-replace path. A controllable uploader: `upload()` records its options so a test
 // can land a URL, an error or a busy flag at the exact moment it wants to. Mocked for the same
 // reason RecipeForm.test.jsx mocks the framer — a real one is a modal only a human can dismiss,
@@ -48,6 +54,7 @@ import {
   detachRecipe,
 } from '../api/posts'
 import client from '../api/client'
+import { reportUser } from '../api/friends'
 import PostPage from './PostPage'
 
 const postData = (over = {}) => ({
@@ -826,5 +833,42 @@ describe('PostPage — attach a recipe after publishing (#99)', () => {
     )
     expect(screen.getByRole('button', { name: /^delete$/i })).toBeDisabled()
     release({ data: postData({ recipe_id: 7 }) })
+  })
+})
+
+describe('PostPage — reporting the meal (#87 part two)', () => {
+  // Guideline 1.2 wants a way to report objectionable CONTENT as well as the people posting it, and a
+  // photo of someone's dinner is the highest-risk content this app carries. The control is on the
+  // PAGE and not the card, per #104: a consequential control two taps from a scrolling feed is a
+  // mis-tap, which is why `PostCard`'s own ⋯ only navigates.
+  it('offers the safety menu to a non-author, labelled for the MEAL', async () => {
+    getPost.mockResolvedValue({ data: postData() })
+    renderPost()
+    const dots = await screen.findByRole('button', { name: /more options for this meal/i })
+    await userEvent.click(dots)
+    expect(screen.getByRole('button', { name: 'Report this meal' })).toBeInTheDocument()
+    // The block still names the person — a block is never about a post, and saying so discloses
+    // that the act reaches past the thing you were looking at.
+    expect(screen.getByRole('button', { name: 'Block Ana' })).toBeInTheDocument()
+  })
+
+  it('sends the post id with the report', async () => {
+    getPost.mockResolvedValue({ data: postData() })
+    renderPost()
+    await userEvent.click(await screen.findByRole('button', { name: /more options/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Report this meal' }))
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    await waitFor(() =>
+      expect(reportUser).toHaveBeenCalledWith(42, 'harassment', '', { post_id: 5 }),
+    )
+  })
+
+  it('NEVER offers it on your own meal', async () => {
+    // Ownership as answered by the SERVER (`res.data.user_id`), the same source the edit and delete
+    // controls use — not the navigation state, which a back-then-forward can replay.
+    getPost.mockResolvedValue({ data: postData({ user_id: 1 }) })
+    renderPost()
+    await screen.findByText('Sunday Adobo')
+    expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
   })
 })

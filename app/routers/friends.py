@@ -411,13 +411,39 @@ def report_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # THE SUBJECT MUST EXIST, BUT NEED NOT BE VISIBLE (#87 part two). Existence is checked because a
+    # report pointing at a row that never existed is noise in the one table a human reads. Visibility
+    # is deliberately NOT checked — no `can_view`, no `can_view_post`, no block filter — because a
+    # report is not a read: someone shown a post in the feed that was then made private, or who was
+    # blocked the moment after, must still be able to report what they saw. That is the same reasoning
+    # as the no-block-gate rule above, applied to content instead of people.
+    #
+    # The 404 body is deliberately about the SUBJECT ("Post not found"), not the person, because
+    # unlike the person case there is nothing to hide here: the reporter just tapped it.
+    if body.post_id is not None:
+        if db.query(Post.id).filter(Post.id == body.post_id).first() is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+    if body.recipe_id is not None:
+        if db.query(Recipe.id).filter(Recipe.id == body.recipe_id).first() is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+
     note = (body.note or "").strip() or None
+    # ONE OPEN CASE PER (reporter, target, SUBJECT) — the key gained the subject with #87 part two.
+    # Two different bad posts are two incidents and a reviewer needs to see which; folding the second
+    # into the first would bury it under an older unrelated complaint. Re-reporting the SAME subject
+    # still appends, so the flooding this dedupe exists to stop is still stopped. Reporting the PERSON
+    # (no subject) is its own case, which is why both columns are compared to the incoming value
+    # rather than ignored when NULL — `is_(None)` is what makes the person-only case distinct.
     open_report = (
         db.query(Report)
         .filter(
             Report.reporter_id == current_user.id,
             Report.reported_user_id == body.user_id,
             Report.state == "open",
+            Report.post_id.is_(None) if body.post_id is None else Report.post_id == body.post_id,
+            Report.recipe_id.is_(None)
+            if body.recipe_id is None
+            else Report.recipe_id == body.recipe_id,
         )
         .first()
     )
@@ -429,6 +455,8 @@ def report_user(
                 reported_user_id=body.user_id,
                 reason=body.reason,
                 note=note,
+                post_id=body.post_id,
+                recipe_id=body.recipe_id,
             )
         )
     elif note is not None:
@@ -439,8 +467,10 @@ def report_user(
         # discarded. In the one flow where a user's trust in the response is the entire reason
         # they will use it.
         #
-        # So: still ONE ROW per (reporter, target) — a moderator reads one case, not a thread,
-        # and repeated taps still can't flood the table — but the row accumulates. The original
+        # So: still ONE ROW per (reporter, target, SUBJECT) — a moderator reads one case per thing
+        # rather than a thread, and repeated taps on the same thing still can't flood the table —
+        # but the row accumulates. (The key was per (reporter, target) until #87 part two; two
+        # different bad posts being one case meant the second was buried in prose.) The original
         # account is never overwritten (the new text goes AFTER it), and the later reason is
         # recorded inline, since "spam" escalating to "harassment" is the most important thing
         # a second report can say.

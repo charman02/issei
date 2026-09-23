@@ -151,6 +151,20 @@ export class IsseiStack extends cdk.Stack {
           : frontendOrigin,
         // SES sender address — must be a verified SES identity in us-west-2.
         SENDER_EMAIL: 'noreply@issei.app',
+        // Where in-app feedback lands (#101), and — since #107 — the `List-Unsubscribe` and
+        // `Reply-To` target on every announcement. A ROLE ADDRESS forwarding to a person, not the
+        // person's own address, for two reasons: this repo is public, so anything here is scrapeable
+        // and permanent; and the value appears in the headers of every announcement, so it is
+        // semi-public by design and wants to be an address that can be retired. Forwarding is
+        // configured at the mail host, not here.
+        //
+        // NOT an SSM secret, deliberately: it is not sensitive, and a `secrets[]` entry pointing at a
+        // parameter that does not exist yet makes the task fail to start — see RUNBOOK Step 1b for
+        // the shape of that failure. A plain env var can never take the API down.
+        //
+        // It must still be a VERIFIED SES identity while the account is in the sandbox, or the
+        // feedback mail fails and `scripts/send_announcement.py` refuses to run.
+        FEEDBACK_NOTIFY_EMAIL: 'feedback@issei.app',
         // Frontend URL used to build the password-reset link in the email. Follows the
         // custom domain when set, like OPENROUTER_REFERER above: a link a real person
         // clicks out of their inbox should be the product's address, not a deploy alias.
