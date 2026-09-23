@@ -212,8 +212,34 @@ strangers arrive. Security/privacy first.
   *Where:* `alembic/versions/b3c4d5e6f7a8_*.py`, `app/models/user.py`, `app/schemas/user.py`,
   `frontend/src/components/NotificationSettings.jsx`.
 
-- **A handoff addressed to an EMAIL that already has an account is unreachable in-app, forever.**
-  (found during #107)
+- **RESOLVED 2026-09-23: a handoff addressed to an EMAIL that already had an account was
+  unreachable in-app, forever.** The fix bound the resolved account and accepted the grant, exactly
+  as the `to_user_id` path always did — `handoff_recipe` now has ONE `recipient` variable where it
+  had two, and the split between them was the bug. Four things came out of doing it, each worth
+  keeping:
+  - **The signup auto-accept compared `Handoff.to_email == new_user.email` EXACTLY**, while the send
+    side has lower-cased since #105. So "Ana@x.com" for an account opened as "ana@x.com" minted a
+    dead row by a second, independent route. Now case-insensitive on both halves.
+  - **Signup's auto-accept notified nobody**, which did not matter while the bug existed (the only
+    way to reach the notifying `accept_handoff` was to already have an account, i.e. the broken
+    path). With the send side fixed, that loop is the ONLY place a pending email invite is ever
+    claimed — so without a `recipe_claimed` there, the fix would have silently removed the cook's
+    one signal that their recipe landed, in the founding shape of the product. It notifies now.
+  - **`POST /recipes/handoffs/{id}/accept` is effectively unreachable for anything the app writes
+    today**, because a pending unbound row now only exists for an address with NO account, and
+    signup claims that the moment it appears. It is KEPT: it still serves pre-fix rows, and three
+    tests (`test_blocks`, `test_owner_only_writes`, `test_handoff_notifications`) now construct that
+    legacy shape by hand rather than through the route, so the #88 exemption and the #107 block
+    suppression stay covered instead of quietly testing a shape nothing writes. Removing the route
+    is a separate decision; don't do it without checking the `handoffs` table for unbound rows.
+  - **Migration `a1b2c3d4e5f7` repairs the rows already in the database** — UPDATE-only, idempotent,
+    and tested against all five shapes (dead, case-mismatched, stranger-pending, already-accepted,
+    link-only) in `tests/test_handoff_grant_repair.py`, which imports the statement from the
+    migration rather than paraphrasing it.
+  *Where:* `app/routers/recipes.py`, `app/routers/auth.py`,
+  `alembic/versions/a1b2c3d4e5f7_bind_dead_email_handoff_grants.py`.
+
+  *The original entry, kept because the diagnosis is the useful part:*
   `handoff_recipe` resolves `to_email` to a `User` for its two permission checks (#105) but
   deliberately does NOT bind the grant to that account — it stays `state="pending"` with
   `to_user_id` NULL, which the comment there explains as "a different feature". The consequence
@@ -228,10 +254,12 @@ strangers arrive. Security/privacy first.
   `to_user_id` path does. *Why it's a ledger entry:* it changes what the app's signature endpoint
   STORES (an instant grant instead of a pending invite), which moves the dedupe key and the state
   the recipient sees, and the existing comment fenced that off on purpose. Owner's call.
-  `tests/test_handoff_notifications.py::test_an_EMAIL_addressed_handoff_notifies_nobody_because_nobody_could_open_it`
-  pins the current behaviour AND says it should flip to expecting a notification when this is
-  fixed. *Where:* `app/routers/recipes.py` (`handoff_recipe`, `shared_with_me`),
-  `app/routers/auth.py`.
+
+  *How it actually went:* the one line was right, and the dedupe-key move was the real work — the
+  idempotency lookup now matches EITHER a bound row or a legacy row still keyed on the address, or
+  the first re-send after the fix would have minted a second grant for the same pair. The test named
+  above flipped as predicted. The estimate missed the two consequences above (silent auto-accept,
+  the now-unreachable accept route), both found by existing tests going red rather than by reading.
 
 - **RESOLVED 2026-09-18: GitHub's scheduler CAPS this workflow at 5-7 runs a day, and raising the
   declared frequency did nothing. The trigger is now in-process.** (#89, re-measured)

@@ -273,8 +273,14 @@ def test_a_downgrade_that_re_adds_a_NOT_NULL_column_works_on_a_NON_EMPTY_table(t
                 )
             )
 
+        # DOWNGRADE TO A NAMED REVISION, not `-1`. This used to say `-1`, which meant "undo whatever
+        # is head" — so the day a later migration landed, this test silently stopped exercising
+        # `e6f7a8b9c0d1` at all and started asserting that an unrelated revision's downgrade re-adds
+        # two columns. It failed loudly (no such column) rather than passing vacuously, which was
+        # luck: a no-op downgrade at head is the more likely neighbour and would have gone green.
+        # The revision below `e6f7a8b9c0d1` is the target this test has always meant.
         with engine.begin() as connection:
-            command.downgrade(_alembic_config(connection), "-1")
+            command.downgrade(_alembic_config(connection), "d5e6f7a8b9c0")
 
         # Both columns are back, and the pre-existing row carries their original defaults rather
         # than a NULL a NOT NULL column would have rejected.

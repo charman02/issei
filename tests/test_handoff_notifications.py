@@ -55,22 +55,22 @@ def test_handing_a_recipe_to_a_person_tells_them(client, make_user):
     assert client.get(f"/recipes/{recipe['id']}", headers=fh).status_code == 200
 
 
-def test_an_EMAIL_addressed_handoff_notifies_nobody_because_nobody_could_open_it(
+def test_an_email_addressed_handoff_REACHES_an_address_that_already_has_an_account(
     client, make_user, db_session
 ):
-    """A pending email invite is not a delivery, and must not be announced as one.
+    """THE FIX. This test previously asserted the opposite, and the thing it asserted was a bug.
 
-    `handoff_recipe` leaves an email-addressed grant `pending` with `to_user_id` NULL, and
-    `can_view`'s grant branch requires BOTH accepted and a matching `to_user_id`. So the person
-    cannot read the recipe yet, and a "wanted you to have Adobo" line linking to a 404 would be
-    worse than silence.
+    An email-addressed handoff used to be stored `pending` with `to_user_id` NULL no matter who
+    the address belonged to. For an address with NO account that is right — signup's auto-accept
+    claims it later. For an address that ALREADY has an account it was a dead row: `GET
+    /recipes/shared` filters on `to_user_id`, `can_view`'s grant branch requires both `accepted`
+    and a matching `to_user_id`, and the auto-accept ran at their signup, long before this row
+    existed. So the app's signature act silently delivered nothing, and #107 correctly declined to
+    notify about it because the notification would have linked to a 404.
 
-    THIS TEST ALSO DOCUMENTS A REAL BUG IT IS NOT FIXING: the grant below is unreachable in-app
-    forever for an address that ALREADY has an account, because `GET /recipes/shared` filters on
-    `to_user_id` and the signup auto-accept in `routers/auth.py` ran at their signup, long before
-    this row existed. The only way in is the sender texting the invite link. Fixing that means
-    changing what `handoff_recipe` STORES, which is deliberately fenced off in its own comments —
-    see TECHDEBT. If that fix lands, this test SHOULD flip to expecting a notification.
+    The address now resolves to the account and the grant is bound and accepted, which is exactly
+    what the `to_user_id` path has always done — the sender addressed a person, and the app knows
+    who that is.
     """
     cook, ch = make_user()
     other, oh = make_user()
@@ -80,10 +80,120 @@ def test_an_EMAIL_addressed_handoff_notifies_nobody_because_nobody_could_open_it
         f"/recipes/{recipe['id']}/handoff", json={"to_email": other.email}, headers=ch
     )
     assert r.status_code == 201, r.text
+    assert r.json()["state"] == "accepted"
+    # It arrives in all three places a handed-over recipe is supposed to arrive.
+    assert [r["id"] for r in client.get("/recipes/shared", headers=oh).json()] == [recipe["id"]]
+    assert client.get(f"/recipes/{recipe['id']}", headers=oh).status_code == 200
+    assert len(_inbox(client, oh, "recipe_arrived")) == 1
+
+
+def test_an_email_addressed_handoff_to_a_STRANGER_still_waits_for_their_signup(
+    client, make_user
+):
+    """The other half, unchanged, and the reason the fix is a resolution rather than a rewrite.
+
+    An address with no account behind it has nobody to bind to, so it stays a pending invite and
+    `routers/auth.py` claims it at signup (#88's rule: an invite minted before a restriction stays
+    claimable). And nobody is notified, because there is no inbox yet — which is the case #107's
+    silence was actually written for.
+    """
+    cook, ch = make_user()
+    recipe = _recipe(client, ch)
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff",
+        json={"to_email": "nobody-here-yet@example.com"},
+        headers=ch,
+    )
+    assert r.status_code == 201, r.text
     assert r.json()["state"] == "pending"
-    assert _inbox(client, oh, "recipe_arrived") == []
-    # The half of the claim that is the bug, pinned so the fix is visible when it happens.
-    assert client.get("/recipes/shared", headers=oh).json() == []
+    assert r.json()["to_user_id"] is None
+
+
+def test_the_address_is_matched_case_INSENSITIVELY_on_both_halves(client, make_user):
+    """A second defect in the same family, found reading the fix into `routers/auth.py`.
+
+    `handoff_recipe` already lower-cased the address for its permission checks (#105 — otherwise
+    "Only friends can send me recipes" was one shift key from doing nothing), but signup's
+    auto-accept compared `Handoff.to_email == new_user.email` exactly. So a sender who typed
+    "Ana@x.com" for "ana@x.com" minted a row no signup would ever claim: the same dead grant by a
+    different route. An email address is case-insensitive in the part that matters here, and the
+    two halves of one feature must not disagree about it.
+    """
+    cook, ch = make_user()
+    other, oh = make_user()
+    recipe = _recipe(client, ch)
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff",
+        json={"to_email": other.email.upper()},
+        headers=ch,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["state"] == "accepted"
+    assert len(_inbox(client, oh, "recipe_arrived")) == 1
+
+
+def test_re_sending_to_the_same_address_returns_the_SAME_grant(client, make_user):
+    """The dedupe key moved with the fix, and this is what stops that becoming a duplicate.
+
+    The idempotency check used to look for a row matching `to_email` on this path and now looks for
+    one matching the resolved `to_user_id`. A sender who hands the same recipe to the same address
+    twice must still get one grant and the recipient one notification — the same guarantee the
+    `to_user_id` path has.
+    """
+    cook, ch = make_user()
+    other, oh = make_user()
+    recipe = _recipe(client, ch)
+
+    first = client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": other.email}, headers=ch
+    )
+    second = client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": other.email}, headers=ch
+    )
+    assert first.json()["id"] == second.json()["id"]
+    assert len(_inbox(client, oh, "recipe_arrived")) == 1
+
+
+def test_an_ALREADY_PENDING_email_row_is_still_deduped_after_the_fix(
+    client, make_user, db_session
+):
+    """THE MIGRATION HAZARD, pinned as a test rather than trusted to a migration.
+
+    Rows minted before this fix sit in the database `pending` with `to_email` set and `to_user_id`
+    NULL. The new idempotency lookup keys on `to_user_id`, so on its own it would miss such a row
+    and mint a SECOND grant for the same (recipe, person) — two rows where the whole route promises
+    one. So the check looks for either shape.
+    """
+    from app.models.handoff import Handoff
+
+    cook, ch = make_user()
+    other, oh = make_user()
+    recipe = _recipe(client, ch)
+    # Exactly the shape the old code wrote.
+    db_session.add(
+        Handoff(
+            recipe_id=recipe["id"],
+            from_user_id=cook.id,
+            to_user_id=None,
+            to_email=other.email,
+            state="pending",
+            token="legacy-token-for-a-pre-fix-row",
+        )
+    )
+    db_session.commit()
+
+    r = client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": other.email}, headers=ch
+    )
+    assert r.status_code == 201, r.text
+    rows = (
+        db_session.query(Handoff)
+        .filter(Handoff.recipe_id == recipe["id"], Handoff.from_user_id == cook.id)
+        .all()
+    )
+    assert len(rows) == 1, "a pre-fix pending row must be found, not duplicated"
 
 
 def test_handing_a_recipe_to_YOURSELF_notifies_nobody(client, make_user):
@@ -164,26 +274,46 @@ def test_a_second_person_on_the_same_link_is_a_second_notification(client, make_
     assert names == {"Ana", "Ben"}
 
 
-def test_accepting_an_emailed_invite_tells_the_cook_once(client, make_user, db_session):
-    """The `accept_handoff` path. Reached here by signing up with the invited address, which is
-    the auto-accept in routers/auth.py — so this also covers the case where the recipient did
-    not exist when the recipe was sent, the founding shape of the whole product."""
+def test_SIGNING_UP_on_an_emailed_invite_tells_the_cook_once(client, make_user, db_session):
+    """THE FOUNDING SHAPE: you send a recipe to someone who is not on issei, and they join for that
+    dish. Its docstring used to claim this and its setup did something else.
+
+    It called `make_user` for the recipient FIRST and then reached `accept_handoff` explicitly —
+    which only worked BECAUSE of the grant-binding bug. With that fixed, an address that already has
+    an account is granted instantly and there is nothing left to accept, so the only way a pending
+    email invite is ever claimed is signup's auto-accept. Which did not notify anyone, so fixing the
+    send side would have silently taken the cook's "it landed" signal away. This is that path, for
+    real: no account, then a signup.
+    """
     from app.models.handoff import Handoff
 
     cook, ch = make_user(first_name="Lola")
-    guest, gh = make_user(first_name="Ben")
     recipe = _recipe(client, ch, name="Kare-kare")
-    client.post(f"/recipes/{recipe['id']}/handoff", json={"to_email": guest.email}, headers=ch)
-    handoff = db_session.query(Handoff).filter(Handoff.to_email == guest.email).first()
+    client.post(
+        f"/recipes/{recipe['id']}/handoff", json={"to_email": "ben@example.com"}, headers=ch
+    )
+    handoff = db_session.query(Handoff).filter(Handoff.to_email == "ben@example.com").first()
     assert handoff is not None and handoff.state == "pending"
 
-    for _ in range(3):
-        assert client.post(f"/recipes/handoffs/{handoff.id}/accept", headers=gh).status_code == 200
+    r = client.post(
+        "/auth/signup",
+        json={
+            "email": "ben@example.com",
+            "password": "pw123456",
+            "first_name": "Ben",
+            "last_name": "Cruz",
+        },
+    )
+    assert r.status_code == 201, r.text
 
     rows = _inbox(client, ch, "recipe_claimed")
     assert len(rows) == 1
     assert rows[0]["actor_first_name"] == "Ben"
     assert rows[0]["subject"] == "Kare-kare"
+    # And the recipe genuinely reached them, which is the point of the claim.
+    db_session.expire_all()
+    claimed = db_session.query(Handoff).filter(Handoff.id == handoff.id).first()
+    assert claimed.state == "accepted" and claimed.to_user_id is not None
 
 
 def test_claiming_your_OWN_invite_tells_nobody(client, make_user):
@@ -229,15 +359,32 @@ def test_a_blocked_person_claiming_a_link_does_NOT_reach_the_cooks_inbox(client,
 def test_a_blocked_person_accepting_an_emailed_invite_does_NOT_reach_the_cooks_inbox(
     client, make_user, db_session
 ):
-    """The `accept_handoff` path — the second of the three claim sites."""
+    """The `accept_handoff` path — the second of the three claim sites, and now reachable only for a
+    LEGACY row, which is why this sets one up by hand rather than through the route.
+
+    `handoff_recipe` no longer leaves a grant pending for an address that has an account, and a
+    brand-new account cannot be blocked by anyone, so nothing the app writes today can produce
+    "blocked person accepts a pending email invite". Rows written before that fix still can, and the
+    route still serves them — so the #88 exemption it carries (a pre-block invite stays claimable)
+    and the #107 suppression on top of it both still need pinning. Constructing the row directly is
+    the honest way to reach the case; going through the route would test a shape the route no longer
+    writes and quietly stop covering the block.
+    """
     from app.models.handoff import Handoff
 
     cook, ch = make_user()
     guest, gh = make_user(first_name="Bruno")
     recipe = _recipe(client, ch)
-    client.post(f"/recipes/{recipe['id']}/handoff", json={"to_email": guest.email}, headers=ch)
-    handoff = db_session.query(Handoff).filter(Handoff.to_email == guest.email).first()
-    assert handoff is not None
+    handoff = Handoff(
+        recipe_id=recipe["id"],
+        from_user_id=cook.id,
+        to_user_id=None,
+        to_email=guest.email,
+        state="pending",
+        token="legacy-pending-row-for-an-existing-account",
+    )
+    db_session.add(handoff)
+    db_session.commit()
     _block(client, ch, guest.id)
 
     assert client.post(f"/recipes/handoffs/{handoff.id}/accept", headers=gh).status_code == 200

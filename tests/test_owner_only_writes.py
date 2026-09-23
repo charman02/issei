@@ -145,24 +145,41 @@ def test_owner_private_notes_never_reach_any_reader(client, make_user):
 # --- an already-claimed grant cannot be stolen ---
 
 
-def test_accept_cannot_steal_a_grant_someone_else_already_claimed(client, make_user):
+def test_accept_cannot_steal_a_grant_someone_else_already_claimed(
+    client, make_user, db_session
+):
     """POST /recipes/handoffs/{id}/accept used to OR "your user id" with "your email
     matches to_email" and then overwrite to_user_id unconditionally. claim_invite binds
     to_user_id to whichever signed-in user holds the token — deliberately, to fix the
     mismatched-email orphan — so a link addressed to one email but claimed by someone else
-    could afterwards be taken over by the addressee, silently revoking the claimer."""
+    could afterwards be taken over by the addressee, silently revoking the claimer.
+
+    THE ROW IS BUILT BY HAND, and that is the honest way to reach this now. The grant-binding fix
+    means an email-addressed handoff to an address that HAS an account is accepted and bound at send
+    time, so the route no longer writes the unbound shape this takeover needs — and a third party
+    claiming the token gets their own separate grant instead (`claim_invite`'s else branch), which
+    makes the theft structurally impossible on that path. Rows written before the fix still have the
+    old shape and `accept_handoff` still serves them, so the guard has to stay; going through the
+    route instead would test a shape nothing writes and quietly stop covering the takeover.
+    """
+    from app.models.handoff import Handoff
+
     owner, oh = make_user()  # user1
     addressee, ah = make_user()  # user2 — the email the invite names
     claimer, ch = make_user()  # user3 — actually holds and claims the link
     rec = _recipe(client, oh, name="Contested dish")
 
-    # Owner invites the addressee BY EMAIL (pending, unbound to any user id yet).
-    h = client.post(
-        f"/recipes/{rec['id']}/handoff",
-        json={"to_email": addressee.email},
-        headers=oh,
-    ).json()
-    assert h["to_user_id"] is None and h["state"] == "pending"
+    h_row = Handoff(
+        recipe_id=rec["id"],
+        from_user_id=owner.id,
+        to_user_id=None,
+        to_email=addressee.email,
+        state="pending",
+        token="legacy-unbound-addressed-invite",
+    )
+    db_session.add(h_row)
+    db_session.commit()
+    h = {"id": h_row.id, "token": h_row.token}
 
     # Someone else holding the link claims it — the token is the capability.
     claimed = client.post(f"/recipes/invite/{h['token']}/claim", headers=ch).json()

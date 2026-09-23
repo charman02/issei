@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -247,30 +247,38 @@ def handoff_recipe(
         if resolved_user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-    # WHO THE RECIPIENT IS *FOR THE PURPOSE OF THE TWO CHECKS BELOW* — which is not the same
-    # question as who the grant gets bound to.
+    # WHO THE RECIPIENT IS. An address that belongs to an account resolves to that account, and
+    # from here on it is treated exactly as if the sender had passed `to_user_id`.
     #
-    # An email-addressed handoff was never resolved to an account, and that was a hole rather than
-    # an omission: the block check fires on a resolved user, so addressing a handoff by EMAIL
-    # walked straight past it. Anyone who knew a blocker's address could keep minting grants onto
-    # their Kept shelf, once per recipe, and nothing in #85 stopped it (#105).
+    # THIS USED TO BE TWO VARIABLES, AND THE SPLIT WAS A BUG. The email lookup arrived with #105,
+    # which needed it for the two checks below — the block check fires on a resolved user, so
+    # addressing a handoff by EMAIL walked straight past #85, and anyone who knew a blocker's
+    # address could keep minting grants onto their Kept shelf. That fix deliberately kept the
+    # resolution OUT of the stored row, on the reasoning that binding the grant would change what
+    # the app's signature endpoint STORES and was therefore a decision of its own. It was — and the
+    # decision was that the old behaviour was broken:
     #
-    # DELIBERATELY A SEPARATE VARIABLE from `resolved_user`. Letting the email path set that would
-    # also change what gets STORED — an accepted grant bound to `to_user_id` instead of a pending
-    # invite bound to `to_email` — which moves the dedupe key and the state the recipient sees.
-    # That is a different feature from the one being built here. The checks get the person; the row
-    # is built exactly as it was.
+    #   An email-addressed grant was stored `pending` with `to_user_id` NULL no matter whose
+    #   address it was. `GET /recipes/shared` filters on `to_user_id`; `can_view`'s grant branch
+    #   requires BOTH `accepted` AND a matching `to_user_id`; and the signup auto-accept in
+    #   `routers/auth.py` matches on account CREATION, which for an existing account ran long
+    #   before this row existed. So handing a recipe to the address of someone who is ALREADY on
+    #   issei delivered nothing, in every surface, permanently — and #107 correctly declined to
+    #   notify them, because the notification would have linked to a recipe they 404 on. The app's
+    #   one signature act, silently doing nothing, with a 201 and a "sent ✓" on the sender's screen.
+    #
+    # An address with NO account behind it still has nobody to bind to, so it stays a pending email
+    # invite and signup claims it later — the #88 rule: an invite minted BEFORE a restriction stays
+    # claimable, because the sender chose to send it. That branch is what the pending state is FOR,
+    # and it is untouched.
     #
     # Case-insensitive, because an email address is: a sender typing "Ana@x.com" for "ana@x.com"
-    # would otherwise resolve to nobody and skip both checks.
+    # would otherwise resolve to nobody, skip both checks, and mint a row no signup ever claims.
     recipient = resolved_user
     if recipient is None and to_email:
         recipient = (
             db.query(User).filter(func.lower(User.email) == to_email.strip().lower()).first()
         )
-    # An address with no account behind it has nobody to hold a preference, so it stays a pending
-    # email invite exactly as before — auto-accepted at signup, which is the #88 rule: an invite
-    # minted BEFORE a restriction stays claimable, because the sender chose to send it.
 
     if recipient is not None and recipient.id != current_user.id:
         # No NEW grant across a block (#85), either direction. The locked decision is that a grant
@@ -307,47 +315,74 @@ def handoff_recipe(
     # Link-only handoffs (no recipient at all) are deliberately NOT deduped — each
     # is an independent shareable grant, so two links can be claimed by two people
     # without the second stealing the first's access.
-    if resolved_user is not None or to_email:
+    handoff = None
+    email_key = to_email.strip().lower() if to_email else None
+    if recipient is not None or email_key:
         existing_q = db.query(Handoff).filter(Handoff.recipe_id == recipe.id)
-        if resolved_user is not None:
-            existing = existing_q.filter(Handoff.to_user_id == resolved_user.id).first()
+        if recipient is not None:
+            # EITHER SHAPE, and the second half is what keeps this fix from creating duplicates.
+            # Every email-addressed grant minted before it sits in the database `pending` with
+            # `to_user_id` NULL, so a lookup keyed only on the id would miss one and mint a SECOND
+            # row for the same (recipe, person) — two grants where this route promises one.
+            # Case-insensitively, because the sender may have typed the address differently then.
+            existing = existing_q.filter(
+                or_(
+                    Handoff.to_user_id == recipient.id,
+                    func.lower(Handoff.to_email) == recipient.email.lower(),
+                )
+            ).first()
         else:
-            existing = existing_q.filter(Handoff.to_email == to_email).first()
+            existing = existing_q.filter(
+                func.lower(Handoff.to_email) == email_key
+            ).first()
         if existing is not None:
-            return existing
+            if existing.to_user_id is None and recipient is not None:
+                # HEAL A DEAD ROW RATHER THAN RETURNING IT. One found here is unreachable — that is
+                # the whole bug — so answering the cook's re-send with it unchanged would repeat the
+                # first send's silence. Binding it makes a re-send the manual repair for any grant
+                # the migration below did not reach, and it falls through to the notify/commit path
+                # instead of returning, because until this moment the recipe had never arrived.
+                existing.to_user_id = recipient.id
+                existing.to_email = None
+                existing.state = "accepted"
+                handoff = existing
+            else:
+                return existing
 
-    handoff = Handoff(
-        recipe_id=recipe.id,
-        from_user_id=current_user.id,
-        to_user_id=(resolved_user.id if resolved_user else None),
-        to_email=(None if resolved_user else to_email),
-        state=("accepted" if resolved_user else "pending"),
-        token=secrets.token_urlsafe(32),
-    )
-    db.add(handoff)
+    if handoff is None:
+        handoff = Handoff(
+            recipe_id=recipe.id,
+            from_user_id=current_user.id,
+            to_user_id=(recipient.id if recipient else None),
+            to_email=(None if recipient else to_email),
+            state=("accepted" if recipient else "pending"),
+            token=secrets.token_urlsafe(32),
+        )
+        db.add(handoff)
     # TELL THE RECIPIENT. Until this line the app's signature act was the only one that
     # happened in silence: a grant appeared on someone's Kept shelf and nothing anywhere said
     # so. Same transaction as the grant, per notify()'s contract.
     #
-    # ONLY WHERE THE GRANT IS ACCEPTED — i.e. bound to a user id. An email-addressed handoff is
-    # `pending` with `to_user_id` NULL, and can_view's grant branch requires BOTH accepted and a
-    # matching to_user_id, so a notification on that path would link to a recipe the recipient
-    # gets a 404 on. (There is a real bug underneath that, noted in TECHDEBT: a pending
-    # email-addressed grant to an address that ALREADY has an account is unreachable in-app
-    # forever, because `GET /recipes/shared` filters on to_user_id and the signup auto-accept in
-    # auth.py already ran years earlier. Binding the grant to that account is a one-line fix
-    # that changes what handoff_recipe STORES, which is a decision of its own — see the note at
-    # `recipient` above, which fenced exactly this off.)
+    # ONLY WHERE THE GRANT IS ACCEPTED — i.e. bound to a user id, which since this round is every
+    # grant addressed to a person the app can identify, whether the sender named them by id or by
+    # email. A notification must never outrun the access it describes: `can_view`'s grant branch
+    # requires BOTH `accepted` AND a matching `to_user_id`, so telling someone a recipe arrived
+    # while the row is still `pending` links them to a 404. The remaining `pending` case is an
+    # address with NO account, where there is nobody to tell and signup will claim the row.
+    #
+    # (This condition used to read `resolved_user`, and pairing it with a row the email path left
+    # unbound is what made the bug invisible: the notification was correctly suppressed, so the
+    # silence looked deliberate rather than like a delivery that never happened.)
     #
     # The idempotent early-return above already makes a second grant per (recipe, grantee)
     # impossible, so `dedupe` is not load-bearing here; it is set for consistency with every
     # other repeatable-act notification, and so that a future change to that idempotency can't
     # turn re-sending into an inbox flood.
     arrival = None
-    if resolved_user is not None:
+    if recipient is not None:
         arrival = notify(
             db,
-            user_id=resolved_user.id,
+            user_id=recipient.id,
             type="recipe_arrived",
             actor_id=current_user.id,
             recipe_id=recipe.id,

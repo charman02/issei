@@ -2,14 +2,17 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
 from app.models.handoff import Handoff
+from app.services.notifications import notify
+from app.services import notify_push
 from app.models.password_reset import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse, AccountUpdate
 from app.auth import hash_password, verify_password, create_access_token, get_current_user
@@ -32,7 +35,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
+def signup(
+    request: Request,
+    user_in: UserCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     # Bounded per address because this route CREATES PUBLIC STATE: since #80 every account is listed
     # by name in `GET /friends/discover`, so mass signup does not just fill a table, it fills every
     # real user's directory. Counted per attempt rather than per success — a script probing which
@@ -56,16 +64,50 @@ def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_db))
     # re-read from db to populate server-generated fields (id, created_at)
     db.refresh(new_user)
     # Auto-accept any pending recipe invites addressed to this email (sharing spec §4.2).
+    #
+    # CASE-INSENSITIVE, which it was not until the handoff-grant fix went looking. `==` meant a
+    # sender who typed "Ana@x.com" for an account later opened as "ana@x.com" minted a row no
+    # signup would ever claim — the same dead grant `handoff_recipe` produced by the other route,
+    # and invisible for the same reason: a 201 and a pending row look like a delivery. The send side
+    # has lower-cased the address since #105; the two halves of one feature must agree about it.
     pending = (
         db.query(Handoff)
-        .filter(Handoff.to_email == new_user.email, Handoff.state == "pending")
+        .filter(
+            func.lower(Handoff.to_email) == new_user.email.lower(),
+            Handoff.state == "pending",
+        )
         .all()
     )
+    arrivals = []
     for h in pending:
         h.to_user_id = new_user.id
         h.state = "accepted"
+        # AND TELL THE COOK, which this loop never did.
+        #
+        # It didn't matter while the grant-binding bug existed, because the only way to reach
+        # `accept_handoff` — the route that DOES notify — was to already have an account when the
+        # recipe was sent, and that was exactly the broken path. With the send side fixed, an
+        # already-registered address is granted instantly and there is nothing left to accept, so
+        # this loop is now the ONLY place a pending email invite ever gets claimed. Without a
+        # notification here, fixing the bug would have taken away the cook's one signal that their
+        # recipe landed — the founding shape of the product (you send it to someone who isn't on
+        # issei yet, they join for that dish) going silent.
+        #
+        # A brand-new account cannot be blocked by anyone, so #88's suppression has nothing to do
+        # here. notify() deliberately does not commit, so this lands in the commit below.
+        arrival = notify(
+            db,
+            user_id=h.from_user_id,
+            type="recipe_claimed",
+            actor_id=new_user.id,
+            recipe_id=h.recipe_id,
+            dedupe=True,
+        )
+        if arrival is not None:
+            arrivals.append(arrival)
     if pending:
         db.commit()
+        notify_push.queue(background_tasks, arrivals)
         db.refresh(new_user)
     return new_user
 

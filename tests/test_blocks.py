@@ -575,18 +575,23 @@ def test_a_link_only_token_minted_BEFORE_a_block_is_still_claimable(client, make
     assert client.get(f"/recipes/{rec['id']}", headers=fh).status_code == 200
 
 
-def test_an_email_invite_sent_BEFORE_a_block_can_still_be_accepted(client, make_user):
-    # Same rule, the addressed-invite path. Pending at block time, still acceptable after.
+def test_an_email_invite_sent_BEFORE_a_block_survives_it(client, make_user):
+    # Same #88 rule, the addressed-invite path — and the grant is now ACCEPTED at send time, because
+    # the address belongs to an account. It used to be stored `pending` with `to_user_id` NULL, which
+    # was the dead-grant bug: unreachable in every surface forever. So what this pins is the half of
+    # #88 that still has teeth here — a grant that existed at block time keeps working, because the
+    # cook genuinely handed that dish over and a block means "no new contact", not "unsend".
     cook, ch = make_user()
     fan, fh = make_user()
     rec = _recipe(client, ch, name="Given", visibility="private")
     h = client.post(
         f"/recipes/{rec['id']}/handoff", json={"to_email": fan.email}, headers=ch
     ).json()
-    assert h["state"] == "pending"
+    assert h["state"] == "accepted" and h["to_user_id"] == fan.id
 
     _block(client, ch, fan.id)
 
+    # Accept stays idempotent on a grant already bound to the caller, and the read still works.
     assert client.post(f"/recipes/handoffs/{h['id']}/accept", headers=fh).status_code == 200
     assert client.get(f"/recipes/{rec['id']}", headers=fh).status_code == 200
 
