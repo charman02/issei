@@ -55,7 +55,7 @@ cd frontend && npm run build
 cd frontend && npm test
 ```
 
-Baselines as measured on this branch: **972 backend tests**, **1,025 frontend tests in 64 files**. Both suites are fast and safe to run — do that rather than quoting these numbers later.
+Baselines as measured on this branch: **972 backend tests**, **1,028 frontend tests in 64 files**. Both suites are fast and safe to run — do that rather than quoting these numbers later.
 
 **Measure the backend with `DATABASE_URL='sqlite://' JWT_SECRET=ci pytest -q`, which is the CI shape, or you will get a different number and think something is wrong.** Plain `pytest` reads the real `.env`, whose Neon credential is stale on this machine, and the two `tests/test_harness.py` readiness-probe tests skip themselves when no database is reachable (deliberately — see the comment there; a permanently-red test trains everyone to ignore it). So the CI shape reports **all collected tests passed, 0 skipped**, while plain `pytest` reports **two fewer passed and 2 skipped** — the same total COLLECTED either way, which is why the collected count is the one quoted here. A ship gate reported the skipped form as the baseline and it read as a regression; it was a dead credential in a local `.env`. (Stated as a rule rather than a second pair of numbers on purpose: the pair would need re-measuring every time the suite grows, and deriving it by subtraction is exactly how a wrong number gets into a doc.)
 

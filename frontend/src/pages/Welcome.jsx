@@ -62,10 +62,10 @@ import { enable, primeVapidKey, pushAvailability } from '../lib/push'
 //   · the NOTIFICATIONS ask — `NotifyNudge` re-asks on Home, but ONLY where `pushAvailability()` is
 //     `'ready'`. On an iPhone in a Safari tab it is `'install-first'` and the strip deliberately
 //     renders nothing (its own header: a strip saying "install the app first" mid-feed is an ad, not
-//     a nudge). So on that platform this panel is the only place outside `/profile` → Notifications
-//     that teaches Add to Home Screen — and tapping panel 2's primary action leaves before reaching
-//     it, since seen is marked on mount. That gap is recorded rather than papered over; closing it
-//     is a product call about panel ORDER, not something to fix silently in a comment.
+//     a nudge), so on that platform this panel is the only place outside `/profile` → Notifications
+//     that teaches Add to Home Screen. Which is why THE TWO ACTION STEPS SWAP THERE — see `ORDER`
+//     below. Without that, the emphasised button on the meal panel walked past the install teaching
+//     for good, because seen is marked on mount.
 //
 // SEEN IS MARKED ON MOUNT, not on exit. Any way out counts as final: both
 // buttons, a nav tap, a closed tab. Nothing here is worth making someone sit
@@ -197,6 +197,35 @@ export default function Welcome() {
 
   const done = () => navigate('/', { replace: true })
 
+  // THE TWO ACTION STEPS SWAP ON AN IPHONE IN SAFARI, and the reason is that one of them ENDS the
+  // intro. Found by a ship gate; this is the one finding in #111 that needed a product decision
+  // rather than a fix.
+  //
+  // `markWelcomeSeen()` fires on mount, so ANY exit is final — and the meal panel's primary action
+  // navigates to `/add/meal`. On a 'ready' platform that costs nothing: `NotifyNudge` re-asks on
+  // Home, so the notifications ask is merely relocated one screen later (verified end to end —
+  // `PostComposer` lands on `/`, permission is still `default`, `notifyNudgeDismissed` is only
+  // written by a successful `enable()`, so all four of the strip's conditions hold).
+  //
+  // On 'install-first' it costs everything. `NotifyNudge` deliberately renders NOTHING there — its
+  // own header: a strip saying "install the app first" in the middle of a feed is an ad, not a nudge
+  // — so this panel is the only place outside `/profile` → Notifications that teaches Add to Home
+  // Screen, and on iOS an install is the precondition for push existing at all. The emphasised
+  // button would have walked past it permanently, on the platform most of this audience is on.
+  //
+  // So the install panel goes SECOND there and the meal ask goes last. Stated as an order rather
+  // than as a special case inside either panel, because the property that matters is a general one:
+  // THE STEP WHOSE PRIMARY ACTION LEAVES ONBOARDING MUST BE LAST. Nothing about either panel's
+  // content changes, and no other platform moves.
+  const ORDER = availability === 'install-first' ? ['notify', 'meal'] : ['meal', 'notify']
+  const step = panel === 0 ? 'teach' : ORDER[panel - 1]
+  const isLast = panel === ORDER.length
+  // A panel's own forward button: it ends the intro on the last one and advances before that. The
+  // label has to follow, because "Open my kitchen" is a promise about where you land and must never
+  // sit on a panel that is followed by another one.
+  const advance = () => (isLast ? done() : setPanel((p) => p + 1))
+  const onwardLabel = isLast ? 'Open my kitchen →' : 'Next →'
+
   return (
     // max-w-app centred, matching every other screen. Without it this page was
     // the one place that sprawled to the full window on a desktop browser —
@@ -237,7 +266,7 @@ export default function Welcome() {
           </button>
         </div>
 
-        {panel === 0 ? (
+        {step === 'teach' ? (
           /* PANEL 1 — WHAT ISSEI IS, AS IT IS NOW. This replaces two panels, and the pair it
              replaced had gone stale in a way worth recording rather than quietly deleting.
 
@@ -276,7 +305,7 @@ export default function Welcome() {
               Next &rarr;
             </button>
           </div>
-        ) : panel === 1 ? (
+        ) : step === 'meal' ? (
           /* PANEL 2 — THE FIRST ACTION, AND THE ONE THE APP ACTUALLY NEEDS. Onboarding used to ask
              for a profile photo and notification permission: two things that produce no CONTENT, on
              an app whose Home is empty until somebody posts. A new account that finishes onboarding
@@ -293,7 +322,7 @@ export default function Welcome() {
              and Home's own empty state carries a "📸 Share a meal" button to the same route. Nobody
              who skips is stranded, and nobody is asked twice on the same screen. */
           <div className="pt-6">
-            <StepBadge>2 of 3</StepBadge>
+            <StepBadge>{panel + 1} of 3</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               What did you cook <span className="font-black italic">lately?</span>
             </h1>
@@ -315,15 +344,20 @@ export default function Welcome() {
                 panel. Two words that do different things must not share a label. Centred under the
                 full-width primary, as a chip rather than an underlined link. */}
             <div className="text-center mt-4">
-              <button onClick={() => setPanel(2)} className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press">
+              <button onClick={advance} className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press">
                 Not now
               </button>
             </div>
           </div>
         ) : (
-          /* PANEL 3 — NOTIFICATIONS (#110). An ACTION step like the meal ask, not teaching, and
-           deliberately LAST. (It was panel 4 until #111 cut the intro to three; the photo panel that
-           used to sit beside it as the other action step is gone.)
+          /* THE NOTIFICATIONS STEP (#110). An ACTION step like the meal ask, not teaching. LAST on
+           every platform that can actually subscribe, and SECOND on an iPhone in Safari, where it
+           carries the install instruction instead and must not be walked past — see `ORDER` above for
+           why the swap exists and why the rule is stated as "the step whose primary action leaves
+           onboarding goes last" rather than as a special case in here. Its badge and its forward
+           button both read off the position, so neither hardcodes a number or a destination. (It was
+           panel 4 until #111 cut the intro to three; the photo panel that used to sit beside it as
+           the other action step is gone.)
 
            WHY ASK HERE AT ALL. Before this, the only prompt was `NotifyNudge`, a dismissible strip
            on Home — so someone had to happen across it. The owner's call was that a new person
@@ -371,7 +405,7 @@ export default function Welcome() {
            download on iOS, it has Add to Home Screen. Same reasoning as
            `NotificationSettings.jsx`, and the same refusal to render a control that would fail. */
           <div className="pt-6">
-            <StepBadge>3 of 3</StepBadge>
+            <StepBadge>{panel + 1} of 3</StepBadge>
             <h1 className="font-display font-medium text-[30px] leading-[1.08] text-ink mt-4 max-w-[17rem]">
               Know when it <span className="font-black italic">happens.</span>
             </h1>
@@ -397,8 +431,8 @@ export default function Welcome() {
                     <p className="font-display font-bold text-[15px] text-ink mt-7">
                       You&rsquo;re set. ✓
                     </p>
-                    <button onClick={done} className="btn-primary !mt-4">
-                      Open my kitchen →
+                    <button onClick={advance} className="btn-primary !mt-4">
+                      {onwardLabel}
                     </button>
                   </>
                 ) : (
@@ -419,7 +453,7 @@ export default function Welcome() {
                       the full-width primary. */}
                     <div className="text-center mt-4">
                       <button
-                        onClick={done}
+                        onClick={advance}
                         className="chip py-[11px] shadow-[0_2px_0_#2E3A24] sticker-press"
                       >
                         Not now
@@ -437,8 +471,8 @@ export default function Welcome() {
                 <p className="font-display italic text-[13px] text-ink-soft mt-3 max-w-xs">
                   It also opens without the browser bars, which is nicer to cook from.
                 </p>
-                <button onClick={done} className="btn-primary !mt-7">
-                  Open my kitchen →
+                <button onClick={advance} className="btn-primary !mt-7">
+                  {onwardLabel}
                 </button>
               </>
             ) : (
@@ -452,8 +486,8 @@ export default function Welcome() {
                   This browser can&rsquo;t do notifications. Asks and arrivals still wait for
                   you in your inbox; the daily nudge just won&rsquo;t reach you.
                 </p>
-                <button onClick={done} className="btn-primary !mt-7">
-                  Open my kitchen →
+                <button onClick={advance} className="btn-primary !mt-7">
+                  {onwardLabel}
                 </button>
               </>
             )}

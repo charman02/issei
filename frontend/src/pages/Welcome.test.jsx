@@ -318,6 +318,13 @@ describe('Welcome — the notifications ask (#110)', () => {
   async function toNotifyPanel() {
     renderWelcome()
     await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    if (push.availability === 'install-first') {
+      // The two action steps SWAP on this platform, so this one is already here — see `ORDER` in
+      // Welcome.jsx. Walking past it with "Not now" would land on the meal panel instead, which is
+      // the exact defect the swap fixes.
+      expect(screen.getByText('2 of 3')).toBeInTheDocument()
+      return
+    }
     await userEvent.click(screen.getByRole('button', { name: /not now/i }))
     expect(screen.getByText('3 of 3')).toBeInTheDocument()
   }
@@ -443,9 +450,50 @@ describe('Welcome — the notifications ask (#110)', () => {
     await toNotifyPanel()
     expect(screen.getByText(/add to home screen/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /turn on notifications/i })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: /open my kitchen/i }))
+    // Its forward button ADVANCES here rather than finishing, and says so — this panel is second on
+    // this platform, and "Open my kitchen" would be a promise about where you land that is false.
+    expect(screen.queryByRole('button', { name: /open my kitchen/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText(/what did you cook/i)).toBeInTheDocument()
+  })
+
+  it('puts the INSTALL step before the meal ask on iPhone-in-Safari, and nowhere else', async () => {
+    // THE BUG THIS EXISTS FOR, found by a ship gate. `markWelcomeSeen()` fires on mount, so any exit
+    // is final — and the meal panel's primary action navigates to /add/meal. On a 'ready' platform
+    // that is harmless: `NotifyNudge` re-asks on Home, so the ask is relocated one screen later. On
+    // 'install-first' it was fatal: the strip deliberately renders NOTHING there, so this panel is
+    // the only place outside /profile → Notifications that teaches Add to Home Screen — and on iOS an
+    // install is the precondition for push existing at all. Tapping the emphasised button on the
+    // platform that is most of this audience skipped the app's whole notification on-ramp, for good.
+    //
+    // The invariant is general: THE STEP WHOSE PRIMARY ACTION LEAVES ONBOARDING MUST BE LAST.
+    push.availability = 'install-first'
+    renderWelcome()
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText('2 of 3')).toBeInTheDocument()
+    expect(screen.getByText(/add to home screen/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(screen.getByText('3 of 3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /share a meal/i })).toBeInTheDocument()
+    // And the last panel FINISHES — "Not now" here must not try to advance to a fourth.
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }))
     expect(await screen.findByText('home')).toBeInTheDocument()
   })
+
+  it.each(['ready', 'unsupported'])(
+    'leaves the order alone on %s, where NotifyNudge is the real fallback',
+    async (availability) => {
+      // The swap is scoped to the ONE platform that needs it. Everywhere the Home strip can ask
+      // again, the meal ask stays first — asking for CONTENT before asking for a permission is the
+      // whole point of the reshape, and #111 is not allowed to quietly undo it for everyone.
+      push.availability = availability
+      renderWelcome()
+      await userEvent.click(screen.getByRole('button', { name: /next/i }))
+      expect(screen.getByText('2 of 3')).toBeInTheDocument()
+      expect(screen.getByText(/what did you cook/i)).toBeInTheDocument()
+    },
+  )
 
   it('an unsupported browser says so plainly and still finishes', async () => {
     push.availability = 'unsupported'
