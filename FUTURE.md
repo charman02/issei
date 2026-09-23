@@ -12,7 +12,7 @@ list of things the app does *not* do.
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
 + Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 983
-backend tests, 1,028 frontend tests** — re-count rather than quote.
+backend tests, 1,031 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -318,8 +318,9 @@ carries notifications with it; family sharing was cut; language translation move
    were already posting. It now asks "What did you cook today?", gated on the recipient's own
    absence, and the three-way cadence became three switches split by subject.
    What remains ledgered in TECHDEBT: the prompt can repeat the same sentence indefinitely for
-   someone who never opens Home, and a handoff addressed to the email of an account that already
-   exists produces a grant nobody can reach.
+   someone who never opens Home. (The second item here — a handoff addressed to the email of an
+   account that already exists producing a grant nobody can reach — was FIXED on 2026-09-23; the
+   address now resolves to the account and the grant is bound and accepted at send time.)
 2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report

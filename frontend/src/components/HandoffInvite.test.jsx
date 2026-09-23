@@ -379,3 +379,56 @@ describe('HandoffInvite — the occasion chips (#102)', () => {
     expect(screen.getByText(/this goes in your text, with the link/i)).toBeInTheDocument()
   })
 })
+
+describe('HandoffInvite — what the sender is told about an ADDRESSED handoff', () => {
+  // NEITHER OF THESE STRINGS HAD A TEST, which is exactly why they went stale invisibly. The
+  // grant-binding fix (2026-09-23) made an email-addressed handoff to an address that already has
+  // an account bind and ACCEPT at send time — the recipe is on that person's shelf immediately and
+  // they are notified — while the copy still said the recipe would be waiting for them to sign up.
+  // The one surface that tells a sender what their send actually did was describing the bug.
+
+  it('does NOT tell the sender the recipe waits for a signup — on EITHER stage', async () => {
+    // Both stages, because the two stale strings were one per stage and asserting on the compose
+    // stage alone would have left the share-stage one — the line read AFTER the send has already
+    // happened, so the most misleading of the two — completely uncovered.
+    render(
+      <HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />,
+    )
+    const banned = [/if they sign ?up/i, /signs ?up/i, /waiting for them/i]
+    for (const pattern of banned) {
+      expect(document.body.textContent, 'compose stage').not.toMatch(pattern)
+    }
+
+    await userEvent.type(screen.getByPlaceholderText(/email/i), 'ana@example.com')
+    await userEvent.click(screen.getByRole('button', { name: /get a link to send/i }))
+    await screen.findByText(/\/invite\/tok123/)
+    // The addressed line only renders with an email typed, which is the case that went wrong.
+    expect(screen.getByText(/ana@example\.com/)).toBeInTheDocument()
+    for (const pattern of banned) {
+      expect(document.body.textContent, 'share stage').not.toMatch(pattern)
+    }
+  })
+
+  it('still refuses to claim it sends mail, which nothing on this path does', async () => {
+    // Unchanged and still true: `handoff_recipe` never touches `services/email.py`. Kept in the
+    // same test as the reword so a future edit to that sentence cannot quietly drop the promise.
+    render(
+      <HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />,
+    )
+    expect(screen.getByText(/we won.t email them/i)).toBeInTheDocument()
+  })
+
+  it('does not disclose whether that address already has an account', async () => {
+    // The response carries `state`, so this COULD branch and say which case it is — and that would
+    // be more useful. It deliberately doesn't: `handoff_recipe` answers the `invite_permission`
+    // refusal with the same 404 a block and an unknown user get, so it declines to confirm account
+    // existence on that path, and a UI that confirmed it here would be making that call silently.
+    // One sentence true either way. If the owner decides disclosure is fine, this test is the thing
+    // to change on purpose.
+    render(
+      <HandoffInvite recipeId={7} recipeName="Adobo" onSent={() => {}} onSkip={() => {}} />,
+    )
+    expect(document.body.textContent).not.toMatch(/already (on issei|has an account)\b/i)
+    expect(document.body.textContent).not.toMatch(/not on issei yet/i)
+  })
+})

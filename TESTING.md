@@ -212,7 +212,10 @@ future contributor is most likely to "fix", because it reads as a leak until you
    which matters because the grant branch bypasses visibility entirely and would otherwise be
    an uncapped channel into a blocker's kitchen.
    The same line applies to a **capability token minted before the block** (owner call, #88,
-   2026-09-04): a link-only invite stays claimable and an emailed invite stays acceptable,
+   2026-09-04): a link-only invite stays claimable and an emailed invite stays acceptable
+   (that second shape is now a LEGACY/no-account one — since 2026-09-23 an address with an account
+   is bound and accepted at send time, so `test_blocks.py` constructs the pending row by hand to
+   keep this covered rather than testing a shape the route no longer writes),
    because the cook minted the token and chose to share it — claiming it completes an offer
    already made, and the token *is* the authorization. The cut is offer-time, not accept-time:
    anything offered before the block still lands, nothing new can be offered after it.

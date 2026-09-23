@@ -21,8 +21,11 @@ import { shareOrCopy } from '../lib/shareLink'
 //     implying a per-person lock the code doesn't enforce.
 //
 // Two stages:
-//   1. COMPOSE — an optional note (+ optional email, which enables auto-accept
-//      when that address signs up). Neither is required: the fast path is just
+//   1. COMPOSE — an optional note (+ optional email, which ADDRESSES the grant to a person:
+//      an address that belongs to an account is granted the recipe at send time and notified;
+//      one that doesn't stays a pending invite that signup claims. It used to be only the
+//      second of those, which was a bug rather than a design — see CLAUDE.md, "An ADDRESS that
+//      belongs to an account is a PERSON"). Neither field is required: the fast path is just
 //      tapping the button to mint a link.
 //   2. SHARE   — the invite link, with the native share sheet (iMessage/WhatsApp/
 //      anything) and a copy fallback. This stage is the whole point: previously
@@ -200,8 +203,23 @@ export default function HandoffInvite({
         </p>
 
         {email.trim() && (
+          /* TRUE IN BOTH CASES, AND DELIBERATELY DOES NOT SAY WHICH. This used to read "When
+             {email} signs up, this recipe will be waiting for them", which the grant-binding fix
+             (2026-09-23) made false for the common case: an address that belongs to an account is
+             now resolved, bound and ACCEPTED at send time, so the recipe is on their shelf already
+             and they have been notified. Nothing is waiting for a signup that has happened.
+
+             The response carries `state` ("accepted" vs "pending"), so this could branch and say
+             which — and that would be more useful. It does not, because the branch would tell the
+             sender whether that address has an account, and `handoff_recipe` refuses to answer that
+             question on the `invite_permission` path (every refusal there is the same 404 a block
+             and an unknown user get). The app does disclose account existence elsewhere on purpose
+             (signup answers "Email already registered"; #80 lists every user by name), so branching
+             is a defensible product call rather than a leak — it just isn't one to make silently
+             while fixing a bug. One sentence that is true either way costs nothing here. */
           <p className="font-display italic text-[12.5px] text-ink-soft mt-2">
-            When {email.trim()} signs up, this recipe will be waiting for them.
+            {email.trim()} gets this recipe in their kitchen — now if they&rsquo;re on
+            issei, when they join if they&rsquo;re not.
           </p>
         )}
 
@@ -295,13 +313,17 @@ export default function HandoffInvite({
         onChange={(e) => setEmail(e.target.value)}
         className="field mb-1.5"
       />
-      {/* Deliberately does NOT say "we'll email them" — nothing in this app sends
-          mail. The email only pre-addresses the invite, which auth.py's signup
-          auto-accepts (pending handoffs matching the new user's email). You still
-          send the link yourself. */}
+      {/* Deliberately does NOT say "we'll email them" — nothing on this path sends mail
+          (`handoff_recipe` never touches `services/email.py`). That half is unchanged.
+
+          What the address DOES has two cases since the grant-binding fix: if it belongs to an
+          account, the recipe is granted to that person at send time and they are notified; if it
+          doesn't, the invite waits and signup claims it. This line used to say only the second
+          ("if they sign up"), which was the bug's own description. Worded to cover both without
+          saying which — see the note on the share-stage line. */}
       <p className="font-display italic text-[12px] text-ink-soft mb-3">
-        We won&rsquo;t email them — you send the link. Their address just saves the
-        recipe for them if they sign up.
+        We won&rsquo;t email them — you send the link. Their address also puts the
+        recipe in their kitchen.
       </p>
       {error && (
         <p className="mb-3">

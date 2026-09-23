@@ -342,6 +342,33 @@ or test against the raw `AlbDns` over HTTP in the meantime.
 
 ## Step 4 — Verify it actually works (the evidence)
 
+### 4a — Confirm the MIGRATION landed, before anything else
+
+Nothing here used to check this, which is a gap worth closing rather than a formality: **the deploy
+workflow runs `alembic upgrade head` BEFORE it pushes the image** (`deploy.yml`, the Alembic step
+precedes "Push image to ECR"), so the old task serves live traffic against the new schema for a
+minute or two. Every migration note in `CLAUDE.md` and `TECHDEBT.md` about three-release column
+drops exists because of that window. A migration that half-applies is the failure that looks like a
+mystery later.
+
+```bash
+# What the database thinks it is on. Against the DIRECT (non-pooled) endpoint.
+psql "$MIGRATION_DATABASE_URL" -c 'SELECT version_num FROM alembic_version;'
+```
+
+**Read the expected value off `alembic heads` in the repo, and read it carefully.** Two revisions
+differ only in their last character and BOTH are about handoff grants:
+
+| revision | what it is |
+|---|---|
+| `a1b2c3d4e5f6` | indexes the handoff grant lookup |
+| `a1b2c3d4e5f7` | **binds dead email-addressed grants** (2026-09-23) — rewrites authorization state |
+
+Eyeballing one for the other is easy and would leave you believing a data repair ran when it didn't.
+If the value is behind, read the workflow's Alembic step log rather than re-running by hand — a
+second `upgrade head` is safe (every migration in this chain is idempotent or additive), but the
+reason it was behind is the thing to find.
+
 ```bash
 # liveness + readiness (readiness proves the task reached Neon)
 curl -s "$API/health"            # → {"status":"ok"}
