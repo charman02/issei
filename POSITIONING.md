@@ -517,6 +517,40 @@ sits closer to the product's promises than a settings screen usually does. Six r
    a device. Say "push notifications work" freely; don't claim a specific notification arrives until
    it has been watched arriving. Android is also unobserved — only iOS standalone has been.
 
+### What an announcement may claim (#107)
+
+**The announcement body is the only user-facing copy in issei that no test can read.** Every other
+string in this product is either in the repo (and swept by the guards above) or written by a user
+about their own dish. An announcement is typed into a file, sent once by
+`scripts/send_announcement.py`, and cannot be recalled — it is the app's own voice, addressed to
+every account at once, and the dry-run output is the only review it will ever get. Read it.
+
+Every rule in this document binds it. Four bind it harder than they bind anything else:
+
+- **The 💛 is still the sender's.** See "The sender's sentence is the sender's" above: the app does
+  not sign its own copy with that glyph, and #102 removed the one place it did. An announcement is
+  emphatically the app's own copy. `send_announcement.py`'s own comments anticipate someone typing
+  it — that anticipation is not permission.
+- **No count the private-count rules forbid on a screen.** No keeper count, no ask count, no
+  requester or keeper NAME, no "your recipes were viewed N times". A mailing list is more public
+  than a lock screen, not less, and those rules exist because a zero or a name is discouraging or
+  exposing wherever it lands.
+- **The audio, lineage, shopping-list and handwritten-face bans apply verbatim.** An announcement is
+  written to persuade people that something changed, which makes it the likeliest place in the whole
+  project for an overclaim — the same reason the landing page (#111) needed three rounds and ended up
+  refusing two sentences a reviewer asked for.
+- **Don't claim a delivery nobody has watched** (the notification rule above, applied to mail).
+  While the AWS account is in the SES sandbox, SES delivers only to verified identities. Do not
+  write "we emailed everyone" until a send has been observed landing, and do not describe
+  announcements as a feature users have to anyone until then.
+
+One more, which is about the app's posture rather than its claims: **an announcement asks for
+ATTENTION, and the notification rule above says the app may ask for an ACTION and never merely for
+attention.** That rule was written about push and does not formally reach mail — but an announcement
+is harder to decline than any push (it cannot be turned off per device, and it arrives at an address
+someone handed over for a password reset), so the spirit applies with more force, not less. If a
+draft has nothing in it a person can DO, it is a newsletter, and this app does not have one.
+
 ### Never claim a shopping list or unit conversion
 
 Both removed. There is no shopping list and no `app/services/units.py`. `FUTURE.md`

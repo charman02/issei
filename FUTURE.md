@@ -43,9 +43,14 @@ never a live pointer; the profile setting only picks the create-form default and
 opt-in bulk sweep. `can_view` / `can_view_post` are the two read rules. Editing and deleting
 stay owner-only: **read is not write**.
 
-**Account and ops.** Signup/login, name/email/password edits, avatars, password reset by email
-via SES, account deletion, in-app feedback, and a CI gate that blocks the backend deploy on a
-red suite.
+**Account and ops.** Signup/login, name/email/password edits, avatars, account deletion,
+in-app feedback, and a CI gate that blocks the backend deploy on a red suite. THREE kinds of mail
+leave the app, all via SES: a password reset (a reply to a request), a notification to the owner
+when someone sends feedback (#101), and — since #107 — an **announcement to every user**, which is
+the only one nobody asked for and therefore the only one with an opt-out (`announcement_emails`,
+default on, a switch on the You page, plus a `List-Unsubscribe` header). It is sent by
+`scripts/send_announcement.py` rather than any endpoint, and it is inert until the SES sandbox is
+lifted.
 
 **Removed, on purpose, and not coming back:** the recipe lineage/family tree, the seed→tree
 "garden" UI, and the consolidating shopping list. See `POSITIONING.md` and the note below.

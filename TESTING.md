@@ -526,3 +526,31 @@ it expected a 401 (the address limit is a pre-check, so 1-30 pass and 31 is refu
 lands in whichever test happens to run thirty-first and moves when tests
 are reordered. It is imported into `conftest.py` explicitly, because an autouse fixture only applies
 where pytest can see it, and leaving it out would silently disable it everywhere.
+
+### Invariant 18 — an opt-out must be honoured by the only thing that can honour it
+
+Announcements (#107) are the one mail this app sends that nobody asked for. The whole promise of the
+feature is "you can stop these", and **that promise lives in a single SQL string** —
+`RECIPIENTS_SQL` in `scripts/send_announcement.py`. Not in a route, not behind `can_view`: the app
+has no send path at all, which is the design (a "mail everyone" endpoint would turn one bearer token
+in one phone's localStorage into the ability to mail the user base in someone else's name, which is
+#101's reasoning applied to a bigger blast radius).
+
+That makes this **the only must-pass invariant whose subject is a SCRIPT**, and the only one where a
+regression mails a real person something they declined. Two rules:
+
+1. **`announcement_emails = false` removes a person from the recipient list, and nothing else does.**
+   The second half matters as much as the first: the query is asserted to filter on *nothing* except
+   the opt-out, so it cannot quietly acquire a condition ("only users with posts", "only verified")
+   that would make a broadcast skip people the sender believes it reached.
+2. **The tests execute the REAL statement, imported from the script**, never a paraphrase. A copy of
+   the WHERE clause is a copy that can drift from the one that actually mails people — the same
+   discipline `tests/test_handoff_grant_repair.py` uses for the migration it exercises.
+
+→ `tests/test_announcements.py` (`test_the_send_scripts_query_EXCLUDES_anyone_who_opted_out`,
+  `test_the_query_is_not_secretly_filtering_on_anything_else`,
+  `test_a_new_account_is_opted_IN`, `test_the_switch_needs_no_password_and_takes_effect`)
+
+**Not an invariant but a standing hazard:** the script records nothing, so a second run mails
+everyone again, and the migration's `downgrade` re-subscribes anyone who had opted out — so a
+rollback followed by a re-run mails people who asked not to be mailed. Both are in TECHDEBT.

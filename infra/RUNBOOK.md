@@ -296,6 +296,33 @@ remember step 5 is that steps 3 and 4 are now mandatory.
    breakdown (`already_posted_today`, `nudged_recently`, `hour_not_reached`, …) so a night with no
    nudge can be explained from the run page rather than from the database.
 
+## Step 1c — SES, which all three kinds of mail depend on
+
+This step did not exist until 2026-09-23 and its absence was a real gap: the RUNBOOK is the document
+someone opens to make the deployed app actually WORK, and it never mentioned that every outbound mail
+is inert until an identity is verified.
+
+`SENDER_EMAIL` is a plain environment variable in `.aws/task-definition.json` (currently
+`noreply@issei.app`), **not** one of the six SSM secrets in Step 1 — so a deploy succeeds with it set
+to anything. What fails, silently or loudly depending on the caller, is the sending:
+
+| what | needs | if missing |
+|---|---|---|
+| password reset (`send_password_reset_email`) | `SENDER_EMAIL` verified in SES **us-west-2** | raises; the one HTTP caller logs and swallows, so the user sees a normal "check your email" and nothing arrives |
+| feedback notification (#101) | the same, plus `FEEDBACK_NOTIFY_EMAIL` verified while sandboxed | logged no-op; the note still saves — read it with `scripts/read_feedback.py` |
+| **announcements (#107)** | the same, **AND the SES sandbox lifted** | `send_announcement` raises with no sender at all; with a sender but still sandboxed, every UNVERIFIED recipient fails individually with `MessageRejected`, which `scripts/send_announcement.py` counts and explains |
+
+**The sandbox is the part to plan for.** Inside it SES delivers only to verified identities, so a
+broadcast reaches almost nobody and the failures are per-recipient rather than a single obvious error.
+Request production access in the SES console, then prove the path end to end with
+`scripts/send_announcement.py --only your@address --send` before the first real send — it is
+dry-run by default and a real send makes you type the recipient count back, because mail has no undo.
+
+One thing to decide before that first send, recorded in TECHDEBT rather than here: the
+`List-Unsubscribe` header on every announcement points at `SENDER_EMAIL`, i.e. at `noreply@` today,
+while also advertising ONE-CLICK. If nobody reads that mailbox the opt-out fails silently.
+
+
 ## Step 2 — Bootstrap CDK (one-time per account/region)
 
 ```bash
@@ -357,9 +384,14 @@ psql "$MIGRATION_DATABASE_URL" -c 'SELECT version_num FROM alembic_version;'
 ```
 
 **Read the expected value off `alembic heads` in the repo, and compare the whole string.** The
-current head is `b9d3f07a4c81` — *binds dead email-addressed handoff grants* (2026-09-23), which
-**rewrites authorization state** rather than schema, so it is the one migration in this chain where
-"did it run?" has a user-visible answer.
+current head is `c47a1e8b5d92` — *add `users.announcement_emails`* (2026-09-23), which is additive
+with a `server_default` and therefore back in the boring category: nothing reads the column except
+one switch and `scripts/send_announcement.py`.
+
+The revision below it, `b9d3f07a4c81`, is the one that **rewrote authorization state** rather than
+schema — the only migration in this chain where "did it run?" had a user-visible answer, which is why
+`scripts/check_handoff_grants.py` exists to report on it. It has already been applied to production
+(verified 2026-09-23: `alembic_version` read `b9d3f07a4c81` and every count came back zero).
 
 That revision was deliberately renamed before it merged. It was first written as `a1b2c3d4e5f7`,
 one character off the existing `a1b2c3d4e5f6` (*indexes the handoff grant lookup*) — and both are
@@ -369,10 +401,11 @@ is free before a migration is applied anywhere and becomes a schema-history edit
 
 If the value is behind, read the workflow's Alembic step log rather than re-running by hand — a
 second `upgrade head` is safe (every migration in this chain is idempotent or additive), but the
-reason it was behind is the thing to find. One failure mode worth naming: `b9d3f07a4c81` will
-**abort** rather than mis-apply if it ever meets a state it can't resolve safely, and an aborted
-migration halts the deploy *before* the image ships, so a red pipeline here means the old code is
-still serving traffic against an unchanged database. That is the safe direction.
+reason it was behind is the thing to find. One failure mode worth naming, which applied to
+`b9d3f07a4c81` and is the shape to expect from any future data migration: it **aborts** rather than
+mis-applying if it meets a state it can't resolve safely, and an aborted migration halts the deploy
+*before* the image ships — so a red pipeline at this step means the old code is still serving traffic
+against an unchanged database. That is the safe direction.
 
 ```bash
 # liveness + readiness (readiness proves the task reached Neon)

@@ -681,6 +681,42 @@ imminent scaling risk.
 
 ### Infra & deployment
 
+- **THE ANNOUNCEMENT UNSUBSCRIBE HEADER POINTS AT `noreply@issei.app`, AND CLAIMS ONE-CLICK.**
+  (#107, found by the ship gate. **The most consequential entry on this list — it is the feature's
+  only promise, failing invisibly.**)
+  `build_announcement` sets `List-Unsubscribe: <mailto:{sender}?subject=unsubscribe>` plus
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, and `sender` is `SENDER_EMAIL`, which prod
+  sets to **`noreply@issei.app`** (`.aws/task-definition.json`, `infra/lib/issei-stack.ts`). Two
+  problems compound:
+  1. That header tells Gmail the control is ONE-CLICK, so Gmail renders its own unsubscribe button,
+     the person taps it, Gmail mails `noreply@` — and if nobody reads that mailbox (a `noreply`
+     local part conventionally means exactly that, and it may not even accept inbound mail) the
+     opt-out **silently fails while the person believes it succeeded**. The in-app switch still
+     works, but they have no reason to go looking for it.
+  2. **RFC 8058 one-click requires an HTTPS target.** Pairing `List-Unsubscribe-Post` with a bare
+     `mailto:` is not what that RFC describes, so the header may be ignored or counted against the
+     sender rather than helping deliverability — which was the entire reason for using
+     `send_raw_email` instead of `send_email`.
+  *Options, all owner decisions:* drop `List-Unsubscribe-Post` and keep the plain `mailto:` (valid
+  per RFC 2369, still shows an unsubscribe affordance, claims nothing automatic); point the mailto at
+  an inbox that IS read; or build the real HTTPS one-click route, which was deliberately declined as
+  a new unauthenticated write surface with its own token scheme. *Where:*
+  `app/services/email.py::build_announcement`, `.aws/task-definition.json`, `infra/lib/issei-stack.ts`.
+
+- **An announcement has no send record, so re-running mails everyone AGAIN — and a rollback
+  re-subscribes the people who opted out.** (#107)
+  `scripts/send_announcement.py` writes NOTHING: no column updated, no send logged. Deliberate, and
+  the reasoning holds — a one-off broadcast has no natural dedupe key, and inventing one (the subject
+  line?) would be worse than the honest constraint, where `prompt_sends`' UNIQUE (user, local_date)
+  gives the daily nudge a real one. But the cost is sharper than either the script docstring or
+  CLAUDE.md conveys, because two facts combine: there is no record of who was mailed, AND migration
+  `c47a1e8b5d92`'s `downgrade` drops the column, so a downgrade-then-upgrade cycle silently resets
+  every opt-out back to the default TRUE. **A rollback followed by a re-send therefore mails people
+  who asked not to be mailed, with nothing in the system able to notice.** The mitigation today is
+  procedural (read the dry-run count, send once); a real fix is an `announcement_sends` table keyed
+  on something stable, or at minimum a `last_announced_at` on `users`. *Where:*
+  `scripts/send_announcement.py`, `alembic/versions/c47a1e8b5d92_add_announcement_emails.py`.
+
 - **CI is the deploy gate, and the pipeline is itself a safety design.** Push to `main`
   auto-deploys, but only after both test suites pass; then the image is built, asserted
   importable, **migrations run (gated — a failed migration stops before the image is pushed
