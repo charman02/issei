@@ -236,3 +236,58 @@ describe('Notifications — issei’s first inbox (#79)', () => {
     expect(document.body.textContent).not.toMatch(BANNED)
   })
 })
+
+// --- PASSING A RECIPE ON (#78): three new lines ---------------------------------------------------
+
+describe('Notifications — pass-on (#78)', () => {
+  it('the cook is asked, by name, and tapping goes where they answer', async () => {
+    renderPage([
+      { id: 1, type: 'pass_on_request', actor_id: 7, actor_first_name: 'Ana', recipe_id: 3, subject: 'Adobo', read: false },
+    ])
+    const line = await screen.findByText(/Ana would like to pass on your Adobo/)
+    // Rows navigate on click rather than being <Link>s, so assert the destination RENDERS.
+    await userEvent.click(line)
+    expect(await screen.findByText('requests page')).toBeInTheDocument()
+  })
+
+  it('the asker learns they can send it, phrased about the DISH not a permission', async () => {
+    renderPage([
+      { id: 2, type: 'pass_on_approved', actor_id: 9, actor_first_name: 'Lola', recipe_id: 3, subject: 'Adobo', read: false },
+    ])
+    // They asked about a recipe; what they want to know is that they can send it now.
+    const line = await screen.findByText(/Lola says you can pass on their Adobo/)
+    await userEvent.click(line)
+    expect(await screen.findByText('recipe page')).toBeInTheDocument()
+  })
+
+  it('the cook learns their recipe travelled, and WHO did it', async () => {
+    // Named, not anonymous like a keep. For a PUBLIC recipe this is the only signal the cook gets
+    // that it moved, since nobody had to ask.
+    renderPage([
+      { id: 3, type: 'recipe_passed_on', actor_id: 7, actor_first_name: 'Ana', recipe_id: 3, subject: 'Adobo', read: false },
+    ])
+    expect(await screen.findByText(/Ana passed your Adobo on to someone/)).toBeInTheDocument()
+  })
+
+  it('there is no such thing as a "declined" line', async () => {
+    // No `pass_on_declined` notification is ever written, so nothing here may render one — a
+    // decline is silent, like a block.
+    renderPage([
+      { id: 4, type: 'pass_on_declined', actor_id: 9, actor_first_name: 'Lola', recipe_id: 3, subject: 'Adobo', read: false },
+    ])
+    // Falls through to the unknown-type line rather than inventing copy for it.
+    expect(await screen.findByText(/Lola did something/)).toBeInTheDocument()
+  })
+
+  it('a pass-on ask whose recipe is gone reads but does not link', async () => {
+    // The request row CASCADES away with the recipe, so tapping must not assert an ask that no
+    // longer exists — the same rule `recipe_request` follows for a deleted post.
+    renderPage([
+      { id: 5, type: 'pass_on_request', actor_id: 7, actor_first_name: 'Ana', recipe_id: null, subject: null, read: false },
+    ])
+    const line = await screen.findByText(/Ana would like to pass on one of your recipes/)
+    // Reads, but tapping asserts nothing: clicking leaves us on the inbox.
+    await userEvent.click(line)
+    expect(screen.queryByText('requests page')).toBeNull()
+  })
+})

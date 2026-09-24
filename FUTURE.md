@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 1,027
-backend tests, 1,065 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **70 routes, 19 models, 1,074
+backend tests, 1,101 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -57,23 +57,40 @@ lifted.
 
 ---
 
-## Re-sharing a Recipe You Don't Own
+## Re-sharing a Recipe You Don't Own — SHIPPED (#78, 2026-09-24)
 
-**Current state:** you can **keep** someone else's recipe (a bookmark), and you can hand on a
-recipe **you own**. You cannot pass along a recipe that was handed to you — the handoff
-endpoint requires ownership.
+**What shipped, and the one rule it rests on:** *a resharer may never grant more than they could
+cause by other means.* A **`public`** recipe can be passed on by anyone who can read it (it is
+already in Browse, so a link widens nothing — what it adds is account-free reading). Anything
+**narrower** is the cook's to widen, so the reader asks and the cook answers: `POST
+/recipes/{id}/pass-on-request`, `GET /recipes/pass-on-requests/incoming`, `POST
+/recipes/pass-on-requests/{id}/{approve|decline}`, backed by the `pass_on_requests` table.
 
-**What this adds:** the other half of keeping. If Lola's adobo reached you and your sibling
-asks for it, you shouldn't have to route them back to Lola.
+**Why the line is drawn there rather than anywhere else.** `GET /recipes/invite/{token}` returns
+the whole recipe with NO ACCOUNT, so a reader minting a token for a `private` recipe could make it
+world-readable a link at a time — one trusted recipient, and "Only me" stops meaning
+only-me-plus-who-I-chose. It is also where the industry landed for the same reason: a Google Docs
+viewer cannot grant access to anybody, and "Request access" exists precisely because a reader
+WANTING to widen is common while a reader being ALLOWED to is not; Instagram blocks resharing from
+private accounts outright. The messaging apps gave up only because the content already sits on the
+recipient's device and they have nothing left to enforce — issei serves the invite page from its
+own server, so that excuse does not apply.
 
-**Why it matters:** it's how a recipe actually travels. The current dead end is the most
-common thing a satisfied recipient wants to do next.
+**What this section asked for, and got.** The #57 security tripwire is closed structurally rather
+than by a check: the handoff dedupe path returns an existing row *whole*, live token included, and a
+non-owner can never reach it — dedupe only runs when there is a recipient, and a non-owner is
+refused a recipient (link-only). So a resharer's token is always fresh and always theirs.
+Attribution stays pointed at the cook. And it is not lineage: no chain is stored, none is shown.
 
-**Implementation notes:** there's a security tripwire recorded from the #57 review — the
-handoff dedupe path returns the existing row *whole*, including its live token and the owner's
-private note. A re-share must mint a fresh grant from the resharer, never echo the owner's.
-Attribution has to stay pointed at the cook, and this must not quietly become lineage: no
-chain, no ancestry, no "passed through N kitchens".
+**One consequence worth knowing, accepted rather than fixed:** a token minted while a recipe was
+`public` keeps working if the cook later makes it private. That is #88's existing rule (the token is
+the capability, and one minted before a restriction stays claimable) — but here the cook did not
+mint it. The mitigation is that while it WAS public, anyone could read it anyway. Recorded in
+TECHDEBT; the real answer is grant revocation, which the app has none of.
+
+**Deliberately NOT built:** revocation, and any per-recipe "people may pass this on" flag. The flag
+was considered and rejected — #68 keeps an item's visibility at three literal values, and a fourth
+switch nobody sets is the #105 trap (a control that changes nothing).
 
 ---
 

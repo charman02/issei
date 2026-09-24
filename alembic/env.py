@@ -34,6 +34,7 @@ from app.models.recipe_request import RecipeRequest  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.block import Block  # noqa: F401
 from app.models.report import Report  # noqa: F401
+from app.models.pass_on_request import PassOnRequest  # noqa: F401
 # password_reset was MISSING from this list, which is not cosmetic: autogenerate diffs the
 # metadata it can see against the database, so an unimported model reads as a table that
 # should not exist. `alembic check` was reporting a pending DROP TABLE

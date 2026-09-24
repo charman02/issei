@@ -85,6 +85,25 @@ BODIES: dict[str, Callable[[str, Optional[str]], str]] = {
     ),
     "friend_request": lambda who, what: f"{who} wants to be friends.",
     "friend_accept": lambda who, what: f"{who} is now your friend.",
+    # #78. The ask names the recipe because the cook needs to know WHICH of theirs before they can
+    # answer, and a lock screen is often where they will answer it from.
+    "pass_on_request": lambda who, what: (
+        f"{who} would like to pass on your {what}."
+        if what
+        else f"{who} would like to pass on one of your recipes."
+    ),
+    # Deliberately "you can pass it on" rather than "Lola approved your request": the asker asked
+    # about a dish, not about a permission, and what they want to know is that they may now send it.
+    "recipe_passed_on": lambda who, what: (
+        f"{who} passed your {what} on to someone."
+        if what
+        else f"{who} passed one of your recipes on."
+    ),
+    "pass_on_approved": lambda who, what: (
+        f"{who} says you can pass on their {what}."
+        if what
+        else f"{who} says you can pass their recipe on."
+    ),
 }
 
 
@@ -107,6 +126,15 @@ def _url(row: Notification, *, recipe_ok: bool = True) -> str:
         return "/requests" if row.post_id else "/notifications"
     if row.type in ("request_fulfilled", "recipe_kept", "recipe_arrived", "recipe_claimed"):
         return f"/recipes/{row.recipe_id}" if (row.recipe_id and recipe_ok) else "/notifications"
+    # #78. MUST MIRROR `targetFor()` in the client, and for one release it did not: these three
+    # fell through to the inbox, so a cook whose lock screen said "Ana would like to pass on your
+    # Adobo" tapped it and landed on `/notifications`, then had to find the row and tap again to
+    # reach the screen the push exists to get her to. The parametrized test that should have caught
+    # it is a hand-picked list, which is why a new type can be added without it noticing.
+    if row.type == "pass_on_request":
+        return "/requests" if row.recipe_id else "/notifications"
+    if row.type in ("pass_on_approved", "recipe_passed_on"):
+        return f"/recipes/{row.recipe_id}" if (recipe_ok and row.recipe_id) else "/notifications"
     if row.type == "friend_request":
         return "/friends"
     if row.type == "friend_accept":

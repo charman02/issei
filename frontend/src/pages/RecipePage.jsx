@@ -6,6 +6,7 @@ import { getUserProfile } from '../api/friends'
 import VisibilityControl from '../components/VisibilityControl'
 import RecipeBody from '../components/RecipeBody'
 import SafetyMenu from '../components/SafetyMenu'
+import PassItOn from '../components/PassItOn'
 import Icon from '../components/Icon'
 import Loader from '../components/Loader'
 
@@ -172,10 +173,16 @@ export default function RecipePage() {
       <div className="px-5 pb-8">
         <RecipeBody recipe={recipe} scalable />
 
-        {/* KEEPING SOMEONE ELSE'S RECIPE (#57). Only for a non-owner — your own recipes
-            are already in your kitchen. It's a bookmark: this stays the cook's recipe,
-            so there is no "edit" or "pass it on" here. Kept recipes live in the
-            Kitchen's Kept tab. */}
+        {/* SOMEONE ELSE'S RECIPE. Only for a non-owner — your own recipes are already in your
+            kitchen. Two controls, in escalation order:
+
+            KEEP (#57) is a bookmark: this stays the cook's recipe, so there is no "edit" here and
+            never will be. Kept recipes live in the Kitchen's Kept tab.
+
+            PASS IT ON (#78) hands on the COOK'S recipe rather than a copy of it — which is why it
+            sits second. Keep is for you; this creates access for somebody else. (This comment said
+            "there is no edit or pass it on here" until #78 shipped the latter; the edit half is
+            still true.) */}
         {!isOwner && (
           <div className="mt-8">
             <button
@@ -198,6 +205,20 @@ export default function RecipePage() {
                 <span className="error-pill">{keepError}</span>
               </p>
             )}
+
+            {/* PASS IT ON (#78) — the other half of keeping, and the thing a satisfied recipient
+                most often wants next: Lola's adobo reached you and your sibling asks for it.
+                Placed UNDER Keep deliberately. Keep is the low-commitment act (a bookmark, for
+                you) and this one creates access for somebody else, so the more consequential
+                control sits second — the same escalation ordering as report-above-block in
+                `SafetyMenu`. It is a SIBLING of the Keep block rather than inside it: you do not
+                have to keep a recipe to pass it on, and nesting would imply you did. */}
+            <PassItOn
+              recipeId={recipe.id}
+              state={recipe.pass_on_state}
+              cookName={cookName}
+              recipeName={recipe.name}
+            />
           </div>
         )}
 

@@ -48,6 +48,27 @@ NOTIFICATION_TYPES = {
     # is addressed TO the cook (you are accepting something they chose to send you),
     # whereas keeping a published recipe is a bookmark addressed to nobody.
     "recipe_claimed",
+    # #78, the two halves of asking to PASS A RECIPE ON. A reader may re-share a `public` recipe
+    # outright, because it is already in Browse and passing it on widens nothing; anything narrower
+    # is the cook's to widen, so they get asked. These are the ask and the yes.
+    #
+    # `pass_on_request` goes TO THE COOK and names the asker, like `recipe_request` and unlike
+    # `recipe_kept`: it is addressed to them and it wants an answer, so an anonymous version would
+    # be unanswerable. It is the FIRST notification about a recipe that is not about access having
+    # already changed — nothing has happened yet, which is the point.
+    "pass_on_request",
+    # `pass_on_approved` goes TO THE ASKER. There is deliberately NO `pass_on_declined`: a decline
+    # is silent, for the reason a block is silent (#85) and a report tells the reported person
+    # nothing. The cook said no about a recipe carrying their own family's name; "Lola said no" on
+    # the asker's screen turns a quiet boundary into a social event between two people who are
+    # probably related. The asker's button returns to its resting state and nothing announces it.
+    "pass_on_approved",
+    # And the third: the COOK learns their recipe is travelling. Fires on every re-share, including
+    # the `public` case that needs no permission — which is the whole point there, since a public
+    # recipe can be passed on without anyone asking, so this is the only signal the cook gets that
+    # it moved. NAMED rather than anonymous: unlike a keep (a bookmark addressed to nobody), this is
+    # somebody creating access to the cook's recipe, so WHO is the substance and not a detail.
+    "recipe_passed_on",
 }
 
 # Types whose ACTOR is never disclosed to the recipient (#96). Kept here, beside the vocabulary,

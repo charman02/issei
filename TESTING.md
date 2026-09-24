@@ -70,7 +70,7 @@ alone — re-run it):
    → `tests/test_sharing.py`, `tests/test_visibility.py`, `tests/test_blocks.py`
 
 2. **Read is not write: a recipient can never edit or delete.**
-   `patch_recipe` / `delete_recipe` / `handoff_recipe` filter on `user_id`, and so do
+   `patch_recipe` / `delete_recipe` filter on `user_id` (and `handoff_recipe` did too until #78 — see invariant 19; WIDENING is now a bounded third question, while EDITING and DELETING remain owner-only and are what this invariant is about), and so do
    `update_post` / `delete_post` — a POST is editable now (#98) and answers to the same
    rule. A grantee or a friend can read and cook, never mutate someone else's record.
    Every one of these returns **404, not 403**, to a non-owner: the same answer an unknown
@@ -92,8 +92,8 @@ alone — re-run it):
 5. **No false audio/recording claims in the UI (POSITIONING).**
    The words `voice` / `recording` / `audio` / `listen` / `in their own words`
    appear nowhere a user or screen reader can reach. Dictation is speak-to-type;
-   the utterance is discarded. **EIGHTEEN FRONTEND test files** carry the guard, plus
-   **FOUR in the backend suite** — twenty-two in all, and this doc covers both suites, so
+   the utterance is discarded. **TWENTY FRONTEND test files** carry the guard, plus
+   **FOUR in the backend suite** — twenty-four in all, and this doc covers both suites, so
    the bare number used to read as the total and wasn't. It went 14 -> 17 with #111, which is
    the floor behaving exactly as predicted: a public landing page, a referral share component
    and the share text it sends are three new user-facing surfaces, and a MARKETING surface is
@@ -602,3 +602,59 @@ regression mails a real person something they declined. Two rules:
 **Not an invariant but a standing hazard:** the script records nothing, so a second run mails
 everyone again, and the migration's `downgrade` re-subscribes anyone who had opted out — so a
 rollback followed by a re-run mails people who asked not to be mailed. Both are in TECHDEBT.
+
+### Invariant 19 — a resharer may never grant more than they could cause by other means (#78)
+
+Re-sharing is the one place in this app where a READER creates access for somebody else, so it is
+the one place the authorization argument runs backwards. The rule above is the whole invariant, and
+the reason it can be stated so simply is `GET /recipes/invite/{token}`: it returns the WHOLE recipe
+with **no account**. So if any reader could mint a token, one trusted recipient could make a
+`private` recipe world-readable a link at a time, and "Only me" would stop meaning
+only-me-plus-who-I-chose.
+
+Four things a change here must preserve. Each is pinned, and the first two are mutation-verified.
+
+1. **`public` yes, anything narrower only with the cook's approval.** A public recipe is already in
+   Browse, so a link widens nothing — what it adds is account-free reading. `friends` and `private`
+   need an approved `PassOnRequest`. Deleting the `may_pass_on` gate turns four tests red.
+   → `tests/test_pass_on.py::test_a_PUBLIC_recipe_can_be_passed_on_with_no_asking`,
+   `test_a_grantee_asks_the_cook_and_can_pass_it_on_once_approved`,
+   `tests/test_recipe_saves.py::test_keeping_does_NOT_let_you_pass_on_anything_narrower_than_public`
+
+2. **THE COOK'S BLOCK CHECK IS NOT REDUNDANT WITH `can_view`, and this is the subtle one.**
+   `_resource_is_visible` checks the block FIRST, so a blocked person fails the `public` branch —
+   but `can_view`'s GRANT branch deliberately SURVIVES a block (#85: you genuinely handed them that
+   dish). So a blocked grantee still READS the recipe and reaches the re-share code. Reading what
+   you were given is the #85 rule; becoming a distributor of it after being blocked is not, and
+   putting an ask in the inbox of someone who blocked you is exactly the new contact a block
+   refuses. Removing the explicit `is_blocked(recipe.user_id, ...)` line turns this red and nothing
+   else, which is what proves it earns its place.
+   → `tests/test_pass_on.py::test_a_BLOCKED_grantee_can_still_READ_it_but_cannot_pass_it_on_or_ask`
+
+3. **LINK-ONLY for a non-owner, and the dedupe path is therefore unreachable.** A non-owner may not
+   pre-address a grant (400): #105's `invite_permission` is checked against the SENDER, so
+   pre-addressing would be a fresh channel past a setting someone deliberately turned on, and a
+   third party's contact details are not the resharer's to hand to a cook who never asked. It also
+   closes the #57 review's tripwire STRUCTURALLY rather than with a check — the handoff dedupe path
+   returns an existing row WHOLE, live token included, and it only runs when there is a recipient.
+   So a resharer's token is always fresh and always `from_user_id` = them.
+   → `tests/test_recipe_saves.py::test_keeping_lets_you_pass_on_a_PUBLIC_recipe_but_only_as_a_link`,
+   `tests/test_pass_on.py::test_a_grantee_asks_the_cook_and_can_pass_it_on_once_approved`
+   (asserts the cook's own token is never echoed)
+
+4. **A DECLINE IS SILENT, AND KEPT.** No notification of any kind reaches the asker, their control
+   returns to its resting state, and `pass_on_state` reports `ask` — the one place in this API that
+   deliberately under-reports. The row is kept rather than deleted so a re-ask is a silent no-op:
+   "no" must not be wearable-down by repetition, and the cook must not pay a notification for each
+   attempt. Same discipline as a silent block (#85) and a report the reported person never hears
+   about (#87). **No copy anywhere may render a "declined" state.**
+   → `tests/test_pass_on.py::test_a_DECLINE_tells_the_asker_NOTHING`,
+   `test_re_asking_after_a_decline_is_silently_a_NO_OP`,
+   `test_an_answer_cannot_be_changed_by_a_second_call`,
+   `frontend/src/components/PassItOn.test.jsx` — "NEVER says the cook declined"
+
+And the two rules that carry over unchanged: **read is not write, and neither is pass-on** (a
+resharer still cannot edit or delete — `test_approval_does_not_let_the_asker_EDIT_or_DELETE`), and
+**this is not lineage** (no chain stored, none shown —
+`test_no_chain_is_stored_when_a_recipe_is_passed_on_twice`). One yes is about one dish:
+`test_approval_is_per_recipe_and_does_not_generalise`.

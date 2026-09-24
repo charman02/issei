@@ -623,6 +623,35 @@ strangers arrive. Security/privacy first.
   on *every* load. *Where:* `app/models/post.py`, `app/models/friendship.py`; queries in
   `app/routers/posts.py` (`feed`), `app/services/friends.py`.
 
+- **A PASS-ON LINK MINTED WHILE A RECIPE WAS `public` KEEPS WORKING AFTER THE COOK MAKES IT
+  PRIVATE, AND THE COOK DID NOT MINT IT.** (#78, accepted on ship.)
+  #88's locked rule is that the token IS the capability and one minted before a restriction stays
+  claimable — because the cook chose to send it. Re-sharing keeps the first half and weakens the
+  second: a reader may pass on a `public` recipe with no approval, so the enduring link was minted
+  by somebody else. Publish for a day, get re-shared, go private, and that link outlives the
+  decision. **Why it was accepted rather than fixed:** while the recipe WAS public, anyone signed in
+  could already read it, copy it out, or screenshot it, so the marginal loss is the account-free
+  convenience rather than the content. And the alternative — a token whose validity is re-checked
+  against current visibility — would be the app's first CONDITIONAL token, breaking the one sentence
+  the whole invite model rests on. *The real fix is grant revocation*, which this app has none of
+  (a block deliberately doesn't unsend either, #85) and which is a feature rather than a patch.
+  **AND IT MEANS THE ONE RULE HOLDS AT MINT TIME ONLY — say it that way.** "A resharer may never
+  grant more than they could cause by other means" is true at the moment the link is made and
+  becomes false the instant the cook narrows the recipe: from then on an outstanding resharer token
+  grants strictly more than that resharer could cause by any other route. The unqualified "never"
+  is too strong, and the gate was right to catch it.
+  *Why flagged:* it is a genuine narrowing of what "Only me" protects, arrived at by ordinary use
+  rather than by abuse, and nobody would rediscover the reasoning from the code.
+
+- **A cook has no way to see who holds a pass-on permission, or to take one back.** (#78.)
+  `GET /recipes/pass-on-requests/incoming` is PENDING-only — a to-do list, not a history — so once
+  a cook says yes, that yes is invisible and permanent. There is deliberately no list of approved
+  askers (the same discipline as no keeper list, ever) and no revoke. Both are defensible while the
+  app is small and both stop being defensible at scale; they go together with the revocation entry
+  above, since a revoke with nothing to point it at is unusable. *Fix:* an approved-list surface on
+  the recipe, owner-only, with a revoke that drops the permission but — per #85 — leaves grants
+  already minted alone.
+
 ### Infra & deployment
 
 - **Production runs a single container (`desiredCount: 1`), no autoscaling.** One ECS

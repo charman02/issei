@@ -22,12 +22,19 @@ export default function HandoffPage() {
         // OWNER-ONLY, checked here as well as on the server.
         //
         // `GET /recipes/{id}` is can_view-gated, so anyone who can READ this recipe loads it fine —
-        // a friend, someone holding a grant, anyone at all for a public one. But `handoff_recipe`
-        // filters on `Recipe.user_id == current_user.id`, so only the owner can actually mint a
-        // link. Without this check a non-owner got the entire send screen — the recipe's name in
-        // the header, "This won't put YOUR recipe in Browse", a compose box — and the only possible
-        // ending was a "Recipe not found" pill after they'd written a message. The backend leaked
-        // nothing; the page just promised something it could never deliver.
+        // a friend, someone holding a grant, anyone at all for a public one. Without this check a
+        // non-owner got the entire send screen — the recipe's name in the header, "This won't put
+        // YOUR recipe in Browse", a compose box — and the only possible ending was a "Recipe not
+        // found" pill after they'd written a message. The page promised what it could not deliver.
+        //
+        // SINCE #78 THIS IS A UI DECISION RATHER THAN A CONSEQUENCE OF THE API, and the comment used
+        // to say otherwise ("`handoff_recipe` filters on `Recipe.user_id == current_user.id`, so
+        // only the owner can mint a link" — no longer true). A reader CAN mint a link now, bounded:
+        // `public`, or the cook approved, and always link-only. But this screen is the OWNER's act —
+        // it composes a message and pre-addresses a recipient, and a non-owner is refused a
+        // recipient by the server (400). A reader passes a recipe on through `PassItOn` on the
+        // recipe page instead. So the redirect stays, for a reason that is now about what this
+        // screen IS rather than about what the endpoint allows.
         //
         // Read is not write: that rule is enforced server-side, and this is the client agreeing
         // with it instead of discovering it at submit time. RecipePage already gates the entry

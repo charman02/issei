@@ -41,6 +41,21 @@ export const getKept = () => client.get('/recipes/kept')
 // can_view: own → all; friend → public + friends; stranger → public only. Never a
 // private or individually-handed-off recipe. Pairs with getUserPosts in api/posts.js.
 export const getUserRecipes = (userId) => client.get(`/recipes/users/${userId}`)
+
+// PASSING A RECIPE ON that you did not write (#78). A `public` recipe needs none of this — the
+// ordinary `handoffRecipe` works, because a public recipe is already in Browse so a link widens
+// nothing. These three are for anything NARROWER, which is the cook's to widen: `GET
+// /recipes/invite/{token}` serves a whole recipe with no account, so a reader minting a token for a
+// `private` recipe would make it world-readable a link at a time.
+//
+// `requestPassOn` asks about PERMISSION, not about the recipe — the asker can already read it.
+export const requestPassOn = (id) => client.post(`/recipes/${id}/pass-on-request`)
+export const getPassOnRequests = () => client.get('/recipes/pass-on-requests/incoming')
+// `decision` is 'approve' | 'decline'. A decline tells the asker NOTHING — no notification, and
+// their button returns to its resting state — for the reason a block is silent (#85): the cook said
+// no about a recipe carrying their own family's name, usually to a relative.
+export const answerPassOnRequest = (id, decision) =>
+  client.post(`/recipes/pass-on-requests/${id}/${decision}`)
 export const getInvitePreview = (token) =>
   client.get(`/recipes/invite/${token}`)
 export const claimInvite = (token) =>

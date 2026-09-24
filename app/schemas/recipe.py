@@ -253,6 +253,24 @@ class CookIn(BaseModel):
     note: Optional[Text2000] = None
 
 
+class PassOnRequestOut(BaseModel):
+    """One person asking to pass one of the cook's recipes on (#78) — the cook's view.
+
+    The ONLY place an asker's name is returned, which mirrors `/posts/requests/incoming` exactly:
+    the count reaches the cook elsewhere, the identity only here, on the screen where they answer.
+    """
+
+    id: int
+    recipe_id: int
+    recipe_name: str
+    requester_id: int
+    requester_name: str
+    requester_photo_url: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class RecipeResponse(BaseModel):
     id: int
     user_id: int
@@ -308,6 +326,24 @@ class RecipeResponse(BaseModel):
     # that surface generates. There is deliberately NO list of keepers, anywhere: keeping is a
     # bookmark addressed to nobody, and naming the keeper would change what keeping means.
     keeper_count: Optional[int] = None
+    # CAN THE VIEWER PASS THIS ON, and if not, where are they in asking (#78)?
+    #
+    # `pass_on_state` is ONE field with four values rather than two booleans, because the states are
+    # mutually exclusive and a client with two booleans can render an impossible pair:
+    #   · `"allowed"`  — go ahead. The recipe is `public` (already in Browse, so passing it on
+    #                    widens nothing), or the cook has approved this viewer's ask.
+    #   · `"ask"`      — narrower than public and nobody has asked yet.
+    #   · `"pending"`  — this viewer asked and the cook hasn't answered.
+    #   · `None`       — not applicable: the viewer OWNS it (they use the ordinary send screen), or
+    #                    the response is being built somewhere the question has no meaning.
+    #
+    # A DECLINE DELIBERATELY READS AS `"ask"`, not as a fourth "declined" value. The asker is never
+    # told no — see the model docstring: the cook said no about a recipe carrying their own family's
+    # name, and "Lola declined" on a probably-related person's screen turns a quiet boundary into a
+    # social event. The BUTTON returns to its resting state; the row silently makes a second ask a
+    # no-op, so "no" cannot be worn down by repetition. This is the one place in the API where the
+    # state deliberately under-reports, and it is the same discipline as a block's silent 404.
+    pass_on_state: Optional[str] = None
     ingredient_sections: list[IngredientSectionResponse] = []
     ingredients: list[IngredientResponse] = []
     steps: list[StepResponse] = []

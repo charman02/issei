@@ -3,8 +3,8 @@
 Written to be reread before an interview. Verified against the code on 2026-09-23, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 67 endpoints · 18 tables · 32 migrations · 1,027 backend tests · 1,065 frontend
-tests · 11,445 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
+**Scale:** 70 endpoints · 19 tables · 33 migrations · 1,074 backend tests · 1,101 frontend
+tests · 12,074 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
@@ -48,7 +48,7 @@ data engineer will respect:
 
 ---
 
-## 3. Data model (18 tables)
+## 3. Data model (19 tables)
 
 ```
 users
@@ -67,6 +67,7 @@ users
   ├── notifications              (user_id, actor_id + nullable post_id/recipe_id, both SET NULL so a line outlives its subject)
   ├── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
   ├── reports                     (reporter_id, reported_user_id, reason, note, state, post_id?, recipe_id? — #87; the USER FKs CASCADE, the CONTENT FKs SET NULL so a report outlives the post it named, no unique constraint)
+  ├── pass_on_requests            (recipe_id, requester_id — #78; UNIQUE(recipe,requester), state pending|approved|declined. A PERMISSION, not a grant: may I pass your recipe on? Only needed for `friends`/`private`, since a `public` recipe is already in Browse. BOTH FKs CASCADE, unlike reports’ content FKs — a report outlives its subject, a permission is meaningless without it)
   ├── push_subscriptions          (user_id, endpoint UNIQUE, p256dh, auth — #89; one BROWSER on one device, so a phone and a laptop are two rows)
   └── prompt_sends                (user_id, local_date — #89; UNIQUE(user, LOCAL date): the at-most-once record for the daily nudge)
 feedback                          (standalone)
@@ -185,7 +186,7 @@ be an uncapped channel into a blocker's kitchen.
 branch resolves against `are_friends(viewer, owner)`. The handoff grant is orthogonal —
 it's checked last and lets a grantee read the one recipe handed to them whatever the
 visibility says. Every read funnels through this: `get_recipe`, `/scale`, `/cook`,
-`/handoff` — **correction: `handoff_recipe` gates on OWNERSHIP, not `can_view`**, which is the
+`/handoff` — **`handoff_recipe` gated on OWNERSHIP alone until #78; it now also allows a NON-OWNER a LINK-ONLY grant when the recipe is `public` or the cook approved a `PassOnRequest` — still gated on `can_view` and on not being blocked. Editing and deleting stay owner-only**, which is the
 next paragraph's own point. Read and write are separate questions here.
 
 **The distinction to state precisely: read is not write.** `can_view` answers *read*

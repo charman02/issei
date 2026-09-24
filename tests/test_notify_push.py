@@ -178,16 +178,39 @@ def test_an_unknown_type_sends_nothing_rather_than_something_generic():
         ("friend_request", {}, "/friends"),
         ("friend_accept", {"actor_id": 9}, "/u/9"),
         ("friend_accept", {}, "/friends"),
+        # #78. A ship gate found all three missing from `_url`, so every pass-on push landed on the
+        # inbox while the client's `targetFor()` routed them properly: the cook's lock screen said
+        # "Ana would like to pass on your Adobo", she tapped, and had to find the row and tap again
+        # to reach the screen the push exists to get her to.
+        ("pass_on_request", {"recipe_id": 5}, "/requests"),
+        ("pass_on_request", {}, "/notifications"),
+        ("pass_on_approved", {"recipe_id": 5}, "/recipes/5"),
+        ("pass_on_approved", {}, "/notifications"),
+        ("recipe_passed_on", {"recipe_id": 5}, "/recipes/5"),
+        ("recipe_passed_on", {}, "/notifications"),
     ],
 )
 def test_where_a_tap_lands(type, fields, expected):
     """Mirrors `targetFor()` in the client. A dropped reference falls back to the inbox rather
-    than to a URL with `None` in it — the event still happened, the thing it was about is gone."""
+    than to a URL with `None` in it — the event still happened, the thing it was about is gone.
+
+    THIS LIST IS HAND-PICKED, which is exactly how #78's three types were added without it
+    noticing — `test_every_notification_type_has_push_copy` sweeps `BODIES` but nothing sweeps
+    `_url`. If you add a type, add its rows here too."""
     assert notify_push._url(Notification(user_id=1, type=type, **fields)) == expected
 
 
 @pytest.mark.parametrize(
-    "type", ["request_fulfilled", "recipe_kept", "recipe_arrived", "recipe_claimed"]
+    "type",
+    [
+        "request_fulfilled",
+        "recipe_kept",
+        "recipe_arrived",
+        "recipe_claimed",
+        # #78 — both recipe-linked pass-on types follow the same soft-delete rule.
+        "pass_on_approved",
+        "recipe_passed_on",
+    ],
 )
 def test_a_recipe_that_no_longer_resolves_links_to_the_inbox(type):
     """`recipe_ok=False` is how the caller says "the id is still there but the recipe isn't".

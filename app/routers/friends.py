@@ -606,6 +606,10 @@ def block_user(
 
     What it does, all in one transaction:
     - records the block (idempotent — blocking twice is not a second row),
+    - **deletes any pass-on permission** between the two (#78), in either direction and in
+      every state — including an APPROVED one. A fulfilled ask is history; a live permission
+      is an ongoing licence to mint links on the other person's recipe, so it ends with the
+      relationship. Otherwise unblocking would silently restore distribution rights.
     - **deletes any friendship** in either direction. You can't be friends with someone
       you've blocked, and a dormant "accepted" row would leave friends-only content readable
       until something else noticed. Unblocking does NOT restore it; they'd have to ask again.
@@ -668,6 +672,37 @@ def block_user(
     doomed = [r.id for r in mine_to_them] + [r.id for r in theirs_to_mine]
     if doomed:
         db.query(RecipeRequest).filter(RecipeRequest.id.in_(doomed)).delete(
+            synchronize_session=False
+        )
+
+    # PASS-ON PERMISSIONS between the two, both directions and EVERY state (#78). Unlike the asks
+    # above, an APPROVED row is dropped as well, and the asymmetry is deliberate: a fulfilled ask is
+    # history (the recipe already arrived and cannot be unsent), whereas a live permission is an
+    # ongoing licence to keep minting links on the other person's recipe. A block ends the
+    # relationship, and this is part of the relationship rather than something already handed over —
+    # the same reasoning that makes a block DELETE the friendship instead of suspending it.
+    #
+    # Leaving an approved row would also make unblocking silently restore distribution rights,
+    # which nobody would expect from "unblock" and which #85 explicitly refuses for friendship.
+    # A DECLINED row goes too: it exists only to make a re-ask a silent no-op, and after a block
+    # there is no re-ask to absorb (`request_pass_on` 404s).
+    from app.models.pass_on_request import PassOnRequest
+
+    pass_on_doomed = [
+        r.id
+        for r in db.query(PassOnRequest.id)
+        .join(Recipe, Recipe.id == PassOnRequest.recipe_id)
+        .filter(
+            or_(
+                (PassOnRequest.requester_id == current_user.id)
+                & (Recipe.user_id == body.user_id),
+                (PassOnRequest.requester_id == body.user_id)
+                & (Recipe.user_id == current_user.id),
+            )
+        )
+    ]
+    if pass_on_doomed:
+        db.query(PassOnRequest).filter(PassOnRequest.id.in_(pass_on_doomed)).delete(
             synchronize_session=False
         )
 

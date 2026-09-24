@@ -19,6 +19,7 @@ from app.models.step import Step
 from app.models.cook_event import CookEvent
 from app.models.handoff import Handoff
 from app.models.recipe_save import RecipeSave
+from app.models.pass_on_request import PassOnRequest
 from app.schemas.recipe import (
     RecipeCreate,
     RecipeResponse,
@@ -35,6 +36,7 @@ from app.schemas.recipe import (
     CookIn,
     HandoffIn,
     HandoffResponse,
+    PassOnRequestOut,
     InvitePreview,
 )
 from app.services.scaling import scale_ingredient
@@ -222,21 +224,65 @@ def handoff_recipe(
 ):
     recipe = (
         db.query(Recipe)
-        .filter(
-            Recipe.id == recipe_id,
-            Recipe.user_id == current_user.id,
-            Recipe.deleted_at == None,
-        )
+        .filter(Recipe.id == recipe_id, Recipe.deleted_at == None)
         .first()
     )
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    # NOTE the query above already requires current_user to OWN the recipe, which
-    # is the whole authorization question now. It used to walk to the lineage root
-    # and re-check ownership there, to stop someone who owned a branch off a
-    # victim's root from forging a grant onto that root — a defense that existed
-    # only because grants bound to the root. No trees, no forgery surface.
+    # OWNERSHIP IS NO LONGER THE WHOLE AUTHORIZATION QUESTION (#78). It was until now, and the note
+    # that used to sit here said so. What changed: a reader may PASS ON a recipe that reached them,
+    # which is the other half of keeping (#57) and the thing FUTURE.md describes — Lola's adobo
+    # reached you, your sibling asks for it, and routing them back to Lola was the dead end.
+    #
+    # THE BRANCH IS DELIBERATELY IN THIS FUNCTION rather than in a route of its own, because this is
+    # the ONE place in the app that mints a grant and a token. Two token-minting paths is exactly the
+    # pattern this codebase keeps paying for — `services/media.py` exists because an inline host
+    # check in the first router never reached the second, `lib/shareLink.js` for the same reason, and
+    # `SafetyMenu` was extracted mid-#87 to stop it happening a third time.
+    #
+    # A NON-OWNER IS BOUND THREE WAYS, and each one closes something specific:
+    is_owner = recipe.user_id == current_user.id
+    if not is_owner:
+        #   1. THEY MUST BE ABLE TO READ IT. Ordinary `can_view`, so a stranger cannot mint a grant
+        #      to a recipe they have no access to in the first place.
+        if not can_view(recipe, current_user, db):
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        #   2. THE COOK MUST NOT HAVE BLOCKED THEM — and this check is NOT redundant with the one
+        #      inside `can_view`, which is the subtle part. `_resource_is_visible` checks the block
+        #      FIRST, so a blocked person fails the `public` branch; but `can_view`'s GRANT branch
+        #      deliberately survives a block (#85 — you genuinely handed them that dish). So a
+        #      person the cook blocked, holding an older grant plus an older approval, would still
+        #      read the recipe and reach this line. Reading what you were given is the #85 rule;
+        #      becoming a distributor of it after being blocked is not.
+        if is_blocked(recipe.user_id, current_user.id, db):
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        #   3. THEY MUST BE ALLOWED TO WIDEN IT — `public`, or the cook has approved their ask.
+        #      Same 404 as everything else here, so a refusal never distinguishes "not yours",
+        #      "not public" and "not approved".
+        if not may_pass_on(recipe, current_user, db):
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        #   4. AND IT IS LINK-ONLY. A non-owner may not PRE-ADDRESS a grant to a named person or an
+        #      email, for two independent reasons. #105's `invite_permission` ("only friends can
+        #      send me recipes") is checked against the SENDER, so letting a resharer address a
+        #      third party would be a fresh channel straight past a setting someone deliberately
+        #      turned on. And the third party's contact details are not the resharer's to hand over
+        #      to a cook who never asked for them — the resharer forwards the link themselves, which
+        #      is also what keeps the ask out of the cook's inbox. 400 rather than 404: the recipe
+        #      is genuinely there and the caller may genuinely share it, so this is a shape error
+        #      about the request, not an entitlement answer to hide.
+        if handoff_in.to_user_id is not None or handoff_in.to_email:
+            raise HTTPException(
+                status_code=400,
+                detail="A recipe you didn’t write can only be passed on as a link.",
+            )
+        # A LINK-ONLY GRANT NEVER REACHES THE DEDUPE PATH BELOW, which is what neutralises the
+        # security tripwire recorded in the #57 review: that path returns the existing row WHOLE,
+        # including its live token, so a resharer hitting it would be handed the COOK's token. Two
+        # things keep that impossible — dedupe only runs when there is a recipient (link-only
+        # handoffs are deliberately independent grants, see below), and (4) refuses a recipient from
+        # a non-owner. The token minted here is always fresh and always `from_user_id` = the
+        # resharer. FUTURE.md required exactly this and it falls out of the existing structure.
 
     # Resolve grantee: an in-app user (instant-accept) or an email invite (pending).
     to_user_id = handoff_in.to_user_id
@@ -439,10 +485,114 @@ def handoff_recipe(
             recipe_id=recipe.id,
             dedupe=True,
         )
+    # TELL THE COOK THEIR RECIPE IS TRAVELLING (#78). Only for a non-owner — the owner sending their
+    # own recipe is not news to themselves, and `notify()` would refuse it anyway.
+    #
+    # NAMED, not anonymous like `recipe_kept`. The two look similar and are not: a keep is a
+    # bookmark addressed to nobody, so naming the keeper would change what keeping MEANS and could
+    # chill it. Passing a recipe on is an act on the cook's behalf that creates access they did not
+    # create, so who did it is the substance of the notification rather than a detail of it — and
+    # for a `public` recipe this is the ONLY signal the cook gets that it moved.
+    #
+    # `dedupe=True`, so passing the same recipe on repeatedly while the cook hasn't read the last
+    # one collapses to one row rather than filling their inbox — the same guard `recipe_kept` needs
+    # because a keep/unkeep loop is free. It is honest here too: the news is "your recipe is being
+    # passed around by Ana", which is as true of the fourth link as of the first.
+    passed = None
+    if not is_owner:
+        passed = notify(
+            db,
+            user_id=recipe.user_id,
+            type="recipe_passed_on",
+            actor_id=current_user.id,
+            recipe_id=recipe.id,
+            dedupe=True,
+        )
     db.commit()
-    notify_push.queue(background_tasks, [arrival])
+    notify_push.queue(background_tasks, [arrival, passed])
     db.refresh(handoff)
     return handoff
+
+
+def may_pass_on(recipe: Recipe, user: User, db: Session) -> bool:
+    """May this person hand someone else's recipe on (#78)?
+
+    THE ONE RULE: **a resharer may never grant more than they could cause by other means.**
+
+    A `public` recipe is already in Browse and readable by any signed-in person, so passing it on is
+    a shortcut rather than a widening — what the link adds is account-free reading, which is the
+    founding act of this product, not a technicality. Anything NARROWER is the cook's to widen,
+    because `GET /recipes/invite/{token}` returns the WHOLE recipe with no account: if any reader
+    could mint a token, one trusted recipient could make a `private` recipe world-readable a link at
+    a time and "Only me" would stop meaning only-me-plus-who-I-chose. So `friends` and `private`
+    require an APPROVED `PassOnRequest`, which is the cook saying yes.
+
+    NOT `can_view` — read is not write, and this is the third question in that family after
+    "can you read it" and "can you edit it". A grantee reads a private recipe; that does not make
+    them a distributor of it.
+
+    The caller is assumed to have passed `can_view` already; this answers only the widening question.
+    """
+    if recipe.user_id == user.id:
+        # The owner doesn't pass their own recipe on, they SEND it. Different screen, different verb.
+        return True
+    if recipe.visibility == "public":
+        return True
+    return (
+        db.query(PassOnRequest.id)
+        .filter(
+            PassOnRequest.recipe_id == recipe.id,
+            PassOnRequest.requester_id == user.id,
+            PassOnRequest.state == "approved",
+        )
+        .first()
+        is not None
+    )
+
+
+def pass_on_state(recipe: Recipe, user: Optional[User], db: Session) -> Optional[str]:
+    """What the client should draw for this viewer (#78). See `RecipeResponse.pass_on_state`.
+
+    **A DECLINED ROW READS AS `"pending"`, NOT `"ask"` — and the difference is the whole
+    invariant.** Reporting `ask` was the first version and a ship gate showed it leaked the decline
+    without ever saying the word: the asker taps, sees "Asked Lola ✓" from local state, reloads, and
+    the control REVERTS to "Ask Lola if you can pass it on". Pending never reverts. So "tap, then
+    reload" was a reliable decline oracle needing no tooling — and for an ordinary user the reverted
+    button reads as "she said no" or "my ask vanished", either of which is the social event this rule
+    exists to prevent.
+
+    `pending` is honest about what the asker can observe and silent about the rest: they asked, they
+    have not been told yes. The row still makes a re-ask a no-op, `may_pass_on` is untouched (so the
+    permission is genuinely absent), and a later flip to `public` short-circuits to `allowed` above
+    before this row is ever consulted, so nobody can get stuck. Same discipline as a silent block.
+    """
+    if user is None or recipe.user_id == user.id:
+        return None
+    # A BLOCK MAKES THIS None RATHER THAN A WORKING-LOOKING BUTTON. `get_recipe` gates on `can_view`,
+    # whose grant branch survives a block (#85), so a person blocked AFTER their approval still opens
+    # the recipe — and without this they were drawn a "Pass it on" button that 404s on a recipe
+    # visibly on their screen. Since there is no revoke, a 404 there is explicable only by a block,
+    # which is a detection channel on a state #85 otherwise keeps undetectable. Fails closed either
+    # way; this makes it silent as well.
+    if is_blocked(recipe.user_id, user.id, db):
+        return None
+    if recipe.visibility == "public":
+        return "allowed"
+    row = (
+        db.query(PassOnRequest)
+        .filter(
+            PassOnRequest.recipe_id == recipe.id,
+            PassOnRequest.requester_id == user.id,
+        )
+        .first()
+    )
+    if row is not None and row.state == "approved":
+        return "allowed"
+    # Pending AND declined both answer "pending" — see the docstring. The asker is never told no,
+    # and a control that reverted would say it without words.
+    if row is not None:
+        return "pending"
+    return "ask"
 
 
 @router.post("/{recipe_id}/cook")
@@ -562,6 +712,220 @@ def shared_with_me(
     for r in recipes:
         _attach_growth_fields(r, db)
     return recipes
+
+
+# --- ASKING TO PASS A RECIPE ON (#78) ------------------------------------------------------------
+#
+# DECLARED BEFORE `/{recipe_id}`, like `/export` and `/browse` below, or FastAPI matches the literal
+# path against the id route and answers 422 for "pass-on-requests". Same lesson as
+# `/friends/discover` vs `/friends/profile/{id}`.
+#
+# WHY THESE EXIST AT ALL: a reader may pass on a `public` recipe outright (already in Browse, so it
+# widens nothing), but `friends` and `private` are the cook's to widen, because
+# `GET /recipes/invite/{token}` serves a whole recipe with NO ACCOUNT. These three routes are how the
+# cook is asked. See `app/models/pass_on_request.py` for the full reasoning, including why this is
+# the shape Google Docs and Instagram both landed on.
+
+
+@router.post("/{recipe_id}/pass-on-request", status_code=status.HTTP_204_NO_CONTENT)
+def request_pass_on(
+    recipe_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Ask the cook whether you may pass their recipe on (#78).
+
+    204 on every outcome that is not an entitlement refusal, deliberately, and there are three of
+    them the caller cannot tell apart:
+
+      · a new ask was recorded;
+      · you had already asked and it is still pending (idempotent — the UNIQUE constraint on
+        (recipe, requester) makes asking twice one row, not two);
+      · the cook already DECLINED. Nothing happens and nothing is said. That is the point: the
+        asker is never told no (see the model docstring), and the stored row is what makes a second
+        ask free for them to send and silent for the cook to receive, so "no" cannot be worn down
+        by repetition.
+
+    It is NOT an ask for the recipe — the asker can already read it. It is an ask about PERMISSION,
+    and approving grants nothing to any third party: it lets the asker use the ordinary link-only
+    handoff, minting their OWN token. The cook never learns who the recipe is going to, which is
+    deliberate — that person's contact details are not the resharer's to hand over.
+    """
+    recipe = (
+        db.query(Recipe).filter(Recipe.id == recipe_id, Recipe.deleted_at == None).first()
+    )
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    # Read access first, then the block — same pair, same reasons, as `handoff_recipe`'s non-owner
+    # branch: `can_view`'s grant branch survives a block (#85), so the explicit check is not
+    # redundant. A person the cook blocked must not be able to put a request in their inbox; that is
+    # a contact channel, and a block means no new contact.
+    if not can_view(recipe, current_user, db):
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if is_blocked(recipe.user_id, current_user.id, db):
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    # Asking about your OWN recipe is meaningless rather than forbidden, and a 400 says which.
+    if recipe.user_id == current_user.id:
+        raise HTTPException(
+            status_code=400, detail="This is your recipe — you can send it to anyone."
+        )
+    # Nothing to ask for: already allowed. A 400 rather than a silent 204, because a client that
+    # gets here has drawn the wrong button and a silent success would hide that.
+    if may_pass_on(recipe, current_user, db):
+        raise HTTPException(
+            status_code=400, detail="You can already pass this one on."
+        )
+
+    existing = (
+        db.query(PassOnRequest)
+        .filter(
+            PassOnRequest.recipe_id == recipe.id,
+            PassOnRequest.requester_id == current_user.id,
+        )
+        .first()
+    )
+    if existing is not None:
+        # Pending or declined — either way, nothing to do and nothing to say. Re-notifying on a
+        # pending row would let a determined asker flood the cook's inbox one tap at a time, and
+        # re-notifying on a declined one would make "no" cost the cook something every time.
+        return None
+
+    db.add(PassOnRequest(recipe_id=recipe.id, requester_id=current_user.id))
+    # Named, and it wants an answer — so nothing about this is anonymous. `dedupe=True` for the
+    # same reason every repeatable act carries it: the row above already makes a second ask a no-op,
+    # but a future change to that idempotency must not turn asking into an inbox flood.
+    asked = notify(
+        db,
+        user_id=recipe.user_id,
+        type="pass_on_request",
+        actor_id=current_user.id,
+        recipe_id=recipe.id,
+        dedupe=True,
+    )
+    db.commit()
+    notify_push.queue(background_tasks, [asked])
+    return None
+
+
+@router.get("/pass-on-requests/incoming", response_model=list[PassOnRequestOut])
+def incoming_pass_on_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Who has asked to pass one of YOUR recipes on (#78). Pending only.
+
+    The one place an asker's NAME is returned, mirroring `GET /posts/requests/incoming` exactly:
+    identity reaches the cook only on the screen where they answer. Declined and approved rows are
+    not listed — this is a to-do list, not a history, and there is no surface that wants the past
+    tense. Blocked people are filtered out: a block after the ask should take the ask with it,
+    exactly as `POST /friends/blocks` drops pending friend requests both ways.
+    """
+    hidden = blocked_ids(current_user.id, db)
+    rows = (
+        db.query(PassOnRequest, Recipe, User)
+        .join(Recipe, Recipe.id == PassOnRequest.recipe_id)
+        .join(User, User.id == PassOnRequest.requester_id)
+        .filter(
+            Recipe.user_id == current_user.id,
+            Recipe.deleted_at == None,
+            PassOnRequest.state == "pending",
+        )
+        .order_by(PassOnRequest.id.desc())
+        .all()
+    )
+    return [
+        PassOnRequestOut(
+            id=req.id,
+            recipe_id=recipe.id,
+            recipe_name=recipe.name,
+            requester_id=asker.id,
+            requester_name=asker.first_name,
+            requester_photo_url=asker.photo_url,
+            created_at=req.created_at,
+        )
+        for req, recipe, asker in rows
+        if asker.id not in hidden
+    ]
+
+
+@router.post(
+    "/pass-on-requests/{request_id}/{decision}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def answer_pass_on_request(
+    request_id: int,
+    decision: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The cook answers: `approve` or `decline` (#78). Owner-only, 404 for anyone else.
+
+    ONE ROUTE FOR BOTH ANSWERS rather than two, because everything except the stored word and the
+    notification is identical — the same ownership check, the same already-answered guard, the same
+    404 body. Two routes would be two places to keep that in step, which is the pattern this
+    codebase keeps extracting away from.
+
+    THE ASYMMETRY IS THE WHOLE DESIGN: approving notifies the asker, declining notifies NOBODY. A
+    decline is silent for the reason a block is silent (#85) and a report tells the reported person
+    nothing — the cook said no about a recipe carrying their own family's name, often to a relative,
+    and "Lola declined" on that person's screen turns a quiet boundary into a social event. The
+    asker's button simply returns to its resting state. The row is KEPT rather than deleted so a
+    second ask is silently a no-op.
+
+    APPROVING GRANTS NOTHING TO A THIRD PARTY. It only lets the asker use the link-only handoff path,
+    minting their own fresh token. The cook does not mint anything here and never learns who the
+    recipe is going to.
+    """
+    if decision not in ("approve", "decline"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    row = (
+        db.query(PassOnRequest)
+        .join(Recipe, Recipe.id == PassOnRequest.recipe_id)
+        .filter(
+            PassOnRequest.id == request_id,
+            Recipe.user_id == current_user.id,
+            Recipe.deleted_at == None,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    # THE TELLING, NOT THE GRANTING. Approving after blocking the asker is already inert —
+    # `handoff_recipe` 404s for them — but `notify()` would write a `pass_on_approved` FROM the
+    # blocker TO the blocked person and push it to their lock screen, which is the exact channel
+    # `_notify_cook_of_claim` is hand-gated to close. Only reachable from a stale tab, since
+    # `/pass-on-requests/incoming` filters blocked askers out. Answer stored, nobody told.
+    if is_blocked(current_user.id, row.requester_id, db):
+        row.state = "approved" if decision == "approve" else "declined"
+        row.resolved_at = func.now()
+        db.commit()
+        return None
+    if row.state != "pending":
+        # Already answered. Idempotent rather than an error: two taps on a slow connection, or the
+        # cook answering on their phone and then on a stale laptop tab, must not be a 400 — and it
+        # must not re-notify. Deliberately does NOT let an answer be changed: re-approving after a
+        # decline is a new decision the cook can make by being asked again, and silently flipping a
+        # stored "no" to "yes" from a stale tab is the wrong direction to fail in.
+        return None
+
+    row.state = "approved" if decision == "approve" else "declined"
+    row.resolved_at = func.now()
+    granted = None
+    if decision == "approve":
+        granted = notify(
+            db,
+            user_id=row.requester_id,
+            type="pass_on_approved",
+            actor_id=current_user.id,
+            recipe_id=row.recipe_id,
+            dedupe=True,
+        )
+    db.commit()
+    notify_push.queue(background_tasks, [granted])
+    return None
 
 
 @router.get("/export", response_model=RecipeExport)
@@ -1075,6 +1439,19 @@ def field_suggestions(
 def _notify_cook_of_claim(db: Session, *, handoff: Handoff, claimer: User):
     """Tell the cook their recipe landed — the return half of the handoff (#32).
 
+    **IT GOES TO THE RECIPE'S OWNER, NOT TO `handoff.from_user_id` (#78).** For every token the
+    cook minted themselves those are the same person, so nothing about the original path changes.
+    For a RESHARER's token they are not, and sending it to the resharer was wrong twice: the copy
+    renders "{claimer} has your {dish} now" and it is not the resharer's dish — contradicting
+    POSITIONING's "attribution stays on the cook" and CLAUDE.md's "never call it sharing *your*
+    recipe" in the same breath as shipping them — and the COOK, whose recipe actually moved, learned
+    nothing at all. Before #78 a cook always found out when their link was claimed; routing this to
+    the owner keeps that true. Found by the ship gate.
+
+    The resharer is deliberately told NOTHING here. Their feedback was the share sheet, and inventing
+    a fourth notification type for "the person you sent it to opened it" is a separate feature with
+    its own copy — ledgered rather than smuggled in.
+
     A sender has never had any way to know. They mint a grant, text the link, and that is the
     end of the information they get: `handoff_recipe` returns, and whether the person ever
     opened it is invisible from every surface in the app. This is the one notification the
@@ -1116,11 +1493,16 @@ def _notify_cook_of_claim(db: Session, *, handoff: Handoff, claimer: User):
     either (they get their normal 200). Returning None here is the same shape as `notify()`'s own
     self-notify suppression.
     """
-    if is_blocked(handoff.from_user_id, claimer.id, db):
+    recipe = db.query(Recipe).filter(Recipe.id == handoff.recipe_id).first()
+    if recipe is None:
+        return None
+    # The COOK, not the sender — see the note above. Identical for a cook-minted token.
+    cook_id = recipe.user_id
+    if is_blocked(cook_id, claimer.id, db):
         return None
     return notify(
         db,
-        user_id=handoff.from_user_id,
+        user_id=cook_id,
         type="recipe_claimed",
         actor_id=claimer.id,
         recipe_id=handoff.recipe_id,
@@ -1234,7 +1616,7 @@ def preview_invite(token: str, request: Request, db: Session = Depends(get_db)):
 
 
 def _invite_from_name(recipe) -> str | None:
-    """The name of the person who passed the recipe on (its owner) — for the byline
+    """The name of the person the recipe is FROM — always its OWNER, which since #78 is no longer necessarily whoever minted the token: a resharer's link still unfurls and reads as the cook's, because attribution stays on the cook — for the byline
     'Charlie passed you…'. Shared by the JSON preview and the OG card."""
     if recipe.user is None:
         return None
@@ -1363,6 +1745,41 @@ def claim_invite(
     if h is None:
         raise HTTPException(status_code=404, detail="Invite not found")
 
+    # #88'S BLOCK EXEMPTION IS RESTRICTED TO COOK-MINTED TOKENS (#78, found by the ship gate,
+    # reproduced end to end). Read the exemption's own justification carefully: a token minted
+    # before a block stays claimable "because the token is the capability AND THE COOK CHOSE TO SEND
+    # IT". #78 falsified the second clause — a resharer mints tokens the cook never chose, and can
+    # mint them AFTER the block, without limit.
+    #
+    # What that bought, measured: Lola blocks Ben; Ana (any reader) mints a link on Lola's recipe;
+    # Ben claims it and `GET /recipes/{id}` returns 200 IN-APP, permanently, surviving Lola later
+    # making the recipe private. On an approved `friends`/`private` recipe it is worse — Ben reads a
+    # private recipe including its story. That is precisely the hole CLAUDE.md says #85 closes: "a
+    # NEW grant cannot cross a block, or the grant branch would be an uncapped channel into a
+    # blocker's kitchen." #78 reopened it through a third party, and uncapped.
+    #
+    # WHY IT COULD NOT BE CAUGHT UPSTREAM: `handoff_recipe` refuses when the cook has blocked the
+    # RESHARER, but a link-only grant has no named recipient, so there is nobody to check the cook
+    # against at mint time. This is the first moment the claimer is known.
+    #
+    # THE COOK-MINTED CASE IS UNTOUCHED, byte for byte: when `from_user_id` IS the recipe's owner,
+    # no check runs and #88 holds exactly as before. `accept_handoff` needs nothing — a resharer's
+    # row carries `to_user_id=None` and `to_email=None`, so its recipient test already 404s.
+    #
+    # The unauthenticated READ (`preview_invite`) is deliberately not gated: there is no viewer to
+    # check, and the durable grant is the harm rather than the glance.
+    _claim_recipe = (
+        db.query(Recipe).filter(Recipe.id == h.recipe_id, Recipe.deleted_at == None).first()
+    )
+    if (
+        _claim_recipe is not None
+        and h.from_user_id != _claim_recipe.user_id
+        and is_blocked(_claim_recipe.user_id, current_user.id, db)
+    ):
+        # Same 404 body an unknown token gets, so a blocked person cannot distinguish "no such
+        # invite" from "the cook blocked you" — #85's every-denial-is-identical rule.
+        raise HTTPException(status_code=404, detail="Invite not found")
+
     # Already this user's grant (or an unclaimed one) → accept it in place.
     if h.to_user_id is None or h.to_user_id == current_user.id:
         # An UNCLAIMED grant is the one being taken for the first time; `to_user_id == me`
@@ -1452,6 +1869,12 @@ def get_recipe(
     # never 0 — so a non-owner client is given no number to render. Still no keeper NAMES and
     # no keeper list, anywhere, ever: the cook learns how many, never who.
     recipe.keeper_count = _keeper_count(recipe, current_user, db)
+    # ...and whether this viewer may PASS IT ON, or where they are in asking (#78). Same placement
+    # logic as `kept_by_me` above and for the same reason: this is the one screen that draws the
+    # control, so a list endpoint must not pay for a query per row. `pass_on_state` returns None for
+    # the owner — they use the ordinary send screen, which is a different verb — so the client never
+    # has to work out which of two controls it is looking at.
+    recipe.pass_on_state = pass_on_state(recipe, current_user, db)
     return recipe
 
 

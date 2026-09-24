@@ -335,25 +335,92 @@ def test_shelf_never_lists_your_own_recipes(client, make_user):
 # --- keeping grants nothing beyond reading ---
 
 
-def test_keeping_does_not_let_you_edit_delete_or_hand_on(client, make_user):
-    """Read is not write, and keeping is not owning. A keeper's shelf entry must not
-    become a licence to change the cook's record or move it to a third person — the
-    latter is why #57 shipped keep-only, with re-sharing left to the cook."""
+def test_keeping_does_not_let_you_edit_or_delete(client, make_user):
+    """Read is not write, and keeping is not owning. A keeper's shelf entry must not become a
+    licence to change the cook's record.
+
+    THIS TEST USED TO ALSO ASSERT "or hand on", and #78 deliberately changed that half — see
+    `test_keeping_lets_you_pass_on_a_PUBLIC_recipe_but_only_as_a_link` and
+    `test_keeping_does_NOT_let_you_pass_on_anything_narrower_than_public` below, which replace it
+    with the narrower rule that actually holds. Edit and delete are untouched and always will be.
+    """
     owner, oh = make_user()
     keeper, kh = make_user()
-    third, _ = make_user()
     rec = _recipe(client, oh, name="Still theirs", visibility="public")
     assert client.post(f"/recipes/{rec['id']}/save", headers=kh).status_code == 201
 
     assert client.patch(f"/recipes/{rec['id']}", json={"name": "Mine now"}, headers=kh).status_code == 404
     assert client.delete(f"/recipes/{rec['id']}", headers=kh).status_code == 404
-    assert (
-        client.post(
-            f"/recipes/{rec['id']}/handoff", json={"to_user_id": third.id}, headers=kh
-        ).status_code
-        == 404
-    )
     assert client.get(f"/recipes/{rec['id']}", headers=oh).json()["name"] == "Still theirs"
+
+
+def test_keeping_lets_you_pass_on_a_PUBLIC_recipe_but_only_as_a_link(client, make_user, db_session):
+    """#78's permissive half, and the LIMIT on it.
+
+    THE RULE: a resharer may never grant more than they could cause by other means. A `public`
+    recipe is already in Browse and readable by any signed-in person, so passing it on widens
+    nothing — what the link adds is account-free reading, which is the founding act of this product.
+
+    But it is LINK-ONLY. A non-owner may not pre-address a grant to a named person or an email, for
+    two independent reasons: #105's `invite_permission` ("only friends can send me recipes") is
+    checked against the SENDER, so addressing a third party would be a fresh channel straight past a
+    setting someone deliberately turned on; and that person's contact details are not the resharer's
+    to hand to a cook who never asked for them. 400 rather than 404, because the recipe is genuinely
+    there and the caller may genuinely share it — this is a shape error, not an entitlement answer.
+    """
+    owner, oh = make_user()
+    keeper, kh = make_user()
+    third, _ = make_user()
+    rec = _recipe(client, oh, name="Passed along", visibility="public")
+
+    # Link-only: allowed, and it mints a token of its own.
+    r = client.post(f"/recipes/{rec['id']}/handoff", json={}, headers=kh)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["token"]
+    assert body["to_user_id"] is None
+    # FROM THE RESHARER, never echoing the cook's own grant — the security tripwire recorded in the
+    # #57 review was that the handoff dedupe path returns an existing row WHOLE, live token included.
+    # Asserted on the ROW rather than the response on purpose: `HandoffResponse` deliberately does
+    # not expose `from_user_id` (the sender already knows who they are), and widening an API so a
+    # test can read it more easily is the wrong direction.
+    from app.models.handoff import Handoff
+
+    row = db_session.query(Handoff).filter(Handoff.token == body["token"]).first()
+    assert row is not None and row.from_user_id == keeper.id
+
+    # Addressed to a person, or to an email: refused, and the message says why rather than 404ing.
+    for payload in ({"to_user_id": third.id}, {"to_email": "someone@example.com"}):
+        r = client.post(f"/recipes/{rec['id']}/handoff", json=payload, headers=kh)
+        assert r.status_code == 400, (payload, r.text)
+        assert "link" in r.json()["detail"].lower()
+
+
+def test_keeping_does_NOT_let_you_pass_on_anything_narrower_than_public(client, make_user):
+    """#78's restrictive half, and the reason the whole permission model exists.
+
+    `GET /recipes/invite/{token}` returns the WHOLE recipe with NO ACCOUNT. So if any reader could
+    mint a token, one trusted recipient could make a `private` recipe world-readable a link at a
+    time, and "Only me" would stop meaning only-me-plus-who-I-chose. Anything narrower than `public`
+    is therefore the cook's to widen, and the asker has to be approved first.
+
+    The grantee here can READ the recipe — that is the whole point, and it is what makes this the
+    interesting case rather than a trivial one.
+    """
+    owner, oh = make_user()
+    friend, fh = make_user()
+    rec = _recipe(client, oh, name="Only for mine", visibility="private")
+    # Hand it to them for real, so they hold a grant and can read it.
+    assert client.post(
+        f"/recipes/{rec['id']}/handoff", json={"to_user_id": friend.id}, headers=oh
+    ).status_code == 201
+    assert client.get(f"/recipes/{rec['id']}", headers=fh).status_code == 200
+
+    # ...and still cannot pass it on. Same 404 as everything else, so the refusal never
+    # distinguishes "not yours" from "not public" from "not approved".
+    assert client.post(f"/recipes/{rec['id']}/handoff", json={}, headers=fh).status_code == 404
+    # The state the client draws says to ASK rather than pretending the button works.
+    assert client.get(f"/recipes/{rec['id']}", headers=fh).json()["pass_on_state"] == "ask"
 
 
 def test_kept_by_me_is_only_ever_about_the_caller(client, make_user):

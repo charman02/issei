@@ -46,8 +46,10 @@ this" that earns the "can I have it?"
 **Status (check before claiming):** the friends feed + posts ship in Phase 1a, and **the
 request-the-recipe action that closes the loop now ships too** (#79) — ask on a meal, the cook
 is notified in an in-app inbox, and answering it mints a handoff grant to everyone who asked,
-so a private recipe reaches them without becoming public. What remains unbuilt is **comments**
-(Phase 3) and **re-sharing a recipe you don't own**. A post can
+so a private recipe reaches them without becoming public. **Re-sharing a recipe you don’t own
+ships too** (#78) — bounded: a `public` recipe freely, anything narrower only after the cook is
+asked and says yes. See the #57/#78 section below for the wording that is and is not true. What
+remains unbuilt is **comments** (Phase 3). A post can
 *link* a recipe the author owns; the card links through only when the viewer can read
 that recipe.
 
@@ -190,7 +192,7 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). EIGHTEEN frontend test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). TWENTY frontend test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
@@ -201,10 +203,10 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 assertion can reach) — plus `lib/referralMessage.test.js` and `components/TellAFriend.test.jsx` and `pages/Landing.test.jsx` (#111 — the referral text, the share control, and the PUBLIC LANDING PAGE a referred stranger lands on; a marketing surface is the likeliest place in the app for an overclaim, which is why it got the guard on day one), plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
 screen and was missed by three separate recounts of this list — and, since #103,
 `components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep,
-and since #87 part two `components/SafetyMenu.test.jsx` — the eighteenth, added with the extraction
+and since #87 part two `components/SafetyMenu.test.jsx`, and since #78 `components/PassItOn.test.jsx` plus a new guard inside `pages/Requests.test.jsx` (the floor moved by TWO that round, not one — which is why it is a floor) — the eighteenth, added with the extraction
 rather than after it, which is the pattern this floor keeps predicting.
 Since #107 the ban also covers PUSH COPY, which is its own axis. `tests/test_notify_push.py`
-sweeps the `BODIES` table (all seven notification types) **and** `friend_post_payload`, and
+sweeps the `BODIES` table (all TEN notification types) **and** `friend_post_payload`, and
 `tests/test_prompt.py` sweeps the THIRD push body, `prompt_payload` — the one with no `BODIES`
 entry, so the parametrised sweep could not reach it and an earlier version of this paragraph named
 only two of the three, which is exactly how it ended up with a narrower regex than the rule
@@ -365,13 +367,45 @@ and still matter, but only in the COLD-START feed: when nobody you know has post
 public meals under "While you find your people". Home is otherwise the people you know, which
 is the thesis (presence → the ask → the handoff).
 
-What has **not** shipped: **comments** on a meal (Phase 3), and **re-sharing a recipe you
-don't own**.
-Write both as direction, never as present features. On #57 specifically, two things are
-easy to overclaim and are false: keeping is a **bookmark, not a copy** (there is still one
-recipe, the cook's — so their later corrections reach the keeper, and if they make it
-private or delete it the keeper genuinely loses access), and **only the cook can hand a
-recipe on** — a keeper has no re-share, no edit, and no delete.
+What has **not** shipped: **comments** on a meal (Phase 3). Write that as direction, never as a
+present feature.
+
+**RE-SHARING SHIPPED IN #78, AND IT IS BOUNDED — describe the bound or you have overclaimed.**
+This section used to say flatly that "only the cook can hand a recipe on — a keeper has no
+re-share", and half of that is now false. What replaced it is one rule:
+
+> **A resharer may never grant more than they could cause by other means.**
+
+So: a **`public`** recipe can be passed on by anyone who can read it, because it is already in
+Browse — a link widens nothing, and what it adds is *account-free* reading, which is the founding
+act of this product rather than a technicality. Anything **narrower** (`friends`, `private`) is
+the cook's to widen, so the reader ASKS and the cook answers. The reason is concrete:
+`GET /recipes/invite/{token}` returns the whole recipe with no account, so a reader minting a token
+for a private recipe could make it world-readable one link at a time, and "Only me" would stop
+meaning only-me-plus-who-I-chose.
+
+Three things to keep straight when writing about it:
+  · **Approving grants PERMISSION, not a handoff.** The cook mints nothing and never learns who the
+    recipe is going to — the asker sends the link themselves, and that third person's contact
+    details are not the resharer's to hand over.
+  · **It is still not a copy.** There remains exactly one recipe, the cook's; every grant points at
+    it; attribution stays on the cook. A keeper still has **no edit and no delete** — that half of
+    the old sentence is untouched and always will be.
+  · **A DECLINE IS SILENT.** The asker is never told no. Their button returns to its resting state,
+    a second ask is silently a no-op, and no notification is written — the same discipline as a
+    silent block (#85) and a report the reported person never hears about (#87). The cook said no
+    about a recipe carrying their own family's name, usually to a relative; "Lola declined" on that
+    person's screen would turn a quiet boundary into a social event. **No copy anywhere may say a
+    request was declined, and no screen may render a "declined" state.**
+
+Still true of #57 and still easy to overclaim: keeping is a **bookmark, not a copy** — there is one
+recipe, the cook's, so their later corrections reach the keeper, and if they make it private or
+delete it the keeper genuinely loses access.
+
+**AND IT IS NOT LINEAGE.** No chain is stored and none is shown: no ancestry, no "passed through N
+kitchens", no hop count, no child counts. Two people passing the same recipe on produce two
+independent grants and neither records the other. A `passed_to_id` column would BE the removed
+lineage model, so it does not exist.
 
 Six invariants still hold everywhere and must not be contradicted: the
 "everyone"/Browse surfaces show **public** posts only (a friends-only or private post never
@@ -626,8 +660,8 @@ git history now.
 
 ### Don't inflate the numbers — measure them
 
-As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**1,027 backend tests**, **1,065 frontend tests in 65 files**. Endpoint and test counts have
+As measured on this branch (see `README.md` for the method): **70 routes**, **19 models**,
+**1,074 backend tests**, **1,101 frontend tests in 66 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

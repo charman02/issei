@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getIncomingRequests, fulfillPost } from '../api/posts'
+import { getPassOnRequests, answerPassOnRequest } from '../api/sharing'
 import { toUserMessage } from '../api/client'
 import BackButton from '../components/BackButton'
 import MarkerTitle from '../components/MarkerTitle'
@@ -34,13 +35,41 @@ export default function Requests() {
   })
   const [busyPostId, setBusyPostId] = useState(null)
   const [pickerFor, setPickerFor] = useState(null)
+  // PASS-ON ASKS (#78) — a SECOND kind of ask on this screen, and a different question. The first
+  // ("asked for") is somebody who wants a recipe they cannot read. This one is somebody who can
+  // already read it asking whether they may hand it to a third person. Both belong here because
+  // this is the cook's one answer-things screen and both are answered in a tap — but they are kept
+  // in separate sections with their own headings, because folding them together would make the
+  // Approve button look like it delivers a recipe, which it does not.
+  const [passOn, setPassOn] = useState([])
+  const [busyPassOnId, setBusyPassOnId] = useState(null)
 
   function load() {
     getIncomingRequests()
       .then((res) => setRows(res.data))
       .catch(() => setRows([]))
+    // Independent failure: one list going down must not blank the other, so no combined catch.
+    getPassOnRequests()
+      .then((res) => setPassOn(res.data))
+      .catch(() => setPassOn([]))
   }
   useEffect(load, [])
+
+  // Approve or decline. Both remove the row from this list, because it is a to-do list rather than
+  // a history — and a DECLINE tells the asker nothing at all, which is the server's behaviour and
+  // is why there is no "declined" state to render here either.
+  async function answerPassOn(id, decision) {
+    setError('')
+    setBusyPassOnId(id)
+    try {
+      await answerPassOnRequest(id, decision)
+      setPassOn((rows) => rows.filter((r) => r.id !== id))
+    } catch (err) {
+      setError(toUserMessage(err, 'Couldn’t save that just now. Try again.'))
+    } finally {
+      setBusyPassOnId(null)
+    }
+  }
 
   // WRITE: reuse the mid-post authoring hand-off from #81 — same draft shape, plus the id
   // of the post to fulfil once the recipe exists.
@@ -96,7 +125,7 @@ export default function Requests() {
         </p>
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && passOn.length === 0 ? (
         <EmptyState
           icon="🍲"
           badge="bg-peach"
@@ -104,7 +133,7 @@ export default function Requests() {
           sub="When someone wants the recipe behind one of your meals, they'll show up here."
           className="mt-6"
         />
-      ) : (
+      ) : rows.length === 0 ? null : (
         <div className="space-y-4">
           {rows.map((row) => (
             <section key={row.post.id} className="sticker bg-card overflow-hidden">
@@ -161,6 +190,50 @@ export default function Requests() {
               </div>
             </section>
           ))}
+        </div>
+      )}
+
+      {/* PASS-ON ASKS (#78). Its own heading, because it is a different question from the one
+          above: these people can already READ the recipe and are asking whether they may hand it
+          to somebody else. Rendered only when there are any — an empty section with a heading
+          would tell every cook about a mechanism most of them will never see. */}
+      {passOn.length > 0 && (
+        <div className="mt-8">
+          <h2 className="section-label mb-2">Asked to pass one on</h2>
+          <p className="font-display italic text-[13px] text-ink-soft mb-3">
+            {/* States exactly what approving does and what it does not, BEFORE the tap — the #99
+                discipline. A cook must not think this hands the recipe to a stranger themselves. */}
+            They can already see the recipe. Saying yes lets them send it on as a link — you
+            won’t be sending anything yourself.
+          </p>
+          <div className="space-y-3">
+            {passOn.map((req) => (
+              <section key={req.id} className="sticker bg-card p-3">
+                <p className="font-display font-bold text-[15px] text-ink leading-snug">
+                  <span className="text-plum">{req.requester_name}</span> wants to pass on your{' '}
+                  {req.recipe_name}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => answerPassOn(req.id, 'approve')}
+                    disabled={busyPassOnId === req.id}
+                    className="flex-1 rounded-full bg-terra text-cream border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    {busyPassOnId === req.id ? '…' : 'Yes, they can'}
+                  </button>
+                  <button
+                    onClick={() => answerPassOn(req.id, 'decline')}
+                    disabled={busyPassOnId === req.id}
+                    className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform disabled:opacity-50"
+                  >
+                    {/* "No thanks" rather than "Decline": this is a person, usually one they know,
+                        and the asker is never told either way. */}
+                    No thanks
+                  </button>
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       )}
 

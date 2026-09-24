@@ -56,6 +56,27 @@ function lineFor(n) {
       // bookmark (`recipe_kept`), which is anonymous, and reusing it here would make two
       // different acts look like one act with inconsistent privacy.
       return what ? `${who} has your ${what} now.` : `${who} opened the recipe you sent.`
+    case 'pass_on_request':
+      // #78, to the COOK. Named and answerable — unlike `recipe_kept` above, which is anonymous,
+      // because this one is addressed to them and wants a yes or a no.
+      return what
+        ? `${who} would like to pass on your ${what}.`
+        : `${who} would like to pass on one of your recipes.`
+    case 'pass_on_approved':
+      // #78, to the ASKER. Deliberately about the DISH rather than about a permission — they asked
+      // about a recipe, and what they want to know is that they can send it now. There is no
+      // `pass_on_declined` case because no such notification is ever written.
+      return what
+        ? `${who} says you can pass on their ${what}.`
+        : `${who} says you can pass their recipe on.`
+    case 'recipe_passed_on':
+      // #78, to the COOK: their recipe is travelling. For a `public` recipe this is the ONLY signal
+      // they get that it moved, since nobody had to ask. Named, not anonymous like a keep — a keep
+      // is a bookmark addressed to nobody, while this is somebody creating access to the cook's
+      // recipe, so who did it is the substance rather than a detail.
+      return what
+        ? `${who} passed your ${what} on to someone.`
+        : `${who} passed one of your recipes on.`
     case 'friend_request':
       return `${who} wants to be friends.`
     case 'friend_accept':
@@ -83,6 +104,13 @@ function targetFor(n) {
   // so neither can land on a 404 — and `recipe_id` is already nulled by the API when the recipe
   // was soft-deleted, which is the case where the line reads but doesn't link.
   if (n.type === 'recipe_arrived' || n.type === 'recipe_claimed')
+    return n.recipe_id ? `/recipes/${n.recipe_id}` : null
+  // #78. The cook's ask lands on the screen where they answer it; the other two open the recipe.
+  // `/requests` is gated on `recipe_id` for the same reason `recipe_request` is gated on `post_id`
+  // — the request row CASCADES away with the recipe, so the line must still read while the tap must
+  // not assert an ask that no longer exists.
+  if (n.type === 'pass_on_request') return n.recipe_id ? '/requests' : null
+  if (n.type === 'pass_on_approved' || n.type === 'recipe_passed_on')
     return n.recipe_id ? `/recipes/${n.recipe_id}` : null
   if (n.type === 'friend_request') return '/friends'
   if (n.type === 'friend_accept' && n.actor_id) return `/u/${n.actor_id}`
