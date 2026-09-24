@@ -19,9 +19,12 @@ columns in any SELECT it issues.
 REVERSIBLE, with the cost stated: `downgrade` drops both columns, which loses which post or recipe
 each open report was about. The reports themselves survive — only the subject link goes.
 
-SQLite note: `op.drop_column` on SQLite rewrites the table, and `alembic` handles that via batch
-mode only if asked. The chain is replayed on SQLite by the test suite, so the downgrade here uses
-`batch_alter_table`, which is a no-op wrapper on Postgres and the required one on SQLite.
+SQLite note, corrected after a ship gate read it against the code: `batch_alter_table` is used for
+the CONSTRAINT operations only, because SQLite cannot ALTER a constraint in place and Alembic needs
+the table-rebuild wrapper to do it (on Postgres the wrapper is a no-op). The two `op.drop_column`
+calls sit OUTSIDE it deliberately — SQLite has supported `DROP COLUMN` natively since 3.35, and
+`tests/test_migrations.py` replays this chain up and fully down on SQLite. An earlier version of this
+note claimed batch mode was what made the drops work, which was simply not what the code did.
 """
 
 from alembic import op

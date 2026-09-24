@@ -190,7 +190,7 @@ and that the text is verbatim speech from the source person.
 
 The UI has already been corrected to say **"a note on this step"**, and the story
 heading says **"{Name}'s story"** rather than "In {Name}'s words"
-(`frontend/src/components/RecipeBody.jsx`). SEVENTEEN frontend test files assert no voice/audio claim appears in
+(`frontend/src/components/RecipeBody.jsx`). EIGHTEEN frontend test files assert no voice/audio claim appears in
 the UI: `components/DictateButton.test.jsx` and `components/PasteRecipe.test.jsx` (each via a
 `BANNED = /record|recording|voice|audio|in their own words|listen/` regex over the rendered
 screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcome.test.jsx`
@@ -200,7 +200,9 @@ screen), `components/RecipeBody.test.jsx`, `pages/Login.test.jsx`, `pages/Welcom
 (the last over the WEB MANIFEST's description, which is app-store-facing copy no rendered-screen
 assertion can reach) — plus `lib/referralMessage.test.js` and `components/TellAFriend.test.jsx` and `pages/Landing.test.jsx` (#111 — the referral text, the share control, and the PUBLIC LANDING PAGE a referred stranger lands on; a marketing surface is the likeliest place in the app for an overclaim, which is why it got the guard on day one), plus `lib/inviteMessage.test.js`, which guards the SHARE TEXT rather than a
 screen and was missed by three separate recounts of this list — and, since #103,
-`components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep.
+`components/PhotoFramer.test.jsx`, added with the surface itself rather than in a later sweep,
+and since #87 part two `components/SafetyMenu.test.jsx` — the eighteenth, added with the extraction
+rather than after it, which is the pattern this floor keeps predicting.
 Since #107 the ban also covers PUSH COPY, which is its own axis. `tests/test_notify_push.py`
 sweeps the `BODIES` table (all seven notification types) **and** `friend_post_payload`, and
 `tests/test_prompt.py` sweeps the THIRD push body, `prompt_payload` — the one with no `BODIES`
@@ -238,9 +240,44 @@ wonders and the answer is the reason they'll use it at all.
 And reporting is never gated on blocking. Someone who has blocked you can still be reported by
 you; that is the case the feature exists for. See TESTING.md invariant 12.
 
+**Be precise about WHERE that survives in the UI, because "never gated" is a claim about the API and
+a screen is a different question.** A block 404s `/u/{id}` and every post of theirs, so neither can
+carry the control. What a block does NOT reach is a recipe they already handed you — an accepted
+grant survives a block (#85) — so that is the surface the rule lives on, and `RecipePage` renders the
+safety menu **without** the cook's name when `GET /friends/profile/{id}` 404s: Report (which names
+the recipe) stays; Block is suppressed, because a block cannot be offered without naming who it
+lands on. The first version of #87 part two gated the whole menu on that fetch, which made a blocked
+cook unreportable from the one surface a block leaves open — the block becoming cover for the person
+who earned it, i.e. the exact thing this rule exists to prevent, reintroduced one layer above the
+API. Restoring Block there needs `author_first_name` on `RecipeResponse`; ledgered, not done.
+
 Also don't describe reporting as moderation. There is no moderation queue, no review SLA and no
 automated action — a report is a row in a table that a person reads. "We'll take a look" is
 true. "Reviewed within 24 hours" would not be.
+
+**The content half adds a third rule, and it is not derivable from the other two (#87 part two).**
+A report can now name the post or recipe it is about, which creates a new way to breach the silence
+rule and a new way to overclaim:
+
+- **Never disclose the SUBJECT of a report to its author, not even in aggregate.** The silence rule
+  above is about the person; naming the thing is strictly worse. "Someone reported you" identifies a
+  set of possible reporters as large as everyone who can see you, while "someone reported your Adobo
+  post" narrows it to the handful of people who saw that post — on a `friends`-only meal, sometimes
+  to one. Pinned by `test_a_content_report_still_tells_the_author_NOTHING`.
+- **The no-visibility-check rule is a COPY rule too.** No `can_view` runs anywhere in the report
+  path, deliberately, so someone can report a thing they can no longer open. Therefore no screen may
+  ever say "this post is no longer available, so you can't report it", and no confirmation may imply
+  the app looked at the content — it didn't, and it can't.
+  **SINCE 2026-09-24 THE SERVER ENFORCES THIS RATHER THAN TRUSTING THE COPY**, and it was genuinely
+  breached for one day, which is why it is worth stating as a mechanism. `POST /friends/reports` used
+  to 404 a subject it could not resolve, and `toUserMessage` passes a router's `detail` through
+  untouched — so since `DELETE /posts/{id}` is a HARD delete, an author deleting the post between
+  the tap and the send put the literal **"Post not found"** in front of someone who had just pressed
+  "Report this meal". The rule above was already written; the route broke it. An unresolvable subject
+  is now DROPPED: the report lands as a person-level one and the answer is always 204. So deleting
+  the content is never a way to dodge the report, and no screen can produce the forbidden sentence
+  because there is no refusal left to render.
+- **Guideline 1.2: claim the mechanism, never the review.** See the note above about the gate.
 
 ### Never claim a lineage, family tree, or generational graph
 
@@ -283,11 +320,14 @@ PRIVATE recipe reaches the people who asked without its visibility changing); an
 (#85 — `POST`/`GET`/`DELETE /friends/blocks`); a **feed read-mark** (#97 — the feed marks
 what arrived since you last looked and draws a "You're all caught up" line); and **the cook
 learning their recipe was kept** (#96 — an anonymous inbox line plus a cook-only count); and
-**reporting a person** (#87 — `POST /friends/reports`, behind the ⋯ menu on their profile,
+**reporting a person** (#87 — `POST /friends/reports`, behind the ⋯ menu on their profile, and — since #87 part two — behind the same ⋯ on a meal or a recipe page,
 alongside blocking). What reporting is NOT: there is no moderation queue, no review process and
 no way for anyone to read a report back from inside the app, so claim the mechanism and never a
-response. And you can report only a PERSON, not a post or a recipe — App Store Guideline 1.2
-asks for content reporting too, so don't describe the app as meeting that gate yet. Note what the directory means for any privacy
+response. A post or a recipe CAN now be reported as well as a person (#87 part two), so the
+MECHANISM Guideline 1.2 asks for exists for both halves — **and the gate is still not met, so do not
+say it is.** 1.2 wants a way to report objectionable content AND a process that acts on it, and there
+is no moderation surface at all: nothing can read a report back inside the app and nothing can move
+one out of `open`. Claim the mechanism; never claim review, a response, or a timeframe. Note what the directory means for any privacy
 claim: every signed-in user can enumerate every other user's name and photo, with no opt-out —
 so do **not** describe the app as private-by-default without qualifying that findability is not
 covered by the profile setting (see TECHDEBT's "Auth & permissions").
@@ -587,7 +627,7 @@ git history now.
 ### Don't inflate the numbers — measure them
 
 As measured on this branch (see `README.md` for the method): **67 routes**, **18 models**,
-**1,019 backend tests**, **1,057 frontend tests in 65 files**. Endpoint and test counts have
+**1,027 backend tests**, **1,065 frontend tests in 65 files**. Endpoint and test counts have
 each changed several times as features were added and removed; count the `@router` / `@app` decorators
 and run the suites rather than repeating a number from an older doc.
 

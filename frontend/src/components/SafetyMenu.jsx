@@ -40,6 +40,18 @@ import { blockUser, reportUser } from '../api/friends'
 // The report itself is always about the person either way: `user_id` is required by the API, and the
 // subject is why, not instead of who.
 //
+// AND `personName` IS OPTIONAL WHEN A SUBJECT IS SET, which is the one asymmetry with real teeth.
+// `RecipePage` has to FETCH the cook's name (`RecipeResponse` carries none, and `origin_attribution`
+// is the byline — frequently not the account holder), and the fetch 404s across a BLOCK. The first
+// version gated the whole menu on having the name, which meant: a cook hands you a recipe, harasses
+// you, blocks you — an accepted grant survives a block (#85), so you can still open the recipe, and
+// the ⋯ was gone. That is the block becoming cover for the person who earned it, which is the exact
+// thing `report_user`'s missing block check exists to prevent, reintroduced one layer up. A ship gate
+// caught it. So with no name: the REPORT item still renders (it names the subject), and the BLOCK
+// item is SUPPRESSED rather than guessed at — "Block them" with no name breaks the rule that a
+// safety control must never be tappable without knowing who it lands on, and a block is recoverable
+// from `/u/{id}` later while a report about content you can see right now is not.
+//
 // NO `can_view` ANYWHERE IN THIS FLOW, on purpose, mirroring the router: a report is not a read. The
 // component renders wherever its page renders, and the server records the id whether or not the
 // reporter can still resolve it.
@@ -61,9 +73,16 @@ export default function SafetyMenu({
   const [reportSending, setReportSending] = useState(false)
   const [reportError, setReportError] = useState('')
   const [reportSent, setReportSent] = useState(false)
+  const [blocked, setBlocked] = useState(false)
 
   // What the REPORT items call their target. Block deliberately always names the person — see above.
   const reportTarget = subject ? subjectLabel : personName
+  // Whether the block item can be offered at all. With a subject we can report a thing without
+  // knowing whose it is; a block can never be offered without naming the person. See the note above
+  // — this is what keeps a blocked cook reportable from a recipe they handed over.
+  const canBlock = Boolean(personName)
+  // Who the confirmation panels refer to. "They" is deliberately vague rather than wrong.
+  const them = personName || 'They'
 
   // Blocking (#85) — two taps, because it deletes the friendship and can't be undone from here.
   async function confirmBlock() {
@@ -71,6 +90,21 @@ export default function SafetyMenu({
     setBlocking(true)
     try {
       await blockUser(Number(userId))
+      // A SUCCESS STATE OF ITS OWN, and it exists because the inline original did not need one: on a
+      // profile the success path ALWAYS navigated away, so leaving `blocking` true and showing no
+      // confirmation was invisible. A ship gate found what that cost once the component had callers
+      // that don't navigate — blocking from a meal page left "Blocking…" disabled forever with
+      // "Never mind" also disabled, no confirmation, the blocked person's content still on screen,
+      // and the browser back button the only way out. That is the "did that work, or did I just
+      // remove them?" failure #80 fixed elsewhere.
+      //
+      // So the component always answers for itself, and `onBlocked` is an ADDITION for callers whose
+      // page is now a 404 for the viewer. Order matters: clear the flag and show the panel BEFORE
+      // calling out, so a caller that navigates leaves a coherent screen behind and one that doesn't
+      // gets a real confirmation.
+      setBlocking(false)
+      setConfirmingBlock(false)
+      setBlocked(true)
       onBlocked?.()
     } catch (err) {
       setBlockError(toUserMessage(err, 'Couldn’t block them just now. Try again.'))
@@ -99,17 +133,33 @@ export default function SafetyMenu({
     // without it the control renders flush to the left edge, orphaned. The panels keep their own
     // text-left, since a paragraph of consequences shouldn't be centred.
     <div className="mt-8 text-center">
-      {reportSent ? (
+      {blocked ? (
+        /* State 5: blocked. Only ever seen by a caller that does NOT navigate away — on a profile
+           the page is gone before this paints. It says what happened and what it did not, because
+           a block is the one act here with consequences the person cannot see from this screen. */
+        <div className="sticker bg-card p-3 text-left">
+          <p className="font-display font-bold text-[14px] text-ink leading-snug">
+            Blocked. You won&rsquo;t see each other anymore.
+          </p>
+          <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
+            {them} wasn&rsquo;t told. Anything still on this screen will be gone next time you look.
+            You can undo this under You &rarr; Blocked.
+          </p>
+        </div>
+      ) : reportSent ? (
         /* State 4: reported. */
         <div className="sticker bg-card p-3 text-left">
           <p className="font-display font-bold text-[14px] text-ink leading-snug">
             Thanks — we&rsquo;ll take a look.
           </p>
           <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
-            {personName} hasn&rsquo;t been told, and nothing about your account has changed. If
-            you&rsquo;d also rather not see each other, you can block them.
+            {them} hasn&rsquo;t been told, and nothing about your account has changed.
+            {canBlock
+              ? ' If you\u2019d also rather not see each other, you can block them.'
+              : ''}
           </p>
           <div className="flex gap-2 mt-3">
+            {canBlock && (
             <button
               onClick={() => {
                 setReportSent(false)
@@ -120,12 +170,17 @@ export default function SafetyMenu({
             >
               Block them too
             </button>
+            )}
             <button
               onClick={() => {
                 setReportSent(false)
                 setReporting(false)
                 setMenuOpen(false)
+                // Clear BOTH, for the reason the "Never mind" path documents: a reason left behind
+                // attaches an account of one thing to whatever is reported next. This path used to
+                // clear only the note, which was faithful to the inline original and wrong.
                 setReportNote('')
+                setReportReason('harassment')
               }}
               className="flex-1 rounded-full bg-cream text-ink border-2 border-ink px-3 py-2 font-display font-bold text-[13px] shadow-[0_2px_0_#2E3A24] active:translate-y-[1px] active:shadow-none transition-transform"
             >
@@ -212,7 +267,7 @@ export default function SafetyMenu({
           <p className="font-display text-[13px] text-ink-soft leading-snug mt-1">
             You won&rsquo;t see each other anywhere, and they can&rsquo;t ask you for a recipe. It
             also removes them as a friend
-            {friendState === 'accepted' ? '' : " if you're friends"} — unblocking later won&rsquo;t
+            {friendState === 'accepted' ? '' : ' if you\u2019re friends'} — unblocking later won&rsquo;t
             bring that back. A recipe you already sent them stays theirs.
           </p>
           {blockError && (
@@ -252,13 +307,17 @@ export default function SafetyMenu({
           >
             Report {reportTarget}
           </button>
-          <div className="h-[2px] bg-line mx-3" />
-          <button
-            onClick={() => setConfirmingBlock(true)}
-            className="w-full text-left rounded-xl px-3 py-2.5 font-display font-bold text-[14px] text-brick active:bg-peach/40"
-          >
-            Block {personName}
-          </button>
+          {canBlock && (
+            <>
+              <div className="h-[2px] bg-line mx-3" />
+              <button
+                onClick={() => setConfirmingBlock(true)}
+                className="w-full text-left rounded-xl px-3 py-2.5 font-display font-bold text-[14px] text-brick active:bg-peach/40"
+              >
+                Block {personName}
+              </button>
+            </>
+          )}
           <div className="h-[2px] bg-line mx-3" />
           <button
             onClick={() => setMenuOpen(false)}

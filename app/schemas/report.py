@@ -35,8 +35,12 @@ class ReportUserIn(BaseModel):
     has to have an answer and the reviewer has no interface in which to disambiguate two. A 422 at
     the boundary is the right place for a shape error; the router's job is the dedupe rule.
 
-    The id is NOT checked for existence or visibility here. Existence is the router's (it 404s an
-    unknown person), and visibility is deliberately never checked at all: a report is not a read, so
+    Neither id is checked here at all. The ROUTER resolves each one against the reported person and
+    DROPS it if it does not belong to them — ownership, not mere existence, because pinning somebody
+    else's content on an innocent account wrote a moderation row against the wrong person until a
+    ship gate caught it. A drop rather than a refusal, so that deleting the content is never a way
+    to dodge the report and so the response carries no ownership signal. Visibility is deliberately
+    never checked anywhere: a report is not a read, so
     someone shown a post in a feed that was then made private — or who was blocked immediately after
     — must still be able to report it. See the model docstring, decision 1.
     """
@@ -47,13 +51,17 @@ class ReportUserIn(BaseModel):
     post_id: Optional[int] = None
     recipe_id: Optional[int] = None
 
-    @model_validator(mode="after")
-    def _one_subject_at_most(self):
-        if self.post_id is not None and self.recipe_id is not None:
-            raise ValueError("A report names a post or a recipe, not both.")
-        return self
     # The reporter's own words. Optional, because a reason alone is a valid report and demanding
     # an explanation is friction in front of someone who may be upset. 1000 is generous: this is
     # the field a moderator reads first, so it should hold an account of what happened rather
     # than a headline.
     note: Optional[Annotated[str, StringConstraints(max_length=1000)]] = None
+
+    @model_validator(mode="after")
+    def _one_subject_at_most(self):
+        # A report names a person, or a person AND one post, or a person AND one recipe — never
+        # both kinds. "Which thing is this about" must have an answer, and there is no interface
+        # in which to disambiguate two.
+        if self.post_id is not None and self.recipe_id is not None:
+            raise ValueError("A report names a post or a recipe, not both.")
+        return self

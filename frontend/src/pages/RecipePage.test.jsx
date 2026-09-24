@@ -256,12 +256,33 @@ describe('RecipePage — reporting the recipe (#87 part two)', () => {
     expect(getUserProfile).not.toHaveBeenCalled()
   })
 
-  it('stays hidden if the cook’s name never arrives', async () => {
-    // A safety control that named the wrong person — or nobody — would break the locked rule that
-    // both items name who they land on. The profile is one tap away with the same menu on it.
+  it('still renders if the cook’s name never arrives — Report survives, Block does not', async () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and a ship gate showed the old assertion was pinning a
+    // hole rather than a rule. The reasoning that produced it ("the profile is one tap away with the
+    // same menu on it") is false in the case that matters: the thing that actually makes this fetch
+    // fail is a BLOCK — `GET /friends/profile/{id}` 404s across one, and so does the profile page —
+    // while an accepted handoff grant SURVIVES a block (#85), so the blocked cook's recipe is still
+    // open in front of you. Hiding the menu made them unreportable from the one surface a block
+    // leaves open: the block becoming cover for the person who earned it, which is precisely what
+    // `report_user`'s deliberately-absent block check exists to prevent.
+    //
+    // The locked rule ("a safety control must not be tappable without knowing who it lands on")
+    // binds BLOCK, not report-a-recipe — so an absent name suppresses that one item and nothing else.
     getUserProfile.mockRejectedValueOnce(new Error('offline'))
     renderAt()
     await screen.findByText('Adobo')
-    expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /more options/i }))
+    expect(screen.getByRole('button', { name: 'Report this recipe' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Block/ })).toBeNull()
+  })
+
+  it('reports for real with no name, so the fix is a working path and not just a visible ⋯', async () => {
+    getUserProfile.mockRejectedValueOnce(new Error('offline'))
+    renderAt()
+    await screen.findByText('Adobo')
+    await userEvent.click(screen.getByRole('button', { name: /more options/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Report this recipe' }))
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    expect(reportUser).toHaveBeenCalledWith(9, 'harassment', '', { recipe_id: 1 })
   })
 })

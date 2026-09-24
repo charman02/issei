@@ -92,8 +92,8 @@ alone — re-run it):
 5. **No false audio/recording claims in the UI (POSITIONING).**
    The words `voice` / `recording` / `audio` / `listen` / `in their own words`
    appear nowhere a user or screen reader can reach. Dictation is speak-to-type;
-   the utterance is discarded. **SEVENTEEN FRONTEND test files** carry the guard, plus
-   **FOUR in the backend suite** — twenty-one in all, and this doc covers both suites, so
+   the utterance is discarded. **EIGHTEEN FRONTEND test files** carry the guard, plus
+   **FOUR in the backend suite** — twenty-two in all, and this doc covers both suites, so
    the bare number used to read as the total and wasn't. It went 14 -> 17 with #111, which is
    the floor behaving exactly as predicted: a public landing page, a referral share component
    and the share text it sends are three new user-facing surfaces, and a MARKETING surface is
@@ -103,9 +103,12 @@ alone — re-run it):
    since 2026-08-18) — three surfaces no rendered-screen assertion can reach: a lock
    screen, an unfurl card and a web manifest. They are not confined to the mic UI —
    the claim reappears on any new user-facing surface, which is why the count is a
-   floor and not a fixed number. SIXTEEN use the wide regex
-   (`in (their|your|his|her)( own)? words`); re-grep rather than trusting this list.
-   → `DictateButton`, `PasteRecipe`, `RecipeForm`, `RecipeBody`, `PhotoFramer`,
+   floor and not a fixed number. SEVENTEEN use the wide regex
+   (`in (their|your|his|her)( own)? words`) — that is 15 frontend + 2 backend, counted across
+   BOTH suites like every other number in this section, which is worth stating because the
+   arrow-list immediately below enumerates frontend files only and so reads as 15. Re-grep
+   rather than trusting either number.
+   → `DictateButton`, `PasteRecipe`, `RecipeForm`, `RecipeBody`, `PhotoFramer`, `SafetyMenu`,
      `NotificationSettings`, `NotifyNudge`, `Notifications`, `UserProfile`,
      `InviteLanding`, `Login`, `Welcome`, `pwa.test.js` (the web manifest's
      description — app-store-facing copy no rendered-screen assertion reaches), and
@@ -373,7 +376,52 @@ Two more properties of a report, both of which would be easy to "improve" into a
   most likely to be reported. Same reasoning as the silent block and the anonymous keep.
   → `test_reporting_notifies_NOBODY`, `test_nothing_the_reported_person_can_read_changes`, and
   `frontend/src/pages/UserProfile.test.jsx` — "never says the reported person will hear about it".
-- **One OPEN report per reporter per person**, deduped in Python because the rule has a state
+- **VISIBILITY IS NEVER CHECKED IN THE REPORT PATH, and that is the same class of decision as the
+  block rule above — it looks like an oversight next to every read in the app.** No `can_view`, no
+  `can_view_post`, no block filter, and no check of any kind that survives into a refusal. Someone
+  shown a post in the feed that the author then makes private, or who is blocked the moment after,
+  must still be able to report what they saw — otherwise the author's own action becomes cover, which
+  is exactly what the block rule exists to prevent, one level down. A future "tidy-up" that adds a
+  visibility gate here would read as consistency and would be a safety regression.
+  → `tests/test_reports.py` — `test_visibility_is_NOT_checked_so_a_hidden_post_can_still_be_reported`,
+  `test_a_BLOCK_still_does_not_gate_a_content_report`
+- **NO SUBJECT IS EVER STORED THAT DOES NOT BELONG TO THE PERSON NAMED — and an unresolvable one is
+  DROPPED, never refused.** The security rule of this route, and the one place on the branch where
+  two ship gates each changed the answer. Existence-only was the original: one curl of
+  `{user_id: <innocent>, post_id: <somebody else's vile post>}` returned 204 and wrote
+  *reporter → innocent, inappropriate, post 57* onto the one table whose whole purpose is that a
+  human reads it and acts. Checking ownership and 404ing closed that and opened two more — a
+  204/404 ownership oracle over every id in the app (#80 makes the ids enumerable), and a reporter
+  reading "Post not found" about a photo that was on screen a second earlier, which the COPY rule
+  above forbids and which a HARD post delete produces on its own. **So the id is dropped and the
+  report lands as a person-level one, 204 either way.** Three things a change here must preserve:
+  the subject is never stored against the wrong person; there is no status or body difference
+  between a real id, a stranger's id and a nonexistent one; and the dedupe + insert read the
+  RESOLVED ids, not `body.*`, which is the entire flooding bound now that unresolvable subjects all
+  collapse onto one case (this route has no rate limit). A SOFT-deleted recipe still belongs to its
+  author, so it resolves and its subject is KEPT — that asymmetry with hard-deleted posts is
+  deliberate and is the point: the case has to survive its subject.
+  → `tests/test_reports.py` — `test_a_subject_that_is_NOT_the_reported_persons_is_never_stored`,
+  `test_the_response_carries_NO_ownership_signal`,
+  `test_unresolvable_subjects_collapse_onto_ONE_case`,
+  `test_a_subject_that_does_not_exist_is_DROPPED_and_the_report_still_lands`,
+  `test_a_HARD_deleted_post_is_the_case_the_drop_exists_for`,
+  `test_a_SOFT_DELETED_recipe_is_still_a_valid_subject`
+- **A CONTENT report tells the author nothing, and naming the post would be WORSE than naming
+  nothing.** "Someone reported you" implicates everyone who can see you; "someone reported your
+  Adobo post" narrows it to the few who saw that post, sometimes to one person.
+  → `tests/test_reports.py::test_a_content_report_still_tells_the_author_NOTHING`
+- **The subject is part of the dedupe key, and `post_id IS NULL` is part of it too.** Reporting the
+  PERSON must stay its own case rather than appending to whichever post-report happens to be open —
+  skipping the NULL comparison when no subject is sent is the obvious way to get this wrong.
+  → `tests/test_reports.py` — `test_two_DIFFERENT_posts_by_the_same_person_are_two_cases`,
+  `test_reporting_the_PERSON_is_its_own_case_separate_from_their_post`,
+  `test_the_SAME_post_reported_twice_still_appends_to_one_case`
+- **A report OUTLIVES its subject.** The content FKs are `SET NULL` while the user FKs CASCADE:
+  deleting the post is exactly what a person does when reported for it, so CASCADE would hand the
+  subject of a report a delete button for the report.
+  → `tests/test_reports.py::test_deleting_the_post_leaves_the_report_STANDING`
+- **One OPEN report per reporter per (person, SUBJECT) — widened by #87 part two, so two different bad posts are two cases**, deduped in Python because the rule has a state
   predicate a UNIQUE constraint can't express. A repeat while one is open **APPENDS** to the open
   row — the original words are kept first and the new ones added after, reason stamped inline and
   the whole thing bounded. It used to DISCARD the repeat, which was wrong for the case that

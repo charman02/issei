@@ -20,8 +20,8 @@ class Report(Base):
     to report objectionable content and the people posting it — so this is on the path to iOS
     whatever else happens.
 
-    Three properties are deliberate, and each one is a decision that could have gone the other
-    way:
+    SIX properties are deliberate, and each one is a decision that could have gone the other way.
+    The first three are original to #87; the last three arrived with the content half — see below.
 
     1. **A BLOCK DOES NOT GATE A REPORT.** Every other read in this app is filtered through
        `is_blocked`, and doing that here would be a serious bug: someone harasses you, blocks
@@ -35,7 +35,9 @@ class Report(Base):
        that keeps a block silent (`services/blocks`), and the same reasoning that makes a keep
        notification anonymous (#96) — the app doesn't create contact nobody asked for.
 
-    3. **One open report per reporter per target, which ACCUMULATES.** A second report while one
+    3. **One open report per reporter per target PER SUBJECT, which ACCUMULATES.** (It was per
+       (reporter, target) until #87 part two widened the key — see decision 5, which is the whole
+       account of why.) A second report on the same subject while one
        is still `open` appends its words to that row rather than creating another, so repeated
        taps can't flood the table and whoever reads them sees one case per grievance instead of a
        thread. It does NOT discard — that was the first version, and it was a real bug: nothing
@@ -75,13 +77,29 @@ class Report(Base):
        flooding the dedupe exists to stop is still stopped — and this serves the reason the
        accumulate behaviour was introduced at all: a genuinely new incident was being thrown away.
        Still enforced in the router rather than by a UNIQUE constraint, for the original reason
-       (`state == "open"` is a predicate a constraint cannot express) plus a new one: two of the
-       three key columns are nullable, and Postgres treats NULLs as distinct in a UNIQUE index, so
-       the constraint would not enforce the person-only case anyway.
+       (`state == "open"` is a predicate a constraint cannot express) plus a new one: the key spans
+       FOUR columns and TWO of them are nullable (`post_id`, `recipe_id`), and Postgres treats NULLs
+       as distinct in a UNIQUE index — so a constraint would not enforce the person-only case at all,
+       which is the case most likely to be reported twice.
 
     6. **Mutually exclusive, validated at the schema boundary.** A report names a person, or a person
        AND one post, or a person AND one recipe — never both kinds. Allowing both makes "which thing
        is this about" unanswerable, and there is no interface in which to disambiguate it.
+
+    7. **THE SUBJECT IS A HINT, NOT A PRECONDITION** (owner's call, 2026-09-24). The router resolves
+       each id against the reported person and **drops it** if it isn't theirs; the report lands as a
+       person-level one and the caller always gets 204. The invariant is that **no subject is ever
+       stored that does not belong to the person named** — which is what closes the frame-up a ship
+       gate found (`{user_id: <innocent>, post_id: <somebody else's vile post>}` wrote
+       *reporter → innocent, inappropriate, post 57*), since the attack needed the app to VOUCH for
+       the pairing. A drop rather than a 404 for three reasons: refusing told a reporter "Post not
+       found" about content that had been on their screen a second earlier, which POSITIONING
+       forbids and which a HARD post delete produces on its own; the 204/404 split was itself an
+       ownership oracle over every id in the app, which #80's directory makes enumerable; and a
+       person-level report is something that reporter could always have filed anyway, so the drop
+       gives nothing away. **A SOFT-deleted recipe still belongs to its author, so it resolves and
+       its subject is KEPT** — that is now the whole difference between the two types, and it is the
+       point: the case must survive its subject or deleting it would be the way out.
 
     What is deliberately NOT here: any check that the reporter could SEE the content. A report is not
     a read, `can_view` is not consulted, and that is decision 1 again — someone shown a post in a

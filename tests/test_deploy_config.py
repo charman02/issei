@@ -181,6 +181,18 @@ SETTINGS_THAT_MUST_BE_WIRED_AS_PLAIN_ENV = (
     # shows up in any test that runs without a proxy in front, which is all of them.
     "RATE_LIMIT_ENABLED",
     "TRUSTED_PROXY_HOPS",
+    # Added #87 part two, because a ship gate found the var had shipped with no parity test — these
+    # three tests iterate THIS curated list, not the task definition's own `environment[]` names, so
+    # a new plain env var is unenforced until it is written here.
+    #
+    # It earns its place: it is where in-app feedback is mailed (#101) AND the `List-Unsubscribe` and
+    # `Reply-To` target on every announcement (#107). Wrong or missing, two things fail QUIETLY — the
+    # feedback mail degrades to a logged no-op while notes keep saving, and an unsubscribe request
+    # goes to a mailbox nobody reads while the person believes they left the list. It also gates
+    # whether `scripts/send_announcement.py` will run at all, since that refuses while the address
+    # looks unmonitored. Not a secret (a role address), so a plain env var is right — and a
+    # `secrets[]` entry pointing at a non-existent SSM parameter would fail the task at startup.
+    "FEEDBACK_NOTIFY_EMAIL",
 )
 
 

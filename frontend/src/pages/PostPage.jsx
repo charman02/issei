@@ -665,6 +665,11 @@ export default function PostPage() {
           personName={post.author_first_name}
           subject={{ post_id: post.id }}
           subjectLabel="this meal"
+          // Leave, because this page becomes a 404 for them the moment the block lands — the block
+          // hides the pair from each other everywhere, and `can_view_post` is the gate. Staying would
+          // show them content they can no longer refetch. `SafetyMenu` also shows its own confirmation
+          // before calling this, so a caller that navigates leaves a coherent screen behind.
+          onBlocked={() => navigate('/', { replace: true })}
         />
       )}
     </div>

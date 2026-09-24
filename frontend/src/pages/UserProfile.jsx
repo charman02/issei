@@ -30,14 +30,11 @@ export default function UserProfile() {
   // The friendship row id — needed to accept/remove. Not on the profile payload
   // (which is relationship STATE, not the row), so look it up from the lists.
   const [friendshipId, setFriendshipId] = useState(null)
-  // Blocking (#85). Two taps on purpose: it deletes the friendship, clears pending asks both
-  // ways, and can't be undone from here — once blocked their profile 404s for us, so unblocking
-  // lives on the You page. The confirm names those consequences instead of asking "are you
-  // sure?" about nothing.
-  // The safety menu (#87). Both acts live behind a ⋯ rather than sitting on the page: a red
-  // "Block" button in the open reads as a suggestion, and this is a control you should find
-  // when you go looking for it and not otherwise. `menuOpen` is only the closed/open toggle —
-  // once you pick something, one of the two panels below takes over.
+  // Blocking and reporting are NOT here. Both live in `components/SafetyMenu`, extracted in #87
+  // part two so `PostPage` and `RecipePage` could render the same control instead of copying five
+  // states of it — the reason `services/media.py` is a service and `lib/shareLink.js` is a
+  // module. This page passes `friendState` so the block confirm can say whether it will also
+  // remove a friend, and no `subject`, which is what makes the items name the PERSON here.
 
   const me = (() => {
     try {
@@ -85,14 +82,6 @@ export default function UserProfile() {
     )
   }
   if (profile === null) return <Loader />
-
-  // Blocking (#85) — two taps, because it deletes the friendship and can't be undone from
-  // here (their profile 404s once blocked; unblocking lives on the You page). The confirm
-  // states both consequences rather than asking "are you sure?" about nothing.
-
-  // Reporting (#87). One tap fewer than blocking, on purpose: a report doesn't change anything
-  // the reporter can see, so there is nothing to warn them about — the second tap on a block
-  // exists because it deletes a friendship irreversibly.
 
   // The one friend button, driven by state.
   function FriendButton() {

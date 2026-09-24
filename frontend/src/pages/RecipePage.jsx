@@ -89,9 +89,12 @@ export default function RecipePage() {
   const isOwner = recipe && String(currentUser.id) === String(recipe.user_id)
 
   // The cook's first name, for the safety menu at the bottom and nothing else. Fetched rather than
-  // read off the recipe — see the note where SafetyMenu renders. Failure is silent and the menu
-  // simply doesn't appear: a safety control is worth less than a control that names the wrong
-  // person, and the profile is one tap away with the same menu on it.
+  // read off the recipe — see the note where SafetyMenu renders. Failure is SILENT AND NON-FATAL:
+  // the menu still renders without it, offering Report (which names the recipe) and not Block
+  // (which cannot be offered without naming a person). That matters because the thing that
+  // actually makes this fetch fail is a BLOCK — `GET /friends/profile/{id}` 404s across one, while
+  // an accepted handoff grant survives it (#85), so the blocked cook's recipe is still open in
+  // front of you. Hiding the menu there made the block cover for the person who earned it.
   const [cookName, setCookName] = useState('')
   useEffect(() => {
     if (!recipe || isOwner) return
@@ -298,16 +301,31 @@ export default function RecipePage() {
           already answers "who is this person" instead. Only for a non-owner, so the owner's own
           recipe page makes no extra call.
 
-          Both the menu and the block confirm NAME the person, which is a locked rule — a safety
-          control must not be tappable without knowing who it lands on. So the menu renders only once
-          the name has arrived; a ⋯ that opened onto "Block undefined" would break exactly that. */}
-      {!isOwner && cookName && (
-        <SafetyMenu
-          userId={recipe.user_id}
-          personName={cookName}
-          subject={{ recipe_id: recipe.id }}
-          subjectLabel="this recipe"
-        />
+          THE NAME IS NOT REQUIRED FOR THE MENU TO RENDER, and that reversal is the point. The locked
+          rule is that a control must not be tappable without knowing who it lands on — which binds
+          BLOCK, not report-a-recipe. So an absent name suppresses the block item only. Gating the
+          whole menu on it (the first version) meant a cook could hand you a recipe, harass you,
+          block you, and become unreportable from the one surface a block leaves open. */}
+      {/* WRAPPED, because this sits OUTSIDE the page's padded body (`px-5 pb-8`, which closes above
+          the owner-only panels) and the root div has no horizontal or bottom padding of its own. A
+          ship gate caught the unwrapped version: every open panel rendered full-bleed with its 2px
+          ink outline flush to both viewport edges and the select/textarea touching the screen sides,
+          and with zero bottom padding the ⋯ was the last ~32px of the document — underneath
+          `BottomNav`, which is `fixed bottom-0` and centred exactly like it. The control added to
+          make reporting reachable would have been hidden by the nav pill. `PostPage` never had this
+          because its root already carries `px-5 pt-4 pb-10`.
+
+          No test in the suite can see either problem: jsdom has no layout engine. */}
+      {!isOwner && (
+        <div className="px-5 pb-10">
+          <SafetyMenu
+            userId={recipe.user_id}
+            personName={cookName}
+            subject={{ recipe_id: recipe.id }}
+            subjectLabel="this recipe"
+            onBlocked={() => navigate('/', { replace: true })}
+          />
+        </div>
       )}
     </div>
   )

@@ -328,15 +328,52 @@ def test_a_report_naming_BOTH_a_post_and_a_recipe_is_refused(client, make_user):
     assert r.status_code == 422, r.text
 
 
-def test_a_subject_that_does_not_exist_is_refused(client, make_user):
-    """Existence IS checked, because a report pointing at a row that never existed is noise in the one
-    table a human reads. The 404 names the subject rather than the person: unlike the person case
-    there is nothing to hide, since the reporter just tapped it."""
+def test_a_subject_that_does_not_exist_is_DROPPED_and_the_report_still_lands(
+    client, make_user, db_session
+):
+    """THE SUBJECT IS A HINT, NOT A PRECONDITION (owner's call, 2026-09-24; this test asserted the
+    opposite until then).
+
+    The refusal it used to pin was a real defect with a real trigger: `DELETE /posts/{id}` is a HARD
+    delete, and `toUserMessage` passes a router's `detail` through untouched, so an author deleting
+    their post between the tap and the send made someone who had just pressed "Report this meal"
+    read the literal **"Post not found"** about a photo that had been on their screen a second
+    earlier. POSITIONING forbids that screen outright, for the obvious reason: deleting the content
+    must not be the way to dodge the report.
+
+    So the id is dropped and the report lands as a person-level one — which is what every report on
+    this table was before the subject columns existed.
+    """
+    reporter, rh = make_user()
+    author, _ = make_user()
+
+    assert _report(client, rh, author.id, post_id=999999).status_code == 204
+    rows = _rows(db_session, reporter_id=reporter.id)
+    assert len(rows) == 1
+    # Dropped, not stored — a report must never point at a row that never existed.
+    assert rows[0].post_id is None and rows[0].recipe_id is None
+    # And it is a real, reviewable case about the person.
+    assert rows[0].reported_user_id == author.id and rows[0].state == "open"
+
+
+def test_a_HARD_deleted_post_is_the_case_the_drop_exists_for(client, make_user, db_session):
+    """The end-to-end version, through the route that actually causes it. A post is hard-deleted, so
+    nothing can resolve the id afterwards — unlike a soft-deleted recipe, which still belongs to its
+    author and keeps its link. That asymmetry is now the whole behavioural difference between the
+    two subject types.
+    """
     reporter, rh = make_user()
     author, ah = make_user()
+    post = _make_post(client, ah)
 
-    assert _report(client, rh, author.id, post_id=999999).status_code == 404
-    assert _report(client, rh, author.id, recipe_id=999999).status_code == 404
+    assert client.delete(f"/posts/{post['id']}", headers=ah).status_code == 204
+    assert _report(client, rh, author.id, post_id=post["id"], note="it was a slur").status_code == 204
+
+    rows = _rows(db_session, reporter_id=reporter.id)
+    assert len(rows) == 1
+    assert rows[0].post_id is None
+    # The reporter's own words survive, which is the part a human actually reads.
+    assert rows[0].note == "it was a slur"
 
 
 def test_visibility_is_NOT_checked_so_a_hidden_post_can_still_be_reported(
@@ -490,3 +527,122 @@ def test_a_BLOCK_still_does_not_gate_a_content_report(client, make_user, db_sess
 
     assert _report(client, rh, author.id, post_id=post["id"]).status_code == 204
     assert _rows(db_session, reporter_id=reporter.id)[0].post_id == post["id"]
+
+
+def test_a_subject_that_is_NOT_the_reported_persons_is_never_stored(
+    client, make_user, db_session
+):
+    """THE CRITICAL A SHIP GATE FOUND, and the property that closes it.
+
+    Existence alone was checked, and one curl bought a frame-up on the one table whose whole purpose
+    is that a human reads it and acts:
+    `{"user_id": <innocent>, "post_id": <somebody else's vile post>}` → 204, written down as
+    *reporter -> innocent, inappropriate, post 57*.
+
+    The property is that NO SUBJECT IS EVER STORED THAT DOES NOT BELONG TO THE PERSON NAMED. It is a
+    DROP rather than a 404 (owner's call, 2026-09-24) and the frame-up is closed either way — what
+    the attack needed was for the app to VOUCH for the pairing, and it no longer does. What lands
+    instead is a plain person-level report, which that same reporter could always have filed against
+    anyone; so trying buys nothing and costs a row with their own name on it.
+    """
+    reporter, rh = make_user()
+    innocent, _ = make_user()
+    actual_author, ah = make_user()
+    theirs = _make_post(client, ah, dish="Not the innocent person's")
+    own = _make_post(client, rh, dish="The reporter's own")
+    recipe = _make_recipe(client, ah)
+
+    # Somebody else's post, pinned on an innocent person.
+    assert _report(client, rh, innocent.id, post_id=theirs["id"]).status_code == 204
+    # The reporter's own post, pinned on anyone.
+    assert _report(client, rh, innocent.id, post_id=own["id"]).status_code == 204
+    # Same for a recipe.
+    assert _report(client, rh, innocent.id, recipe_id=recipe["id"]).status_code == 204
+
+    # THE WHOLE POINT: not one of those wrote a subject.
+    rows = _rows(db_session, reported_user_id=innocent.id)
+    assert all(r.post_id is None and r.recipe_id is None for r in rows)
+    # And they collapsed onto ONE person-level case rather than three — see the flooding test.
+    assert len(rows) == 1
+
+    # The honest case still records its subject.
+    assert _report(client, rh, actual_author.id, post_id=theirs["id"]).status_code == 204
+    honest = _rows(db_session, reported_user_id=actual_author.id)
+    assert len(honest) == 1 and honest[0].post_id == theirs["id"]
+
+
+def test_the_response_carries_NO_ownership_signal(client, make_user):
+    """THE EXISTENCE ORACLE, CLOSED — which the refusal never managed, and which its own comment
+    wrongly claimed it had (caught by two ship gates independently).
+
+    A 204/404 split answered "does post N belong to A?" for any pair, to any signed-in caller. With
+    #80's directory enumerating every account, that maps the AUTHOR of every post and recipe id in
+    the app, private ones included. Now every shape answers 204 with an empty body, so there is no
+    signal to read: a nonexistent id, somebody else's id and the person's own are indistinguishable
+    from outside.
+    """
+    _, rh = make_user()
+    author, ah = make_user()
+    other, oh = make_user()
+    theirs_post = _make_post(client, oh, dish="Somebody else's")
+    theirs_recipe = _make_recipe(client, oh, name="Somebody else's")
+    real_post = _make_post(client, ah)
+
+    responses = [
+        _report(client, rh, author.id, post_id=999999),
+        _report(client, rh, author.id, post_id=theirs_post["id"]),
+        _report(client, rh, author.id, recipe_id=999999),
+        _report(client, rh, author.id, recipe_id=theirs_recipe["id"]),
+        _report(client, rh, author.id, post_id=real_post["id"]),
+    ]
+    assert [r.status_code for r in responses] == [204] * 5
+    assert {r.content for r in responses} == {b""}
+
+
+def test_unresolvable_subjects_collapse_onto_ONE_case(client, make_user, db_session):
+    """THE FLOODING BOUND, and why the dedupe reads the RESOLVED ids rather than `body.*`.
+
+    The dedupe key is (reporter, target, subject) and this route has no rate limit — so if a dropped
+    subject still keyed its own case, one reporter could hold an unbounded number of simultaneously
+    open rows against one person out of invented ids. Collapsing to NULL means twenty made-up ids
+    produce exactly one row.
+    """
+    reporter, rh = make_user()
+    author, _ = make_user()
+
+    for fake in range(900001, 900021):
+        assert _report(client, rh, author.id, post_id=fake, note=f"try {fake}").status_code == 204
+
+    rows = _rows(db_session, reporter_id=reporter.id)
+    assert len(rows) == 1
+    assert rows[0].post_id is None
+    # The words still accumulate on that one row rather than being discarded.
+    assert "try 900001" in rows[0].note and "try 900020" in rows[0].note
+
+
+def test_a_SOFT_DELETED_recipe_is_still_a_valid_subject(client, make_user, db_session):
+    """A DELIBERATE EXCEPTION to "all queries must filter `deleted_at IS NULL`", pinned so nobody
+    tidies it away and nobody is surprised by it.
+
+    The reason is the whole threat model of the feature: you saw the recipe, you reported it, and the
+    person then deleted it. If the report were refused at that point, deleting the recipe would BE
+    the way to dodge the report — and the reporter would be told "Recipe not found" about something
+    they had just been looking at, which is the one screen POSITIONING says must never exist.
+
+    The asymmetry with posts is real and is the part worth knowing: a post is HARD-deleted, so the
+    FK's `SET NULL` drops the link and the case survives with no subject; a recipe is SOFT-deleted,
+    so the row stays and the link is kept forever.
+    """
+    reporter, rh = make_user()
+    author, ah = make_user()
+    recipe = _make_recipe(client, ah)
+
+    assert client.delete(f"/recipes/{recipe['id']}", headers=ah).status_code == 204
+    # Gone for every read path, including its owner's.
+    assert client.get(f"/recipes/{recipe['id']}", headers=ah).status_code == 404
+
+    assert _report(client, rh, author.id, recipe_id=recipe["id"]).status_code == 204
+    rows = _rows(db_session, reporter_id=reporter.id)
+    assert len(rows) == 1
+    # The link is KEPT, which is what lets whoever reads the case see what was reported.
+    assert rows[0].recipe_id == recipe["id"]

@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 1,019
-backend tests, 1,057 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **67 routes, 18 models, 1,027
+backend tests, 1,065 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -105,7 +105,8 @@ human looks. A report changes nothing either party can see.
 What reporting still needs is the part that was always the hard bit — somewhere for a report to
 *go*. There is no moderation queue, no review process, and no way to read a report back from
 inside the app: rows land in a table and someone has to query Postgres. So claim the mechanism,
-never a response. And only a PERSON can be reported, not a post or a recipe, which App Store
+never a response. A post or a recipe can now be reported too (#87 part two), so what is missing is
+no longer the mechanism but the REVIEW: nothing reads a report back in-app and nothing closes one, which App Store
 Guideline 1.2 also asks for — that is the remaining gap before submission. Both are recorded in
 TECHDEBT. One thing worth knowing precisely, because the first version of it was a real bug:
 nothing can move a report out of `open`, so a second report from the same person about a NEW
@@ -326,7 +327,7 @@ carries notifications with it; family sharing was cut; language translation move
    someone who never opens Home. (The second item here — a handoff addressed to the email of an
    account that already exists producing a grant nobody can reach — was FIXED on 2026-09-23; the
    address now resolves to the account and the grant is bound and accepted at send time.)
-2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile), but a POST or RECIPE cannot, and nothing can read a report back from inside the app or mark one closed. Those two are the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
+2. **Reporting** — **SHIPPED (#87)**, and what remains of it is narrower than this entry was written for: a person can be reported (a reason plus their own words, behind the ⋯ on a profile) and — since #87 part two — so can a POST or a RECIPE, from the same ⋯ on `PostPage` and `RecipePage`. What remains is the half that was always the harder one: nothing can read a report back from inside the app or mark one closed. That is the gap, not the mechanism. Kept below for the reasoning, which is unchanged: it is an **App Store gate**, not a nice-to-have:
    Guideline 1.2 requires a report mechanism for any app with user-generated content, and issei
    has photos, free text and a public feed. Still mostly a process question (where does a report
    go, who reads it) — a button writing to a table nobody reads promises review that isn't

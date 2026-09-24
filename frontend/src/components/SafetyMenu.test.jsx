@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const api = vi.hoisted(() => ({ blockUser: vi.fn(), reportUser: vi.fn() }))
@@ -157,5 +157,98 @@ describe('SafetyMenu — the rules that travelled with the extraction', () => {
     await openMenu()
     const BANNED = /record|recording|\bvoice\b|audio|in (their|your|his|her)( own)? words|listen/i
     expect(container.textContent).not.toMatch(BANNED)
+  })
+})
+
+describe('SafetyMenu — the block path, which had no test until a ship gate asked', () => {
+  it('confirms for itself when the caller does NOT navigate away', async () => {
+    // THE DEAD END THE GATE FOUND. The inline original never needed a success state, because on a
+    // profile the success path always navigated. Once the component had callers that stay put,
+    // blocking left "Blocking…" disabled forever, "Never mind" also disabled, no confirmation, and
+    // the blocked person's content still on screen — the browser back button the only way out.
+    render(<SafetyMenu userId={2} personName="Ana" />)
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Block Ana' }))
+    await userEvent.click(screen.getByRole('button', { name: /block them$/i }))
+
+    expect(await screen.findByText(/won.t see each other anymore/i)).toBeInTheDocument()
+    // It says what it did NOT do, too: the block is silent, per #85.
+    expect(screen.getByText(/wasn.t told/i)).toBeInTheDocument()
+    // And names the way back, since a block is the one act here with no visible undo on this screen.
+    expect(screen.getByText(/You .+ Blocked/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /blocking/i })).toBeNull()
+  })
+
+  it('still calls onBlocked, for a caller whose page is now a 404', async () => {
+    const onBlocked = vi.fn()
+    render(<SafetyMenu userId={2} personName="Ana" onBlocked={onBlocked} />)
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Block Ana' }))
+    await userEvent.click(screen.getByRole('button', { name: /block them$/i }))
+    await waitFor(() => expect(onBlocked).toHaveBeenCalled())
+    expect(api.blockUser).toHaveBeenCalledWith(2)
+  })
+
+  it('a failed block says so and leaves BOTH controls usable', async () => {
+    // The failure path is where a stuck disabled state does the most damage: the block did not
+    // happen, so the person needs to be able to retry or back out.
+    api.blockUser.mockRejectedValue(new Error('nope'))
+    render(<SafetyMenu userId={2} personName="Ana" />)
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Block Ana' }))
+    await userEvent.click(screen.getByRole('button', { name: /block them$/i }))
+
+    expect(await screen.findByText(/couldn.t block them just now/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /block them$/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /never mind/i })).toBeEnabled()
+  })
+})
+
+
+describe('SafetyMenu — with a subject but NO person name (the block case)', () => {
+  // WHY THIS EXISTS. `RecipePage` has to FETCH the cook's name, and the thing that actually makes
+  // that fetch fail is a BLOCK: `GET /friends/profile/{id}` 404s across one, while an accepted
+  // handoff grant SURVIVES a block (#85) — so the blocked cook's recipe is still open in front of
+  // you. The first version hid the whole menu, which made them unreportable from the one surface a
+  // block leaves open: the block becoming cover for the person who earned it, i.e. exactly what
+  // `report_user`'s deliberately-absent block check exists to prevent, reintroduced one layer up.
+  const nameless = { userId: 7, personName: '', subject: { recipe_id: 9 }, subjectLabel: 'this recipe' }
+
+  it('still offers Report, because the report item names the THING', async () => {
+    render(<SafetyMenu {...nameless} />)
+    await openMenu()
+    expect(screen.getByRole('button', { name: 'Report this recipe' })).toBeInTheDocument()
+  })
+
+  it('suppresses Block, because a block cannot be offered without naming who it lands on', async () => {
+    // Not a nicety: "Block them" with no name is a tap whose target the person cannot see, and a
+    // block deletes a friendship and cannot be undone from this screen. It stays recoverable —
+    // /u/{id} has the full menu once the name resolves — while a report about content in front of
+    // you right now does not.
+    render(<SafetyMenu {...nameless} />)
+    await openMenu()
+    expect(screen.queryByRole('button', { name: /^Block/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /never mind/i })).toBeInTheDocument()
+  })
+
+  it('reports for real, with the subject, and names nobody in the confirmation', async () => {
+    render(<SafetyMenu {...nameless} />)
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Report this recipe' }))
+    await userEvent.click(screen.getByRole('button', { name: /send report/i }))
+    expect(api.reportUser).toHaveBeenCalledWith(7, 'harassment', '', { recipe_id: 9 })
+
+    expect(await screen.findByText(/we.ll take a look/i)).toBeInTheDocument()
+    // "They haven't been told" rather than "undefined hasn't been told".
+    expect(screen.getByText(/They hasn.t been told|hasn.t been told/i)).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/i)).toBeNull()
+    // And no "Block them too" offer, for the same reason the menu item is gone.
+    expect(screen.queryByRole('button', { name: /block them too/i })).toBeNull()
+  })
+
+  it('a name restores the block item, so the suppression is about the name and nothing else', async () => {
+    render(<SafetyMenu {...nameless} personName="Ana" />)
+    await openMenu()
+    expect(screen.getByRole('button', { name: 'Block Ana' })).toBeInTheDocument()
   })
 })

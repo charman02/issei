@@ -67,6 +67,7 @@ FEEDBACK_SQL = text(
 REPORTS_SQL = text(
     """
     SELECT r.id, r.created_at, r.reason, r.note, r.state,
+           r.post_id, r.recipe_id,
            reporter.first_name AS reporter_first, reporter.last_name AS reporter_last,
            reported.first_name AS reported_first, reported.last_name AS reported_last
       FROM reports r
@@ -149,6 +150,19 @@ def main() -> int:
             reported = _name(r["reported_first"], r["reported_last"])
             print(f"\n#{r['id']}  {r['created_at']}  [{r['state']}]  {r['reason']}")
             print(f"  {reporter}  ->  {reported}")
+            # WHAT it is about, when it is about something (#87 part two). Without this a content
+            # report is indistinguishable from a person report in the only tool that can read
+            # either — which defeats the reason the column exists, since the whole argument for
+            # keying the dedupe on the subject is that a reviewer needs to see WHICH post.
+            #
+            # THE BARE ID, not the dish name. Joining for it would pull user CONTENT into a script
+            # whose entire design argument is that it prints as little as it can, and an operator
+            # holding DATABASE_URL can look up `post #14` themselves. A None prints nothing, because
+            # most reports have no subject and a column of Nones is noise.
+            if r["post_id"] is not None:
+                print(f"  about: post #{r['post_id']}")
+            if r["recipe_id"] is not None:
+                print(f"  about: recipe #{r['recipe_id']}")
             if r["note"]:
                 print(_wrap(r["note"]))
 

@@ -261,9 +261,11 @@ def test_a_noreply_address_is_recognised_as_unmonitored():
     address — because the alternative to a heuristic here is nothing, and nothing is how the first
     version shipped a `noreply@` unsubscribe target with a comment explaining why that was wrong.
 
-    `FEEDBACK_NOTIFY_EMAIL` is ABSENT from the prod task definition, so `unsubscribe_address()` falls
-    back to `SENDER_EMAIL` and lands on `noreply@` regardless of the fix above. The refusal is what
-    stops a broadcast going out on a promise it cannot keep.
+    `FEEDBACK_NOTIFY_EMAIL` is SET in prod to `feedback@issei.app` as of #87 part two, so the refusal
+    no longer fires there — which means the thing standing between here and a real broadcast is now
+    the SES verification of that address, not this check. The check stays because it is about the
+    SHAPE of whatever address is configured: the next person to point this at a `noreply@` gets
+    stopped rather than shipping a promise nobody can keep.
     """
     for bad in ("noreply@issei.app", "no-reply@issei.app", "NoReply@issei.app", "do.not.reply@x.com"):
         assert looks_unmonitored(bad), bad

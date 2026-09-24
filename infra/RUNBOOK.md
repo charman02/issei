@@ -318,12 +318,19 @@ Request production access in the SES console, then prove the path end to end wit
 `scripts/send_announcement.py --only your@address --send` before the first real send — it is
 dry-run by default and a real send makes you type the recipient count back, because mail has no undo.
 
-**`FEEDBACK_NOTIFY_EMAIL` HAS TO BE SET BEFORE A BROADCAST WILL RUN AT ALL.** Every announcement
-carries a `List-Unsubscribe` header pointing at that address, so it must be an inbox somebody reads —
-otherwise an unsubscribe request goes nowhere and the person stays on the list believing they left it.
-It is **absent** from the prod task definition today, so it falls back to `SENDER_EMAIL`
-(`noreply@issei.app`) and `scripts/send_announcement.py` will **refuse to send**, by design. Setting it
-also stops #101's feedback notifications landing on `noreply@`, which they currently do.
+**`FEEDBACK_NOTIFY_EMAIL` IS SET, WHICH MEANS THE SCRIPT'S REFUSAL NO LONGER PROTECTS YOU.** Every
+announcement carries a `List-Unsubscribe` header pointing at that address, so it must be an inbox
+somebody reads — otherwise an unsubscribe request goes nowhere and the person stays on the list
+believing they left it. It is `feedback@issei.app` in the prod task definition and the CDK stack (set
+2026-09-23; `tests/test_deploy_config.py` pins the two files to the same value). **Read this before a
+send:** `scripts/send_announcement.py` refuses while the target *looks* unmonitored, and
+`feedback@issei.app` does not look unmonitored, so that refusal will not fire — it was the last
+automated guard and it is now satisfied by a name, not by a working mailbox. Two things only you can
+confirm, and the broadcast is a lie to every recipient without both: **(1)** that address forwards to
+an inbox you actually read; **(2)** it is a verified identity in SES us-west-2 (required for the
+feedback mail too — an unverified recipient makes #101's notification a silent no-op while notes keep
+saving). Do both BEFORE requesting production access below, because lifting the sandbox removes the
+only remaining guard at the same moment it makes a real send possible.
 
 One more caution, and it is the one with reach beyond this feature: **signup never verifies an email
 address**, and there is no bounce or complaint handling anywhere in the app. A bounce spike on a

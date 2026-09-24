@@ -441,9 +441,77 @@ strangers arrive. Security/privacy first.
   thrown away while the UI answered "we'll take a look" about it — caught in review. It now
   APPENDS to the open row (bounded at 8000 chars, earliest accounts kept), so the data-loss path
   is closed and what remains is only the missing close action. *Why flagged:* until a report can
-  be closed, one grievance and a year of grievances are the same row, and nobody can tell which
-  reports have been dealt with. *Where:* `app/routers/friends.py::report_user`,
-  `app/models/report.py`.
+  be closed, one grievance and a year of grievances are the same row — though only PER SUBJECT since #87 part
+  two widened the dedupe key, and the sharper version of the worry is the other side of that: **one
+  reporter can now hold N simultaneously-open cases against one person** (one per post, one per
+  recipe, plus one person-level), and since nothing can close any of them the table grows per-subject
+  rather than per-pair. The 8000-character append bound no longer bounds a reporter's total footprint
+  against one target. That is a real consequence of a deliberate change and nobody would rediscover
+  it from the code, so it is written down here rather than treated as a surprise later.
+
+- **A report can name a soft-deleted recipe, and the two subject types diverge after deletion.**
+  (#87 part two, raised by the ship gate, deliberate.) `report_user`'s recipe check has no
+  `deleted_at IS NULL`, against the project-wide "all queries must filter" convention. That is
+  right here — you saw it, they deleted it, and the case survives so whoever reads it can still
+  see WHAT was reported — and since the 2026-09-24 drop it is the ENTIRE behavioural difference
+  between the two subject types: a soft-deleted recipe still BELONGS to its author, so it resolves
+  and its subject is kept forever, while a hard-deleted post cannot resolve at all, so its subject
+  is dropped at report time (and the FK's `SET NULL` would have dropped it later anyway).
+  `tests/test_reports.py` pins the acceptance in both directions, so the next person neither
+  "fixes" the missing filter silently nor is surprised by the difference. *Why flagged:* it is a
+  deliberate exception to a rule stated everywhere else, which is exactly the kind of thing
+  somebody reasonably tidies up.
+
+- **CLOSED 2026-09-24 — the report subject became a HINT rather than a precondition, which took
+  three problems out at once.** Kept here because the sequence is the useful part. The first version
+  of #87 part two checked a subject for EXISTENCE only, which a ship gate broke with one curl:
+  `{user_id: <innocent>, post_id: <somebody else's vile post>}` → 204, stored as *reporter →
+  innocent, inappropriate, post 57*, on the one table whose entire purpose is that a human reads it
+  and acts. The obvious fix — also check OWNERSHIP, 404 otherwise — closed the frame-up and bought
+  two new problems: (1) a 204/404 split answered "does post N belong to A?" for any pair, to any
+  signed-in caller, which with #80's enumerable directory maps the AUTHOR of every post and recipe
+  id in the app including private ones; (2) `DELETE /posts/{id}` is a HARD delete and `toUserMessage`
+  passes a router's `detail` through untouched, so an author deleting the post between the tap and
+  the send made a reporter read **"Post not found"** about a photo that had been on their screen a
+  second earlier — which POSITIONING forbids outright, and which makes deleting the content a way to
+  dodge the report. **The owner's call was to DROP an unresolvable subject rather than refuse it.**
+  The report lands as a person-level one, the answer is always 204, the frame-up stays closed (the
+  attack needed the app to VOUCH for the pairing, and it no longer does), the oracle is gone rather
+  than narrowed, and no reporter is ever refused. *What is still true and worth knowing:* this route
+  has **no rate limit** — `app/routers/friends.py` imports no limiter at all — so the per-subject
+  flooding bound above rests entirely on the dedupe reading the RESOLVED ids, which is what makes
+  invented ids collapse onto one case. Pinned by `test_unresolvable_subjects_collapse_onto_ONE_case`;
+  reading `body.post_id` there instead is a mutation that fails loudly (a FOREIGN KEY violation,
+  not a soft assertion).
+
+- **After a block, the only reporting surface left is a recipe you were already handed.**
+  (#87 part two, partially closed 2026-09-23 after a ship gate.) `/u/{id}` and `PostPage` 404 across
+  a block, so neither can carry the ⋯ — but an accepted handoff grant SURVIVES a block (#85), so a
+  grantee can still open the recipe, and `RecipePage` used to hide the menu entirely when
+  `GET /friends/profile/{id}` 404'd. That reintroduced at the UI exactly what the backend's
+  no-block-gate rule exists to prevent: the block becoming cover for the person who earned it.
+  `SafetyMenu` now renders with NO person name when a subject is set — the report item names the
+  THING ("Report this recipe") and the BLOCK item is suppressed, because a block genuinely cannot be
+  offered without naming who it lands on. So the reportable surface survives a block and the
+  unnameable act does not. Still owed: `author_first_name` on `RecipeResponse` would remove the
+  fetch and restore the block item too (see the extra-fetch entry). The rejected alternative was
+  falling back to `origin_attribution`, which is the BYLINE — frequently not the account holder —
+  so it would name the wrong person on a safety control.
+  And nobody can tell which reports have been dealt with. *Where:*
+  `app/routers/friends.py::report_user`, `app/models/report.py`.
+
+- **`RecipePage` issues an extra request per non-owner view, for a first name.** (#87 part two, low
+  severity, raised by the ship gate.) The safety menu needs the cook's name, `RecipeResponse` carries
+  none, and `origin_attribution` is the BYLINE — whoever the dish came from, often not the account
+  holder — so using it would name the wrong person on a safety control. The fetch is
+  `GET /friends/profile/{id}`, it fires for every non-owner viewer whether or not they ever scroll to
+  the control, and it fails silently by design. So the cost is a wasted round trip on the app's
+  most-read page rather than a defect. **The fix is a schema change, not a patch:** put
+  `author_first_name` on `RecipeResponse` the way `PostResponse` already carries it — which means
+  populating it in every path that serialises a recipe (get, browse, kept, both profile grids), which
+  is why it was not done inside a safety feature. *Where:* `frontend/src/pages/RecipePage.jsx`,
+  `app/schemas/recipe.py`.
+
 
 - **A profile grid now has TWO ceilings, and "Show all" only lifts one.** (#98)
   `ProfileContent` previews six items per tab behind a "Show all N" button, but the endpoints
@@ -681,20 +749,39 @@ imminent scaling risk.
 
 ### Infra & deployment
 
-- **`FEEDBACK_NOTIFY_EMAIL` IS UNSET IN PROD, SO THE ANNOUNCEMENT UNSUBSCRIBE TARGET IS STILL
-  `noreply@issei.app` — AND THAT IS NOW A HARD BLOCK RATHER THAN A SILENT DEFECT.** (#107)
-  *Fixed in code 2026-09-23, still open as a deploy action.* What was wrong and what changed:
-  the header pointed at `SENDER_EMAIL` and ALSO carried `List-Unsubscribe-Post`, i.e. it claimed
-  ONE-CLICK while aiming at a mailbox nobody reads. The `-Post` header is gone (RFC 8058's
-  one-click flow specifies an `https:` URI, so pairing it with a `mailto:` was outside the spec
-  *and* advertised an automation nothing performed), the target is now `feedback_recipient()`,
-  and `scripts/send_announcement.py` **refuses to send** while that address still looks
-  unmonitored. **The remaining action is yours:** set `FEEDBACK_NOTIFY_EMAIL` to an inbox you
-  read. Until then a broadcast cannot go out — which is the intended failure direction, but it
-  is a block, not a warning. Worth knowing separately: that same variable being unset means
-  #101's feedback notifications have also been landing on `noreply@issei.app`.
+- **`feedback@issei.app` IS NOW THE CONFIGURED UNSUBSCRIBE TARGET, AND TWO THINGS OUTSIDE THIS REPO
+  STILL HAVE TO BE TRUE.** (#107, set in #87 part two)
+  `FEEDBACK_NOTIFY_EMAIL=feedback@issei.app` is in the task definition and the CDK stack — a ROLE
+  address forwarding to a person, because this repo is public and the value rides in every
+  announcement's headers anyway. **Still owed, and neither is visible from the code:** (1) that
+  address must FORWARD to an inbox somebody reads, or the unsubscribe fails silently exactly as
+  before; (2) it must be a VERIFIED SES identity in us-west-2 — the account is sandboxed, so the
+  RECIPIENT has to be verified too, and until it is, #101's feedback mail degrades to a logged no-op
+  while notes keep saving. Note the second-order effect a ship gate flagged: setting this **lifted the
+  announcement hard block**, because `looks_unmonitored("feedback@issei.app")` is False. That check
+  now guards the SHAPE of whatever is configured rather than standing as a stop, so the only thing
+  between here and a real broadcast is the SES verification. Pinned for config parity by
+  `tests/test_deploy_config.py` (it was unpinned when first added — the parity tests iterate a curated
+  list, not the task definition's own names).
+
+  *History, because the shape of the original defect is why the check exists at all.* The header
+  pointed at `SENDER_EMAIL` and ALSO carried `List-Unsubscribe-Post`, i.e. it claimed ONE-CLICK
+  while aiming at a mailbox nobody reads. The `-Post` header is gone (RFC 8058's one-click flow
+  specifies an `https:` URI, so pairing it with a `mailto:` was outside the spec *and* advertised
+  an automation nothing performed), and the target is now `feedback_recipient()`.
+  **What changed on 2026-09-23 matters more than it looks:** `FEEDBACK_NOTIFY_EMAIL` is now SET,
+  so `looks_unmonitored("feedback@issei.app")` is False and the script's refusal **no longer
+  fires**. That refusal was doing real work — it was the last automated thing standing between an
+  operator and a broadcast whose unsubscribe link goes nowhere. What stands there now is the SES
+  sandbox and nothing else. So the remaining action is not "set the variable", it is **verify the
+  address in SES us-west-2 and confirm it forwards to an inbox you read** — and do that BEFORE
+  requesting production access, because lifting the sandbox removes the last guard at the same
+  moment it makes a real send possible.
   *Where:* `app/services/email.py` (`unsubscribe_address`, `looks_unmonitored`),
-  `.aws/task-definition.json`, `infra/lib/issei-stack.ts`.
+  `.aws/task-definition.json`, `infra/lib/issei-stack.ts`, `infra/RUNBOOK.md` (which carried the
+  "absent, so the script will refuse" claim for a day after it stopped being true — the one place
+  that wrongness had operational teeth, since an operator reads it expecting the refusal to catch a
+  mistake).
 
 - **An announcement can reach an address nobody ever confirmed, and a bounce spike can pause
   the identity PASSWORD RESET depends on.** (#107, raised by the ship gate)

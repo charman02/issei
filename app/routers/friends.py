@@ -382,12 +382,29 @@ def report_user(
        permanently unreportable — the block becoming cover for the person who earned it. That is
        the single most important case this endpoint serves, so it is pinned by a test.
 
+    2b. **A SUBJECT THAT IS NOT THE REPORTED PERSON'S IS DROPPED, AND THE REPORT STILL LANDS.**
+       The security rule of this route: no subject is ever stored that does not belong to the
+       person named. Without it, `{user_id: <innocent>, post_id: <somebody else's vile post>}`
+       returned 204 and wrote *reporter → innocent, inappropriate, post 57* onto the one table
+       whose whole purpose is that a human reads it and acts — a ship gate found it with one curl.
+       It is a DROP rather than a 404 (owner's call) because refusing told a reporter "Post not
+       found" about something that had been on their screen a second earlier, which POSITIONING
+       forbids outright; because the 204/404 split was itself an ownership oracle over every id in
+       the app; and because a person-level report is something that reporter could always have
+       filed anyway, so the drop gives away nothing. Visibility is still NOT checked (see 1 and 4)
+       — ownership and readability are different questions, and a report is not a read.
+
     2. **204, and the reported person is never told.** No notification, nothing. Telling them
        turns a safety mechanism into an escalation trigger, and the person most likely to
        retaliate is the person most likely to be reported. Same reasoning that keeps a block
        silent and a keep anonymous: the app doesn't manufacture contact nobody asked for.
 
-    3. **One OPEN report per reporter per person — which ACCUMULATES rather than discarding.**
+    3. **One OPEN report per reporter per (person, SUBJECT) — which ACCUMULATES rather than
+       discarding.** The key gained the subject with #87 part two: two different bad posts are
+       two incidents and whoever reads them needs to see WHICH, so folding the second into the
+       first would bury it under an older unrelated complaint. Re-reporting the SAME subject
+       still appends, so the flooding this exists to stop is still stopped. (This said "per
+       person" until #87 part two and contradicted the inline comment ninety lines below it.)
        A second submission while one is still open appends its words to that row instead of
        creating a new one: still one case for whoever reads it, still impossible to flood, but
        nothing a reporter typed is thrown away. That last part was a real bug in the first
@@ -411,21 +428,76 @@ def report_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # THE SUBJECT MUST EXIST, BUT NEED NOT BE VISIBLE (#87 part two). Existence is checked because a
-    # report pointing at a row that never existed is noise in the one table a human reads. Visibility
-    # is deliberately NOT checked — no `can_view`, no `can_view_post`, no block filter — because a
-    # report is not a read: someone shown a post in the feed that was then made private, or who was
-    # blocked the moment after, must still be able to report what they saw. That is the same reasoning
-    # as the no-block-gate rule above, applied to content instead of people.
+    # THE SUBJECT IS A HINT, NOT A PRECONDITION (#87 part two, reshaped by the owner 2026-09-24).
+    # A subject that does not resolve is DROPPED and the report lands as a person-level one. The
+    # caller gets the same 204 as everybody else. Three things follow from that, and each one is a
+    # defect an earlier version of this route actually shipped:
     #
-    # The 404 body is deliberately about the SUBJECT ("Post not found"), not the person, because
-    # unlike the person case there is nothing to hide here: the reporter just tapped it.
-    if body.post_id is not None:
-        if db.query(Post.id).filter(Post.id == body.post_id).first() is None:
-            raise HTTPException(status_code=404, detail="Post not found")
-    if body.recipe_id is not None:
-        if db.query(Recipe.id).filter(Recipe.id == body.recipe_id).first() is None:
-            raise HTTPException(status_code=404, detail="Recipe not found")
+    # 1. **THE REPORTER IS NEVER REFUSED.** The first version 404'd, and `toUserMessage` passes a
+    #    router's `detail` through untouched, so somebody who had just tapped "Report this meal"
+    #    read the literal **"Post not found"** — about a photo that had been on their screen a
+    #    second earlier. `DELETE /posts/{id}` is a HARD delete, so an author deleting the post
+    #    between the tap and the send is enough to produce it, and POSITIONING states the rule
+    #    directly: no screen may ever say "this is no longer available, so you can't report it".
+    #    Deleting the content must not be a way to dodge the report.
+    #
+    # 2. **NO SUBJECT IS EVER STORED THAT IS NOT THE REPORTED PERSON'S.** This is the Critical a
+    #    ship gate found, and dropping the id closes it exactly as refusing did: one curl of
+    #    `{"user_id": <innocent>, "post_id": <somebody else's vile post>}` used to return 204 and
+    #    write *reporter -> innocent, inappropriate, post 57* onto the one table whose whole purpose
+    #    is that a human reads it and acts. Now it writes a plain person-level report — which that
+    #    reporter could always have filed anyway, so nothing is gained by trying. The frame-up
+    #    needed the app to VOUCH for the pairing, and it no longer does. The same drop covers a
+    #    reporter naming their OWN post.
+    #
+    # 3. **THE EXISTENCE ORACLE IS CLOSED, not merely narrowed** — which refusing never managed.
+    #    The 204/404 split answered "does post N belong to A?" for any pair, to any signed-in
+    #    caller, and with #80's enumerable directory that maps the author of every post and recipe
+    #    id in the app, private ones included. The answer is now 204 either way, so there is no
+    #    signal to read. (The previous comment here claimed the ownership check closed this; two
+    #    ship gates independently caught that it did the opposite of closing it.)
+    #
+    # The FLOODING bound survives, and by the same mechanism: the dedupe key is (reporter, target,
+    # subject), so with unresolvable ids collapsing to NULL every bogus subject lands on the ONE
+    # person-level case for that pair. There is no rate limit on this route, so that matters —
+    # unbounded distinct subjects were the thing to prevent, and a thousand invented ids now
+    # produce one row.
+    #
+    # WHAT THE DROP DELIBERATELY DOES NOT DO: it does not tell the reporter the subject was
+    # dropped, and it writes no marker into `note`. That field is the reporter's own words — the
+    # one thing on the row a human reads first — and app-generated text in it makes an account of
+    # what happened harder to read for the sake of a subject nobody can review anyway. "We'll take
+    # a look" stays true either way: what is being looked at is a person.
+    #
+    # VISIBILITY IS STILL NEVER CHECKED. No `can_view`, no `can_view_post`, no block filter,
+    # because a report is not a read: someone shown a post in the feed that was then made private,
+    # or who was blocked the moment after, must still be able to report what they saw — and for
+    # them the id RESOLVES, so the subject is kept. That is the no-block-gate rule above, applied
+    # to content instead of people.
+    #
+    # AND IT STILL DOES NOT FILTER `deleted_at`, against the project-wide "all queries must filter"
+    # rule. A SOFT-deleted recipe still belongs to its author, so it resolves and the subject is
+    # KEPT — which is the point: the case has to survive its subject. The asymmetry with posts is
+    # the thing to know, and it is now the whole difference between the two types: a HARD-deleted
+    # post cannot resolve, so its subject is dropped here (and the FK's `SET NULL` would have
+    # dropped it later anyway), while a soft-deleted recipe keeps its link forever. Both directions
+    # are pinned by tests, and TECHDEBT records it so nobody "tidies up" the missing filter.
+    post_id = body.post_id
+    recipe_id = body.recipe_id
+    if post_id is not None:
+        if (
+            db.query(Post.id).filter(Post.id == post_id, Post.user_id == body.user_id).first()
+            is None
+        ):
+            post_id = None
+    if recipe_id is not None:
+        if (
+            db.query(Recipe.id)
+            .filter(Recipe.id == recipe_id, Recipe.user_id == body.user_id)
+            .first()
+            is None
+        ):
+            recipe_id = None
 
     note = (body.note or "").strip() or None
     # ONE OPEN CASE PER (reporter, target, SUBJECT) — the key gained the subject with #87 part two.
@@ -434,16 +506,19 @@ def report_user(
     # still appends, so the flooding this dedupe exists to stop is still stopped. Reporting the PERSON
     # (no subject) is its own case, which is why both columns are compared to the incoming value
     # rather than ignored when NULL — `is_(None)` is what makes the person-only case distinct.
+    #
+    # NOTE `post_id`/`recipe_id` RATHER THAN `body.post_id`/`body.recipe_id`, here and in the insert.
+    # That is what makes a dropped subject collapse onto the person-level case instead of keying a
+    # fresh one — i.e. it is the whole flooding bound. Reading `body.*` here would let a reporter
+    # mint an unbounded number of open rows against one person out of invented ids.
     open_report = (
         db.query(Report)
         .filter(
             Report.reporter_id == current_user.id,
             Report.reported_user_id == body.user_id,
             Report.state == "open",
-            Report.post_id.is_(None) if body.post_id is None else Report.post_id == body.post_id,
-            Report.recipe_id.is_(None)
-            if body.recipe_id is None
-            else Report.recipe_id == body.recipe_id,
+            Report.post_id.is_(None) if post_id is None else Report.post_id == post_id,
+            Report.recipe_id.is_(None) if recipe_id is None else Report.recipe_id == recipe_id,
         )
         .first()
     )
@@ -455,8 +530,8 @@ def report_user(
                 reported_user_id=body.user_id,
                 reason=body.reason,
                 note=note,
-                post_id=body.post_id,
-                recipe_id=body.recipe_id,
+                post_id=post_id,
+                recipe_id=recipe_id,
             )
         )
     elif note is not None:

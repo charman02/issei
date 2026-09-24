@@ -171,11 +171,19 @@ def unsubscribe_address() -> str:
     who used the mechanism this whole `send_raw_email` path exists to support.
 
     So it points at `feedback_recipient()` instead: the address #101 already sends real user feedback
-    to, i.e. one the owner has a reason to read. **That is a better VARIABLE, not yet a fixed
-    mailbox** -- `FEEDBACK_NOTIFY_EMAIL` is absent from the prod task definition, so today it falls
-    back to `sender_email` and lands on `noreply@` all the same. Setting it to a read inbox is a
-    deploy action, and `scripts/send_announcement.py` REFUSES TO SEND while this still looks like a
-    no-reply address, rather than letting a broadcast proceed on a promise it cannot keep.
+    to, i.e. one the owner has a reason to read. `FEEDBACK_NOTIFY_EMAIL` is now SET in the prod task
+    definition to `feedback@issei.app` (#87 part two) -- a ROLE address forwarding to a person rather
+    than the person's own, because this repo is public and because the value appears in the headers of
+    every announcement anyway, so it wants to be an address that can be retired.
+
+    TWO THINGS STILL HAVE TO BE TRUE OUTSIDE THIS REPO, and neither is visible from here: that address
+    must FORWARD to an inbox somebody reads, and it must be a VERIFIED SES identity in us-west-2 (the
+    account is still sandboxed, which requires the recipient to be verified too). If it forwards
+    nowhere the opt-out fails silently; if it is unverified, the #101 feedback mail degrades to a
+    logged no-op while notes keep saving. `scripts/send_announcement.py` still REFUSES TO SEND when
+    this address looks unmonitored, which is now a check on the *shape* of the name rather than a
+    standing block -- `feedback@` passes it, so the block that was stopping a broadcast is lifted and
+    the verification is what stands between here and a real send.
     """
     return feedback_recipient()
 

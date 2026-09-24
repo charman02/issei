@@ -3,8 +3,8 @@
 Written to be reread before an interview. Verified against the code on 2026-09-23, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 67 endpoints · 18 tables · 32 migrations · 1,019 backend tests · 1,057 frontend
-tests · 11,143 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
+**Scale:** 67 endpoints · 18 tables · 32 migrations · 1,027 backend tests · 1,065 frontend
+tests · 11,445 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
@@ -66,7 +66,7 @@ users
   ├── recipe_requests            (post_id, requester_id — an ask on a post; UNIQUE(post,requester), state pending|fulfilled)
   ├── notifications              (user_id, actor_id + nullable post_id/recipe_id, both SET NULL so a line outlives its subject)
   ├── blocks                     (blocker_id, blocked_id — UNIQUE(pair); the ROW is directional, the EFFECT symmetric)
-  ├── reports                     (reporter_id, reported_user_id, reason, note, state — #87; both FKs CASCADE, no unique constraint)
+  ├── reports                     (reporter_id, reported_user_id, reason, note, state, post_id?, recipe_id? — #87; the USER FKs CASCADE, the CONTENT FKs SET NULL so a report outlives the post it named, no unique constraint)
   ├── push_subscriptions          (user_id, endpoint UNIQUE, p256dh, auth — #89; one BROWSER on one device, so a phone and a laptop are two rows)
   └── prompt_sends                (user_id, local_date — #89; UNIQUE(user, LOCAL date): the at-most-once record for the daily nudge)
 feedback                          (standalone)
