@@ -163,9 +163,41 @@ class ParsedRecipe(BaseModel):
     name: Text120 = ""
     source_name: Text80 = ""
     description: Text500 = ""
+    # THE STORY, SEPARATELY FROM THE DESCRIPTION (#65), and the split is the point. A pasted
+    # recipe usually opens with prose about the dish — who made it, when it gets made, what it
+    # means — and before this the parser had nowhere to put it: the model either dropped it or
+    # crammed it into `description`, which is capped at 500 and is meant to be one line under a
+    # dish name. `story` is the field POSITIONING calls the one that carries the person, and it
+    # takes 4000 characters precisely because it is allowed to be long. Losing it on the app's
+    # PRIMARY capture door was the most on-brand defect available.
+    story: Text4000 = ""
     # A STRING here, not an int: the model reports what the recipe said ("4-6", "a family").
     servings: Text60 = ""
+    # ALSO a string, for a different reason: the form's field is an int, but the model is asked
+    # for digits and may still answer "about 40" or "". Coercing here would mean deciding what to
+    # do with a bad value inside a parser whose entire contract is "show this for correction
+    # first" — so it travels as text and the form's own int handling takes it from there.
+    ready_in_minutes: Text60 = ""
     cuisine: Text60 = ""
+    # Constrained by PROMPT rather than by a Literal, deliberately: a server-side Literal would be
+    # another copy of a list that has already changed once, with a 500 on the parse route as the
+    # failure mode when they drift. The canonical list is `frontend/src/lib/diets.js` (shared by the
+    # form's dropdown and Browse's filter); the two prompt copies in `services/recipe_ai.py` are
+    # PINNED to it by `tests/test_recipe_ai.py`. So: one canonical place, two pinned copies.
+    #
+    # **THE DROP HAPPENS IN THE CLIENT, NOT HERE, AND THAT IS THE WHOLE POINT.** An earlier version
+    # of this comment said an unmatched value "is the same outcome as empty and costs nobody
+    # anything". A ship gate disproved it: the form's field is a `<select value={diet}>` over
+    # `DIETS`, so a value with no matching option leaves the select showing NOTHING SELECTED while
+    # component state keeps the string — and submit sends it. The recipe gets filed with a diet the
+    # cook never saw and never chose. `PasteRecipe`'s `fromAI` now matches case-insensitively
+    # against `DIETS` and drops anything else.
+    #
+    # Which is also what makes prompt-only constraint defensible: the argument rests on the person
+    # SEEING the value and correcting it, and that was the one path where they could not. Do not
+    # "simplify" by removing the client match on the strength of the old reasoning above — it was
+    # the first place anyone adding a parsed field would look, and it argued the wrong way.
+    diet: Text60 = ""
     ingredients: list[ParsedIngredient] = Field(default=[], max_length=MAX_INGREDIENTS)
     steps: list[ParsedStep] = Field(default=[], max_length=MAX_STEPS)
     # False when the model was unavailable, so the client knows to fall back to its own

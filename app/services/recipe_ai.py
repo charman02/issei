@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -76,6 +77,24 @@ Other rules:
     rush") goes in that step's note, not in its text.
   · servings only if a number was actually said. cuisine only if named or
     unmistakable from the dish name.
+  · THE STORY IS NOT THE DESCRIPTION, and this is the distinction most worth getting
+    right. A pasted recipe often opens with a paragraph or two ABOUT the dish before
+    any ingredient appears — who made it, when it gets made, what it means, a warning
+    about the one step everybody gets wrong. All of that goes in story, at whatever
+    length it was written. description is ONE SHORT LINE, the kind of thing that fits
+    under a dish name on a card; if the input has no such line, leave it empty rather
+    than trimming the story down to fit. Never put the same sentence in both.
+    story is the cook's own prose: keep their words and their order. Do not summarise
+    it, do not tidy it, and do not write one if the input has none.
+  · ready_in_minutes: total time as DIGITS ONLY, in minutes. "Ready in 30 minutes"
+    is 30; "1 hr 15 min" is 75; "about an hour" is 60. Prefer a stated TOTAL over a
+    prep or cook time on its own, and if only one is given, use it. Empty if no time
+    was stated — never estimate one from the steps.
+  · diet: ONLY one of Vegetarian, Vegan, Gluten-Free, Dairy-Free, Halal, Kosher,
+    spelled exactly like that, and ONLY if the input SAYS SO. Empty otherwise. Do NOT
+    infer it from the ingredient list — a recipe with no meat in it is not necessarily
+    vegetarian, and being wrong here is worse than being silent: somebody may be
+    avoiding a food for a reason that matters.
   · If the speaker says who the recipe came from, put that person in source_name,
     as the RECIPE'S OWNER would be named on a card. Strip the speaker's possessive:
     "my mom's sinigang" → "Mom", not "mom" and never "my mom". A relationship word
@@ -95,12 +114,19 @@ RESPONSE_SCHEMA = {
         "schema": {
             "type": "object",
             "additionalProperties": False,
+            # EVERY property must be listed here: OpenAI-style `strict` schemas require
+            # `required` to name all of them, and a field left out is silently dropped rather
+            # than defaulted. Optionality is expressed by "or empty" in the description, which
+            # is why every one of these is a string even where the app wants an int.
             "required": [
                 "name",
                 "source_name",
                 "description",
+                "story",
                 "servings",
+                "ready_in_minutes",
                 "cuisine",
+                "diet",
                 "ingredients",
                 "steps",
             ],
@@ -112,13 +138,41 @@ RESPONSE_SCHEMA = {
                 },
                 "description": {
                     "type": "string",
-                    "description": "One short line about the dish, or empty.",
+                    "description": (
+                        "ONE SHORT LINE about the dish, of the kind that fits under a name "
+                        "on a card, or empty. Not the story — see `story`. Never the same "
+                        "sentence as the story."
+                    ),
+                },
+                "story": {
+                    "type": "string",
+                    "description": (
+                        "The cook's own prose ABOUT the dish, at whatever length they wrote "
+                        "it: who it came from, when it gets made, what it means, what people "
+                        "get wrong. Their words and their order, not a summary. Empty if the "
+                        "input has none."
+                    ),
                 },
                 "servings": {
                     "type": "string",
                     "description": "Digits only, or empty if not stated.",
                 },
+                "ready_in_minutes": {
+                    "type": "string",
+                    "description": (
+                        "Total time in MINUTES, digits only ('75', not '1 hr 15 min'). "
+                        "Empty if no time was stated. Never estimated from the steps."
+                    ),
+                },
                 "cuisine": {"type": "string", "description": "Or empty."},
+                "diet": {
+                    "type": "string",
+                    "description": (
+                        "Exactly one of: Vegetarian, Vegan, Gluten-Free, Dairy-Free, Halal, "
+                        "Kosher — and ONLY if the input says so. Empty otherwise. Never "
+                        "inferred from the ingredients."
+                    ),
+                },
                 "ingredients": {
                     "type": "array",
                     "items": {
@@ -246,6 +300,17 @@ def _clean(data: dict[str, Any], *, source_text: str) -> dict[str, Any]:
 
     Enforcement, not decoration. A prompt is a request; this is the part that makes the
     guarantee true even when the model ignores it.
+
+    **THE RETURN IS AN EXPLICIT WHITELIST, AND THAT IS A TRAP WORTH NAMING.** It is a dict literal,
+    not a merge over `data`, which is right — a model must not be able to inject keys — but it means
+    ADDING A FIELD TO `ParsedRecipe` AND TO THE PROMPT IS NOT ENOUGH. #65 did exactly that and
+    shipped a feature that was completely inert on the real path: the model answered `story`,
+    `ready_in_minutes` and `diet` correctly, this function dropped all three, and Pydantic's `""`
+    defaults took their place. THE ENTIRE SUITE stayed green because every test in
+    `tests/test_parse_endpoint.py` stubs `extract_recipe`, which sits ABOVE this function — so the
+    test whose docstring claimed "end to end, five hands" actually started at hand three. The chain
+    has SIX links, and this is the one with no HTTP surface of its own.
+    `test_clean_returns_every_field_ParsedRecipe_declares` now pins it.
     """
     # Imported here to keep the module importable without the heavier deps at collect
     # time, and because this is the only place it's needed.
@@ -274,8 +339,20 @@ def _clean(data: dict[str, Any], *, source_text: str) -> dict[str, Any]:
         if head and head not in lowered:
             logger.info("recipe_ai: dropped ungrounded ingredient %r", name)
             continue
+        # CLAMPED like every other string — see the note at the return. `ParsedIngredient.name`
+        # is Text120 and `amount` is Text60 (not 120, which is what I wrote first — `amount` is
+        # deliberately the tighter of the two, because it holds "3 soup spoons", not a sentence).
+        # A model that runs a whole paragraph into one ingredient would otherwise 500 the route.
+        #
+        # `classify_amount` is given the CLAMPED string, so the typed fields it returns can never
+        # describe a value longer than the one stored beside them.
+        clipped_amount = amount[:60]
         ingredients.append(
-            {"name": name, "amount": amount, **classify_amount(amount)}
+            {
+                "name": name[:120],
+                "amount": clipped_amount,
+                **classify_amount(clipped_amount),
+            }
         )
 
     steps = []
@@ -285,17 +362,77 @@ def _clean(data: dict[str, Any], *, source_text: str) -> dict[str, Any]:
         content = (raw.get("content") or "").strip()
         if not content:
             continue
-        steps.append({"content": content, "note": (raw.get("note") or "").strip()})
+        # Text2000 apiece. THE LIKELIEST OF THE CHILD-ROW OVERFLOWS, which is why it is worth
+        # naming: an 8000-character paste whose method is one run-on paragraph produces exactly
+        # one step over the ceiling, and before this that was an uncaught 500 — byte for byte the
+        # defect fixed for `story` one field over. Found by a ship gate reading the fix.
+        steps.append(
+            {"content": content[:2000], "note": (raw.get("note") or "").strip()[:2000]}
+        )
 
     servings = s("servings")
     digits = "".join(ch for ch in servings if ch.isdigit())
 
+    # READY-IN: DIGITS ONLY, WHOLE STRING, OR NOTHING. Three candidate rules were wrong and the
+    # third is why this one is strict:
+    #
+    #   · pass the prose through (the first version). `RecipeForm`'s Ready-in field is
+    #     `<input type="number">`, and the HTML value-sanitisation algorithm blanks a number input
+    #     whose value is not a valid float — so "about 40" renders as an EMPTY BOX while component
+    #     state keeps the prose. Invisible and uncorrectable, i.e. the exact opposite of this
+    #     parser's "show it for correction first" contract. Found by a ship gate.
+    #   · `"".join(isdigit)`, the trick used for servings just above. That turns "1 hr 15 min" into
+    #     115. (It is also why servings turns "4-6" into "46" today — pre-existing, not copied.)
+    #   · a LEADING integer, which was the ship gate's suggestion and which I measured before
+    #     taking. "1 hr 15 min" becomes **1**, and a reader can dismiss that as "so handle the
+    #     multi-group case" — so here is the example that actually ends the argument: **"1 hour"
+    #     becomes 1.** One digit group, unambiguous to a human, and reducing it files a 60-minute
+    #     recipe as one minute. The prose cases that are SAFE to reduce ("40 minutes", "90 min")
+    #     cannot be told apart from the catastrophic ones without implementing unit arithmetic — a
+    #     mini time parser inside a function whose contract is "don't invent numbers". And the cost
+    #     is asymmetric: a blank box is visibly blank and one tap from correct, while `1` looks like
+    #     data. Losing "40 minutes" is a real but cheap loss.
+    #
+    # So: comply or be dropped. The model is asked for digits twice (prompt and property
+    # description) and answers at temperature 0, so non-compliance is the rare case, and when it
+    # happens an empty field is honest — the person fills in a number they can actually see.
+    # Still a STRING at the API boundary (see `ParsedRecipe`): reduced, never coerced, because a
+    # parser must not 422 a whole recipe over one field.
+    ready = s("ready_in_minutes")
+    # `isascii()` AS WELL AS `isdigit()`, because `str.isdigit()` is True for Arabic-Indic "٤٢",
+    # Devanagari "२०" and even superscript "²⁵" — so a recipe written in a script with its own
+    # digits could pass this gate, and then `<input type="number">` blanks the value (not a valid
+    # float) and `parseInt` gives NaN. No wrong number is stored, but the value is invisible and
+    # uncorrectable, which is the exact defect the digits-only rule exists to prevent. Found by a
+    # ship gate. (Translation is #64 and out of scope; this just fails closed until then.)
+    ready_minutes = ready if (ready.isascii() and ready.isdigit()) else ""
+
+    # CLAMPED TO THE SCHEMA'S OWN CEILINGS, because `ParsedRecipe(**data)` is constructed OUTSIDE
+    # the `except RecipeAIUnavailable` in the router, so a Pydantic `ValidationError` there is an
+    # uncaught 500 on a route whose docstring promises it "NEVER 500s on the model's account".
+    # `story` is where that became likely rather than theoretical: the prompt says to keep the
+    # cook's prose "at whatever length it was written", the input cap is 8000 characters, and a
+    # pasted food-blog recipe — the canonical paste — routinely opens with more than 4000. Found by
+    # a ship gate. Truncating a 4100-character story is strictly better than discarding the parse
+    # and silently falling back to the line-based parser, which is what the 500 caused.
+    def clamped(key: str, limit: int) -> str:
+        return s(key)[:limit]
+
     return {
-        "name": s("name"),
-        "source_name": s("source_name"),
-        "description": s("description"),
-        "servings": digits,
-        "cuisine": s("cuisine"),
+        "name": clamped("name", 120),
+        "source_name": clamped("source_name", 80),
+        "description": clamped("description", 500),
+        "story": clamped("story", 4000),
+        # Clamped too, so the sentence "every string is clamped to its ceiling" is actually TRUE.
+        # These two skipped the helper in the first version of this fix — and `ready_in_minutes` was
+        # brand-new code in the same commit that introduced the helper, which is the signature of a
+        # fix written at the end of a long session. Both need a pathological input (61+ digits) to
+        # matter, but the DOC claimed total coverage, and that sentence is what stops the next
+        # person checking.
+        "servings": digits[:60],
+        "ready_in_minutes": ready_minutes[:60],
+        "cuisine": clamped("cuisine", 60),
+        "diet": clamped("diet", 60),
         "ingredients": ingredients,
         "steps": steps,
     }

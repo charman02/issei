@@ -1,5 +1,12 @@
 // Turn a block of recipe text into a filled-in form.
 //
+// NOTE (#65): the AI path (`POST /recipes/parse`) also fills THREE fields this parser does not —
+// `story`, `ready_in_minutes` and `diet`. That asymmetry is deliberate rather than a gap to close
+// here: this parser is header/line-based, and there is no header to key any of the three off. The
+// merge is safe either way — `PlantRecipe`'s seed uses `|| undefined` and skips undefined keys —
+// so a fallback parse leaves those three untouched rather than blanking them, which is also what
+// keeps a #81 mid-post draft's description from being clobbered by a parse that has none.
+//
 // WHY THIS EXISTS: the add form asks for 19 fields across ~3.9 phone screens, and
 // only the dish name is actually required (in the form AND in RecipeCreate). Testers
 // called capture "too effortful" and one abandoned mid-input. Meanwhile most recipes

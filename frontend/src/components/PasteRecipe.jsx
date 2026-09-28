@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import BackButton from './BackButton'
 import Icon from './Icon'
 import { parseRecipeText } from '../lib/parseRecipeText'
+import { DIETS } from '../lib/diets'
 import {
   appendDictated,
   isDictationSupported,
@@ -47,8 +48,39 @@ function fromAI(data) {
     steps: (data.steps || []).map((s) => ({ content: s.content, note: s.note || '' })),
     sourceName: data.source_name || '',
     description: data.description || '',
+    // #65. THREE FIELDS THE FORM HAS HAD ALL ALONG and the parser was not filling, so a pasted
+    // recipe arrived with them blank and the person retyped what they had just pasted. `story` is
+    // the one that mattered most: a pasted recipe usually opens with prose about the dish, and it
+    // was either dropped or squeezed into `description` — a 500-char one-liner — while `story` sat
+    // empty at 4000. Every one of these already has form state seeded from `initialValues`; the
+    // only missing links were the schema, this mapping, and `PlantRecipe`'s seed.
+    story: data.story || '',
     servings: data.servings || '',
+    // Already reduced to DIGITS-ONLY-OR-EMPTY by the server (`_clean`), so nothing to validate
+    // here. It has to be: the form's field is `<input type="number">`, and the HTML
+    // value-sanitisation algorithm blanks a number input whose value isn't a valid float — so
+    // prose like "about 40" would render as an empty box while state kept the string, invisible
+    // and uncorrectable. An earlier version of this comment claimed the form was a text input
+    // that parsed the value itself, which is why the prose was let through. It isn't.
+    readyInMinutes: data.ready_in_minutes || '',
     cuisine: data.cuisine || '',
+    // MATCHED AGAINST `DIETS` HERE, case-insensitively, and dropped if it doesn't match.
+    //
+    // The first version passed it through unvalidated on the argument that an unmatched value is
+    // "the same outcome as empty". A ship gate showed it isn't: the form's field is a
+    // `<select value={diet}>` over `DIETS`, so a value with no matching option leaves the select
+    // showing NOTHING SELECTED while component state keeps the string — and `handleSubmit` then
+    // sends it. The recipe gets filed with a diet the cook never saw and never chose.
+    //
+    // That also undoes the reason the server constrains diet by PROMPT rather than by a `Literal`:
+    // the whole justification is that the person sees the value and corrects it, and this was the
+    // one path where they couldn't. Validating in the CLIENT keeps the vocabulary in exactly one
+    // place (`lib/diets.js`, shared with Browse's filter) while closing that hole.
+    //
+    // Case-insensitive because "gluten-free" and "Gluten-Free" are the same answer and only the
+    // second one matches an option; returning the canonical spelling is what makes the select show
+    // it. Anything genuinely outside the list becomes '' — honestly blank rather than invisibly set.
+    diet: DIETS.find((d) => d.toLowerCase() === (data.diet || '').trim().toLowerCase()) || '',
     usedHeaders: true,
     guessedLines: 0,
     viaAI: true,

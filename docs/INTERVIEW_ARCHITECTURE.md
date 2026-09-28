@@ -3,8 +3,8 @@
 Written to be reread before an interview. Verified against the code on 2026-09-23, not
 from memory. Every number here was counted, not estimated.
 
-**Scale:** 70 endpoints · 19 tables · 33 migrations · 1,074 backend tests · 1,101 frontend
-tests · 12,074 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
+**Scale:** 70 endpoints · 19 tables · 33 migrations · 1,087 backend tests · 1,106 frontend
+tests · 12,243 lines of Python under `app/` (raw `wc -l`, excluding tests, migrations and
 `__pycache__` — the METHOD is stated because the previous figure here matched none of raw,
 non-blank or non-comment, so nobody could re-derive it), deployed
 (AWS ECS Fargate + Vercel + Neon Postgres).
@@ -316,6 +316,23 @@ looking like an improvement.*
      mentioned — and a recipe with ingredients the cook never said isn't their recipe.
    - `servings` reduced to digits, because the column is `Optional[int]` and guessing
      which number "4–6 people" means isn't the app's business.
+   - `ready_in_minutes` **digits-only-or-empty** (#65). Two looser rules were measured and
+     rejected: a leading integer turns "1 hr 15 min" into **1** — a 75-minute recipe filed as
+     one minute, which a person may not challenge — and `servings`' digits-anywhere trick turns
+     it into 115. Both invent a number, and the prompt's own rule is never to estimate one. It
+     is reduced at all because the form's field is `<input type="number">`, and the HTML
+     value-sanitisation algorithm blanks a number input whose value isn't a valid float: prose
+     would render as an empty box while state kept it, invisible and uncorrectable.
+   - **Every string clamped to its schema ceiling** (#65). `ParsedRecipe(**data)` is built
+     OUTSIDE the router's `except`, so a Pydantic length error there was an uncaught 500 on a
+     route whose docstring promises it never 500s on the model's account — and `story` at 4000
+     made that likely rather than theoretical, since a pasted food-blog recipe routinely opens
+     with more. The client catches everything and silently falls back to the worse parser, so
+     the symptom was a bad parse nobody could explain and a paid-for model call discarded.
+   - **What `_clean` is NOT:** a merge over the model's answer. The return is an explicit
+     whitelist dict literal, so a model cannot inject keys — and that is also the trap #65 fell
+     into, shipping three fields the prompt asked for and this function dropped. Two tests now
+     pin the schema and `_clean` to `ParsedRecipe` from both sides.
 
 **The line:** *a prompt is a request; only code is a guarantee.*
 

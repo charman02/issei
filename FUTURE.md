@@ -11,8 +11,8 @@ list of things the app does *not* do.
 ## What the current build actually is
 
 Deployed and in beta use: FastAPI + SQLAlchemy on AWS ECS Fargate (`api.issei.app`), a React
-+ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **70 routes, 19 models, 1,074
-backend tests, 1,101 frontend tests** — re-count rather than quote.
++ Vite + Tailwind SPA on Vercel (`issei.app`), Postgres on Neon. **70 routes, 19 models, 1,087
+backend tests, 1,106 frontend tests** — re-count rather than quote.
 
 **The signature act.** A recipe is attributed to a **person** (the dish is the title, the
 person is the byline "from Lola"), imprecise measurements are preserved verbatim rather than
@@ -266,9 +266,16 @@ layer, not inside a list feature. Start with an alias table; fuzzy or LLM normal
 
 ## Smaller, Known, Worth Doing
 
-- **Parser extracts every field.** The LLM parse fills name, description, cuisine, servings,
-  source, ingredients and steps, but not diet or ready-in, so those get typed by hand after a
-  parse that felt complete.
+- **Parser extracts every field — SHIPPED (#65, 2026-09-25), with one part deliberately left.**
+  The LLM parse now fills TEN fields: name, source_name, description, **story**, servings,
+  **ready_in_minutes**, cuisine, **diet**, ingredients and steps. This entry named diet and
+  ready-in and missed the one that mattered most — `story`. A written recipe usually OPENS with
+  prose about the dish, and it was either dropped or squeezed into `description` (a 500-character
+  one-liner) while `story`, the field POSITIONING calls the one that carries the person, sat empty
+  at 4000. *Still not done, on purpose:* the LOCAL fallback parser (`parseRecipeText.js`, used when
+  the model is unavailable) fills none of the three, because it is header/line-based and there is no
+  header to key them off. That asymmetry is noted in its own header; the merge is safe because the
+  seed skips undefined keys.
 - **Browse filters beyond the three that ship.** Cuisine, Diet and Ready-In dropdowns are
   live (with fuzzy cuisine matching for typo'd user values); the backlog item asking for
   "dietary filters" was already satisfied. What's genuinely parked is anything *more* —

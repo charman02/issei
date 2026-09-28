@@ -17,7 +17,13 @@ import pytest
 
 from app.services import recipe_ai
 from app.services.quantity import classify_amount
-from app.services.recipe_ai import RecipeAIUnavailable, _clean, extract_recipe
+from app.services.recipe_ai import (
+    RESPONSE_SCHEMA,
+    SYSTEM_PROMPT,
+    RecipeAIUnavailable,
+    _clean,
+    extract_recipe,
+)
 
 
 # ── the classifier the model's output is graded by ──────────────────────────────
@@ -213,11 +219,167 @@ class TestClean:
             "name": "",
             "source_name": "",
             "description": "",
+            "story": "",
             "servings": "",
+            "ready_in_minutes": "",
             "cuisine": "",
+            "diet": "",
             "ingredients": [],
             "steps": [],
         }
+
+    def test_clean_returns_every_field_ParsedRecipe_declares(self):
+        """THE TEST THIS FILE WAS MISSING, and its absence let #65 ship completely inert.
+
+        `_clean`'s return is an explicit WHITELIST dict literal — correct, because a model must not
+        be able to inject keys — which means adding a field to the prompt AND to `ParsedRecipe` is
+        not enough. #65 did exactly that: the model answered `story`, `ready_in_minutes` and `diet`,
+        this function dropped all three, and Pydantic's "" defaults took their place. The whole
+        feature was a no-op on the only path that matters, with the ENTIRE suite green. (Deliberately not
+        a number here: a count in a comment is a thing that goes stale, and the point is "all of
+        them", not "how many".)
+
+        Why they were green: every test in `tests/test_parse_endpoint.py` stubs `extract_recipe`,
+        which sits ABOVE `_clean` — so the one whose docstring said "end to end, five hands" began
+        at hand three. The chain has SIX links and this is the link with no HTTP surface of its own.
+
+        The sibling assertion in `test_parse_endpoint.py` pins the prompt schema against
+        `ParsedRecipe`; this pins `_clean` against it. Together they cover the whole chain, and
+        `test_survives_a_response_missing_every_field` above is now the tripwire it was meant to be
+        — it previously asserted the OLD seven keys exactly, so it certified the bug as correct.
+        """
+        from app.schemas.recipe import ParsedRecipe
+
+        returned = set(ParsedRecipe.model_fields)
+        # `ai` is the transport flag the router sets, not something extracted.
+        returned.discard("ai")
+        assert set(_clean({}, source_text="")) == returned
+
+    def test_a_ready_in_time_is_digits_or_nothing(self):
+        """COMPLY OR BE DROPPED, and the rejected alternatives are the reason.
+
+        A LEADING-integer rule (the ship gate's suggestion) turns "1 hr 15 min" into **1** — a
+        75-minute recipe filed as one minute, which a person may not challenge. `"".join(isdigit)`,
+        the trick `servings` uses above, turns it into 115. Both invent a number, and this file's own
+        prompt says never to estimate one. An empty field is honest: the person types a number they
+        can see, in a `<input type="number">` that would have shown prose as a blank box anyway.
+        """
+        assert _clean({"ready_in_minutes": "75"}, source_text="")["ready_in_minutes"] == "75"
+        assert _clean({"ready_in_minutes": "  90 "}, source_text="")["ready_in_minutes"] == "90"
+        for prose in ("1 hr 15 min", "about 40", "40 minutes", "an hour", ""):
+            assert _clean({"ready_in_minutes": prose}, source_text="")["ready_in_minutes"] == ""
+
+    def test_a_long_story_is_CLAMPED_rather_than_500ing_the_route(self):
+        """`ParsedRecipe(**data)` is constructed OUTSIDE the router's `except RecipeAIUnavailable`,
+        so a Pydantic length error there is an uncaught 500 on a route whose docstring promises it
+        "NEVER 500s on the model's account". `story` made that likely rather than theoretical: the
+        prompt says to keep the cook's prose at whatever length they wrote it, the input cap is 8000
+        characters, and a pasted food-blog recipe routinely opens with more than 4000. The client
+        catches everything and falls through to the local parser, so the person silently got the
+        worse parse and the model call was paid for and discarded. Found by a ship gate.
+        """
+        from app.schemas.recipe import ParsedRecipe
+
+        out = _clean({"story": "a" * 5000, "description": "b" * 900}, source_text="")
+        assert len(out["story"]) == 4000
+        assert len(out["description"]) == 500
+        # The thing that actually broke: constructing the response model must not raise.
+        ParsedRecipe(**out, ai=True)
+
+    def test_EVERY_string_is_clamped_including_the_child_rows(self):
+        """The first version of the clamp covered six top-level fields and missed four, which a ship
+        gate found by measuring rather than reading: `servings` and `ready_in_minutes` skipped the
+        helper (and `ready_in_minutes` was brand-new code in the same commit that introduced it — the
+        signature of a fix written late), and the ingredient/step strings were never clamped at all.
+
+        THE STEP ONE IS THE LIKELY OVERFLOW, not a theoretical one: an 8000-character paste whose
+        method is a single run-on paragraph produces exactly one step over the 2000 ceiling, and that
+        was an uncaught 500 on a route that promises never to 500 on the model's account — byte for
+        byte the defect fixed for `story` one field over.
+
+        Asserted against the models' OWN declared ceilings rather than literals, so this cannot drift
+        from them: that is how the ingredient clamp was caught using 120 for `amount`, which is
+        Text60.
+        """
+        from app.schemas.recipe import ParsedIngredient, ParsedRecipe, ParsedStep
+
+        def ceiling(model, field):
+            for meta in model.model_fields[field].metadata:
+                if getattr(meta, "max_length", None):
+                    return meta.max_length
+            raise AssertionError(f"{model.__name__}.{field} declares no max_length")
+
+        out = _clean(
+            {
+                "name": "n" * 300,
+                "source_name": "s" * 300,
+                "description": "d" * 900,
+                "story": "y" * 5000,
+                "servings": "4" * 70,
+                "ready_in_minutes": "9" * 61,
+                "cuisine": "c" * 300,
+                "diet": "x" * 300,
+                "ingredients": [{"name": "pork " * 40, "amount": "a lot " * 40}],
+                "steps": [{"content": "x" * 2639, "note": "y" * 2639}],
+            },
+            source_text="pork " * 40,
+        )
+        for field in (
+            "name",
+            "source_name",
+            "description",
+            "story",
+            "servings",
+            "ready_in_minutes",
+            "cuisine",
+            "diet",
+        ):
+            assert len(out[field]) <= ceiling(ParsedRecipe, field), field
+        for field in ("name", "amount"):
+            assert len(out["ingredients"][0][field]) <= ceiling(ParsedIngredient, field), field
+        for field in ("content", "note"):
+            assert len(out["steps"][0][field]) <= ceiling(ParsedStep, field), field
+        # The assertion that matters: the construction that used to 500.
+        ParsedRecipe(**out, ai=True)
+
+    def test_a_ready_in_time_in_non_ASCII_digits_is_dropped(self):
+        """`str.isdigit()` is True for Arabic-Indic "٤٢", Devanagari "२०" and superscript "²⁵",
+        so the digits-only gate let them through — and then `<input type="number">` blanks the value
+        (not a valid float) and `parseInt` gives NaN. No wrong number is stored, but the value is
+        invisible and uncorrectable, which is the exact defect the rule exists to prevent. Found by a
+        ship gate. Translation is #64; this just fails closed until then.
+        """
+        for foreign in ("٤٢", "२०", "²⁵"):
+            assert _clean({"ready_in_minutes": foreign}, source_text="")["ready_in_minutes"] == ""
+        assert _clean({"ready_in_minutes": "42"}, source_text="")["ready_in_minutes"] == "42"
+
+    def test_the_diet_vocabulary_matches_the_ONE_list_it_lives_in(self):
+        """The vocabulary is in `frontend/src/lib/diets.js` and the prompt names it twice. Three
+        copies with nothing pinning them is the `folk_units` ↔ `quantity.js` problem again — except
+        that pair has a CLAUDE.md rule behind it, and a real pin is cheap here.
+        """
+        import re
+        from pathlib import Path
+
+        js = (
+            Path(__file__).resolve().parent.parent / "frontend" / "src" / "lib" / "diets.js"
+        ).read_text(encoding="utf-8")
+        # TRAILING COMMA OPTIONAL. The first version required one, and with a `>= 5` floor against
+        # six entries that meant exactly ONE name could silently escape the pin: drop the comma on
+        # the last entry (a formatter, a hand edit) and the test parses five, passes, and leaves that
+        # name unpinned — the precise drift this test exists to catch. Found by a ship gate.
+        names = re.findall(r"^\s*'([^']+)',?\s*$", js, re.M)
+        # An EXACT count, not a floor, for the same reason: a floor cannot notice a missing entry.
+        assert len(names) == 6, f"expected 6 diet names in diets.js, parsed {names}"
+        # BOTH prompt copies, not just SYSTEM_PROMPT. The second is RESPONSE_SCHEMA's `diet`
+        # property description, and the first version of this test left it unpinned — so the exact
+        # drift it exists to prevent could still happen in one of the two places. Caught by a docs
+        # gate, which also corrected the claim that the vocabulary lived in ONE place: it lives in
+        # three, and two of them are now held to the canonical one.
+        described = RESPONSE_SCHEMA["json_schema"]["schema"]["properties"]["diet"]["description"]
+        for name in names:
+            assert name in SYSTEM_PROMPT, f"{name!r} is in diets.js but not in SYSTEM_PROMPT"
+            assert name in described, f"{name!r} is in diets.js but not in the diet description"
 
 
 # ── the request itself ──────────────────────────────────────────────────────────

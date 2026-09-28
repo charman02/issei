@@ -387,6 +387,11 @@ describe('PlantRecipe — the model reads it first', () => {
     name: 'Sinigang',
     source_name: 'Lola',
     description: 'Sour pork soup.',
+    // #65 — the three fields the parser used to leave blank while the form had slots for them.
+    story:
+      'My grandmother made this every Sunday for about forty years. She never wrote it down.',
+    ready_in_minutes: '75',
+    diet: 'Gluten-Free',
     servings: '4',
     cuisine: 'Filipino',
     ingredients: [
@@ -446,9 +451,85 @@ describe('PlantRecipe — the model reads it first', () => {
       cuisine: 'Filipino',
       description: 'Sour pork soup.',
       sourceName: 'Lola',
+      // #65. These three crossed SIX hands to get here — prompt, JSON schema, `_clean()`,
+      // `ParsedRecipe`, PasteRecipe's snake→camel mapping, and this seed — and any one of them
+      // dropping a field is a silent blank rather than an error. `_clean` is the one that was
+      // omitted from the original count and is exactly the one that shipped broken: its return is
+      // a whitelist dict literal, so it dropped all three while every backend endpoint test (which
+      // stubs the layer above it) stayed green. NOTE `prep_time_minutes` is snake_case while its
+      // neighbours are camel: that is `RecipeForm`'s existing `initialValues` contract, and using
+      // the wrong case here is a no-op the form cannot report.
+      story:
+        'My grandmother made this every Sunday for about forty years. She never wrote it down.',
+      diet: 'Gluten-Free',
+      prep_time_minutes: '75',
     })
     // The seeded source name appears in the form's own field.
     expect(screen.getByDisplayValue('Lola')).toBeInTheDocument()
+  })
+
+  it('the story does NOT end up in the description, or vice versa', async () => {
+    // The split #65 exists for. A pasted recipe usually opens with prose about the dish; before
+    // this the model either dropped it or squeezed it into `description` — which is capped at 500
+    // and is meant to be one line under a dish name — while `story`, the field that carries the
+    // person at 4,000 characters, sat empty.
+    parseRecipeWithAI.mockResolvedValue({ data: AI_ANSWER })
+    await speak()
+    await waitFor(() => expect(lastProps).not.toBeNull())
+    const { story, description } = lastProps.initialValues
+    expect(story).not.toBe(description)
+    expect(description).not.toMatch(/grandmother/)
+    expect(story).toMatch(/grandmother/)
+  })
+
+  it('leaves the three new fields undefined when the model reports none', async () => {
+    // `undefined` rather than `''`, so `RecipeForm`'s `initialValues.x || ''` default applies and
+    // an empty answer is indistinguishable from no answer. A literal '' would work today and
+    // would quietly become a difference the moment anything tests for presence.
+    parseRecipeWithAI.mockResolvedValue({
+      data: { ...AI_ANSWER, story: '', ready_in_minutes: '', diet: '' },
+    })
+    await speak()
+    await waitFor(() => expect(lastProps).not.toBeNull())
+    expect(lastProps.initialValues.story).toBeUndefined()
+    expect(lastProps.initialValues.diet).toBeUndefined()
+    expect(lastProps.initialValues.prep_time_minutes).toBeUndefined()
+    // ...and the rest of the recipe still arrived.
+    expect(lastProps.initialValues.name).toBe('Sinigang')
+  })
+
+  it('normalises a DIET to the one vocabulary, case-insensitively', async () => {
+    // The form's field is a `<select>` over `DIETS`. A value with no matching option leaves the
+    // select showing NOTHING SELECTED while state keeps the string — and submit sends it, so the
+    // recipe gets filed with a diet the cook never saw. A ship gate caught that; matching here
+    // keeps the vocabulary in one file (`lib/diets.js`) AND keeps the value visible.
+    parseRecipeWithAI.mockResolvedValue({ data: { ...AI_ANSWER, diet: 'gluten-free' } })
+    await speak()
+    await waitFor(() => expect(lastProps).not.toBeNull())
+    // Canonical spelling, which is what makes the option match.
+    expect(lastProps.initialValues.diet).toBe('Gluten-Free')
+  })
+
+  it('DROPS a diet outside the vocabulary rather than submitting it unseen', async () => {
+    parseRecipeWithAI.mockResolvedValue({ data: { ...AI_ANSWER, diet: 'pescatarian-ish' } })
+    await speak()
+    await waitFor(() => expect(lastProps).not.toBeNull())
+    // Honestly blank beats invisibly set.
+    expect(lastProps.initialValues.diet).toBeUndefined()
+    // ...and the rest of the recipe is unharmed.
+    expect(lastProps.initialValues.name).toBe('Sinigang')
+  })
+
+  it('forwards the ready-in time the server sends, which is digits or empty', async () => {
+    // `_clean` reduces it server-side to digits-only-or-empty, because the form's field is
+    // `<input type="number">` and the HTML value-sanitisation algorithm blanks a number input whose
+    // value is not a valid float — prose would render as an empty box while state kept the string,
+    // invisible and uncorrectable. An earlier version of this test asserted that 'about 40' came
+    // through, which described a value the server no longer produces.
+    parseRecipeWithAI.mockResolvedValue({ data: { ...AI_ANSWER, ready_in_minutes: '45' } })
+    await speak()
+    await waitFor(() => expect(lastProps).not.toBeNull())
+    expect(lastProps.initialValues.prep_time_minutes).toBe('45')
   })
 
   it('does not claim to have guessed when the model did the work', async () => {

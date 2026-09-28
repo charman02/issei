@@ -102,6 +102,14 @@ export default function PlantRecipe() {
       cuisine: parsed.cuisine || undefined,
       servings: parsed.servings || undefined,
       sourceName: parsed.sourceName || '',
+      // #65 — three fields the form already had state for and the parser never filled, so
+      // somebody who pasted a recipe retyped what they had just pasted. NOTE THE KEY NAMES: the
+      // form reads `story`, `diet` and `prep_time_minutes`, and that last one is snake_case while
+      // its neighbours are camel — an inconsistency in `RecipeForm`'s `initialValues` contract
+      // that predates this, and getting it wrong here is a silent no-op rather than an error.
+      story: parsed.story || undefined,
+      diet: parsed.diet || undefined,
+      prep_time_minutes: parsed.readyInMinutes || undefined,
       ingredients: parsed.ingredients.length
         ? parsed.ingredients.map((i) => ({ name: i.name, quantity: i.amount }))
         : undefined,
