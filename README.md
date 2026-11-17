@@ -1,6 +1,6 @@
 # Issei
 
-**API:** https://api.issei.app · **Source:** https://github.com/charman02/issei
+**Source:** https://github.com/charman02/issei
 
 ## What It Is
 Someone cooked you something you'd never had before, and you asked for the recipe. **Issei is how they send it to you** — not a scrubbed list of grams, but the dish the way they actually make it, with the parts that are "a good splash" left as "a good splash," and their notes on the steps that matter. They write it down once; you get a link and read the whole thing without making an account.
@@ -207,10 +207,6 @@ npm test
 
 ## Future Roadmap
 See [FUTURE.md](FUTURE.md) for planned features including the iOS app (its notification half now shipped on the web), translation support, and richer photo/video support. Multi-user family sharing was **cut** — it is close to the collaborative-editing model POSITIONING rules out.
-
-## Live Demo
-- **App (React frontend):** https://issei.app — sign up and it works end to end: create a recipe (with a photo), keep it in your kitchen, scale it, pass it on. The handoff link opens the full recipe with no account, which is the path worth trying.
-- **API (FastAPI, interactive Swagger docs):** https://api.issei.app/docs — every endpoint is callable in-browser.
 
 **Deployment:** the frontend is hosted on **Vercel** (static SPA build, auto-deploys
 on push to `main`). The backend runs on **AWS ECS Fargate** behind an Application
