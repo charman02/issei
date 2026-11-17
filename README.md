@@ -1,6 +1,6 @@
 # Issei
 
-**Live app:** https://issei.app · **API:** https://api.issei.app · **Source:** https://github.com/charman02/issei
+**API:** https://api.issei.app · **Source:** https://github.com/charman02/issei
 
 ## What It Is
 Someone cooked you something you'd never had before, and you asked for the recipe. **Issei is how they send it to you** — not a scrubbed list of grams, but the dish the way they actually make it, with the parts that are "a good splash" left as "a good splash," and their notes on the steps that matter. They write it down once; you get a link and read the whole thing without making an account.
